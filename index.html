@@ -545,6 +545,8 @@ const SESSION_KEY = 'fitstation24_session';
 // ============================================================
 const SUPABASE_URL = 'https://xfnlwuqnxbrhbwveiwgm.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhmbmx3dXFueGJyaGJ3dmVpd2dtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjEzNDIsImV4cCI6MjA5MzM5NzM0Mn0.UKMN7PW-KxMuMNUcA3Iac9GdGI0-nMb2ZpdSC1q6QWU';
+const LINE_FUNCTION_URL = SUPABASE_URL + '/functions/v1/swift-handler';
+const SLIP_BUCKET = 'slips';
 
 const TABLE_SPEC = {
   branches:  { table: 'app_branches',  pk: 'code',  fields: [['code','code'],['name','name'],['lineToken','line_token'],['lineGroupId','line_group_id'],['managerEmail','manager_email'],['managerPwd','manager_pwd']] },
@@ -1463,7 +1465,41 @@ function viewSaleSlipById(id) {
   viewSlipImage(s.slip);
 }
 
-function onSubmitSale(e) {
+async function uploadSlipToStorage(dataUrl, saleId) {
+  if (!dataUrl) return '';
+  if (!dataUrl.startsWith('data:')) return dataUrl; // already a URL — pass through
+  if (!db.client) throw new Error('Supabase ยังไม่เชื่อมต่อ');
+  const blob = await (await fetch(dataUrl)).blob();
+  const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+  const yyyymmdd = new Date().toISOString().slice(0, 10);
+  const path = `${yyyymmdd}/${saleId}.${ext}`;
+  const { error } = await db.client.storage
+    .from(SLIP_BUCKET)
+    .upload(path, blob, { contentType: blob.type, upsert: true });
+  if (error) throw error;
+  const { data } = db.client.storage.from(SLIP_BUCKET).getPublicUrl(path);
+  return data.publicUrl;
+}
+
+async function sendSaleToLine(sale, slipUrl) {
+  const branch = DATA.branches.find(b => b.code === sale.branch);
+  const emp = DATA.employees.find(e => e.id === sale.empId);
+  const text = `🧾 ยอดใหม่ — ${branch ? branch.name : sale.branch}
+ประเภท: ${sale.type}
+สมาชิก: ${sale.memberName || '-'}
+พนักงาน: ${emp ? emp.name + ' ' + emp.surname : sale.empId}
+ยอด: ${DATA.settings.currency}${Number(sale.amount).toLocaleString()}${sale.note ? '\nหมายเหตุ: ' + sale.note : ''}
+เวลา: ${new Date(sale.ts).toLocaleString('th-TH')}`;
+  const res = await fetch(LINE_FUNCTION_URL, {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: text, slipUrl: slipUrl || undefined }),
+  });
+  const result = await res.json().catch(() => ({}));
+  if (!res.ok || !result.ok) throw new Error(result.error || ('HTTP ' + res.status));
+}
+
+async function onSubmitSale(e) {
   e.preventDefault();
   const branch = document.getElementById('se-branch').value;
   const empId = document.getElementById('se-emp').value;
@@ -1478,19 +1514,40 @@ function onSubmitSale(e) {
     if (!confirm('ประเภท ' + type + ' ปกติต้องแนบสลิป\nบันทึกโดยไม่มีสลิปจริงหรือ?')) return;
   }
 
+  const needsLine = (type === 'MEM' || type === 'PT');
   const sale = {
     id: nid(), ts: new Date().toISOString(),
     branch, empId, type, memberId, memberName, amount, slip, note,
-    notify: (type === 'MEM' || type === 'PT')
-              ? (slip ? (DATA.settings.lineConfigured ? 'Sent' : 'Pending') : 'Pending')
-              : '—',
+    notify: needsLine ? 'Pending' : '—',
   };
   DATA.sales.unshift(sale);
   saveData();
   toast('บันทึกยอดเรียบร้อย ' + thb(amount), 'ok');
-  if (sale.notify === 'Sent') toast('ส่ง LINE Group แล้ว', 'ok');
-  else if (sale.notify === 'Pending') toast('รอส่ง LINE (ตั้งค่า LINE OA ก่อน)', 'warn');
   resetSaleForm();
+
+  if (!needsLine) return;
+
+  // Send LINE notification asynchronously
+  try {
+    let slipUrl = '';
+    if (slip) {
+      slipUrl = await uploadSlipToStorage(slip, sale.id);
+      // Replace data URL with public URL in DATA + DB
+      const idx = DATA.sales.findIndex(s => s.id === sale.id);
+      if (idx >= 0) DATA.sales[idx].slip = slipUrl;
+    }
+    await sendSaleToLine(sale, slipUrl);
+    const idx = DATA.sales.findIndex(s => s.id === sale.id);
+    if (idx >= 0) DATA.sales[idx].notify = 'Sent';
+    saveData();
+    toast('ส่ง LINE Group แล้ว ✓', 'ok');
+  } catch (err) {
+    console.error('LINE notify failed', err);
+    const idx = DATA.sales.findIndex(s => s.id === sale.id);
+    if (idx >= 0) DATA.sales[idx].notify = 'Failed';
+    saveData();
+    toast('บันทึกแล้ว แต่ส่ง LINE ไม่สำเร็จ: ' + (err.message || err), 'bad');
+  }
 }
 
 // ============ TRAININGS ENTRY ============
