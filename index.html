@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FITSTATION 24 — Dashboard</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <style>
   :root {
     --brand: #0B132B;
@@ -508,8 +509,11 @@
   <div class="main">
     <div class="topbar">
       <h1 id="page-title">Dashboard</h1>
-      <div class="branch-pick">
-        <select id="branch-filter" onchange="onBranchChange()"></select>
+      <div style="display:flex; align-items:center; gap:14px;">
+        <span id="db-status" style="font-size: 11px; color: #9CA3AF;" title="สถานะการซิงค์ข้อมูล">○ Offline</span>
+        <div class="branch-pick">
+          <select id="branch-filter" onchange="onBranchChange()"></select>
+        </div>
       </div>
     </div>
     <div class="content" id="content"></div>
@@ -526,6 +530,167 @@
 
 const LS_KEY = 'fitstation24_data_v1';
 const SESSION_KEY = 'fitstation24_session';
+
+// ============================================================
+// SUPABASE ADAPTER (cross-device sync)
+// Falls back silently to localStorage if Supabase is unavailable.
+// ============================================================
+const SUPABASE_URL = 'https://xfnlwuqnxbrhbwveiwgm.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhmbmx3dXFueGJyaGJ3dmVpd2dtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc4MjEzNDIsImV4cCI6MjA5MzM5NzM0Mn0.UKMN7PW-KxMuMNUcA3Iac9GdGI0-nMb2ZpdSC1q6QWU';
+
+const TABLE_SPEC = {
+  branches:  { table: 'app_branches',  pk: 'code',  fields: [['code','code'],['name','name'],['lineToken','line_token'],['lineGroupId','line_group_id'],['managerEmail','manager_email'],['managerPwd','manager_pwd']] },
+  users:     { table: 'app_users',     pk: 'email', fields: [['email','email'],['pwd','pwd'],['name','name'],['role','role'],['branch','branch']] },
+  employees: { table: 'app_employees', pk: 'id',    fields: [['id','id'],['name','name'],['surname','surname'],['position','position'],['branch','branch'],['status','status'],['photo','photo']] },
+  members:   { table: 'app_members',   pk: 'id',    fields: [['id','id'],['name','name'],['surname','surname'],['age','age'],['branch','branch'],['startDate','start_date'],['endDate','end_date'],['hours','hours'],['trainer','trainer'],['lineUid','line_uid'],['status','status']] },
+  sales:     { table: 'app_sales',     pk: 'id',    fields: [['id','id'],['ts','ts'],['branch','branch'],['empId','emp_id'],['type','type'],['memberId','member_id'],['memberName','member_name'],['amount','amount'],['slip','slip'],['note','note'],['notify','notify']] },
+  trainings: { table: 'app_trainings', pk: 'id',    fields: [['id','id'],['ts','ts'],['branch','branch'],['memberId','member_id'],['memberName','member_name'],['trainerId','trainer_id'],['trainerName','trainer_name'],['verified','verified'],['hoursBefore','hours_before'],['hoursAfter','hours_after']] },
+  alerts:    { table: 'app_alerts',    pk: 'id',    fields: [['id','id'],['ts','ts'],['kind','kind'],['message','message'],['branch','branch'],['read','read']] },
+};
+
+const db = {
+  client: null,
+  enabled: false,
+  saveTimer: null,
+  status: 'offline',  // 'offline' | 'online' | 'error' | 'syncing'
+
+  init() {
+    if (!window.supabase || !SUPABASE_URL || !SUPABASE_KEY) {
+      console.warn('[db] Supabase not configured, using localStorage only');
+      return false;
+    }
+    try {
+      this.client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      this.enabled = true;
+      this.setStatus('syncing');
+      return true;
+    } catch (e) {
+      console.error('[db] init failed', e);
+      return false;
+    }
+  },
+
+  setStatus(s) {
+    this.status = s;
+    const el = document.getElementById('db-status');
+    if (!el) return;
+    const map = {
+      online:  { text: '● Online',  color: '#15803D', title: 'ซิงค์ออนไลน์ทำงานอยู่' },
+      offline: { text: '○ Offline', color: '#9CA3AF', title: 'ใช้ localStorage เท่านั้น' },
+      syncing: { text: '◌ Syncing', color: '#D97706', title: 'กำลังซิงค์ข้อมูล' },
+      error:   { text: '⚠ Sync error', color: '#DC2626', title: 'ซิงค์ขัดข้อง — แก้ไขในเครื่องอย่างเดียว' },
+    };
+    const m = map[s] || map.offline;
+    el.textContent = m.text;
+    el.style.color = m.color;
+    el.title = m.title;
+  },
+
+  toRow(name, item) {
+    const row = {};
+    for (const [js, sql] of TABLE_SPEC[name].fields) row[sql] = item[js] !== undefined ? item[js] : null;
+    return row;
+  },
+  toItem(name, row) {
+    const item = {};
+    for (const [js, sql] of TABLE_SPEC[name].fields) item[js] = row[sql];
+    return item;
+  },
+
+  async loadAll() {
+    if (!this.enabled) return null;
+    try {
+      const out = {};
+      for (const [name, spec] of Object.entries(TABLE_SPEC)) {
+        const { data, error } = await this.client.from(spec.table).select('*');
+        if (error) throw error;
+        out[name] = (data || []).map(r => this.toItem(name, r));
+      }
+      const { data: settingsRows, error: se } = await this.client.from('app_settings').select('*');
+      if (se) throw se;
+      const sm = {};
+      for (const r of (settingsRows || [])) sm[r.key] = r.value;
+      out.settings = sm.global || null;
+      out.lastDailyRun = sm.lastDailyRun || '';
+      const { data: logRows, error: le } = await this.client.from('app_login_log').select('*').order('id', { ascending: false }).limit(200);
+      if (le) throw le;
+      out.loginLog = (logRows || []).map(r => ({ ts: r.ts, email: r.email, role: r.role, branch: r.branch, action: r.action }));
+      this.setStatus('online');
+      return out;
+    } catch (e) {
+      console.error('[db] loadAll failed', e);
+      this.setStatus('error');
+      return null;
+    }
+  },
+
+  async pushAll(data) {
+    if (!this.enabled) return;
+    try {
+      const ops = [];
+      for (const [name, spec] of Object.entries(TABLE_SPEC)) {
+        const items = data[name] || [];
+        if (items.length === 0) continue;
+        const rows = items.map(i => this.toRow(name, i));
+        ops.push(this.client.from(spec.table).upsert(rows, { onConflict: spec.pk }));
+      }
+      ops.push(this.client.from('app_settings').upsert({ key: 'global', value: data.settings || {} }, { onConflict: 'key' }));
+      ops.push(this.client.from('app_settings').upsert({ key: 'lastDailyRun', value: data.lastDailyRun || '' }, { onConflict: 'key' }));
+      const results = await Promise.all(ops);
+      for (const r of results) if (r.error) throw r.error;
+      this.setStatus('online');
+    } catch (e) {
+      console.error('[db] pushAll failed', e);
+      this.setStatus('error');
+    }
+  },
+
+  pushAllDebounced(data) {
+    if (!this.enabled) return;
+    clearTimeout(this.saveTimer);
+    this.setStatus('syncing');
+    this.saveTimer = setTimeout(() => this.pushAll(data), 700);
+  },
+
+  async del(name, id) {
+    if (!this.enabled) return;
+    const spec = TABLE_SPEC[name];
+    if (!spec) return;
+    try {
+      const { error } = await this.client.from(spec.table).delete().eq(spec.pk, id);
+      if (error) throw error;
+    } catch (e) { console.error('[db] delete failed', name, id, e); }
+  },
+
+  async appendLogin(entry) {
+    if (!this.enabled) return;
+    try { await this.client.from('app_login_log').insert({ ts: entry.ts, email: entry.email, role: entry.role, branch: entry.branch, action: entry.action }); }
+    catch (e) { console.error('[db] login log append failed', e); }
+  },
+
+  async isEmpty() {
+    if (!this.enabled) return false;
+    try {
+      const { count } = await this.client.from('app_branches').select('*', { count: 'exact', head: true });
+      return (count || 0) === 0;
+    } catch (e) { return false; }
+  },
+
+  subscribe(onChange) {
+    if (!this.enabled) return;
+    const tables = Object.values(TABLE_SPEC).map(s => s.table).concat(['app_settings', 'app_login_log']);
+    let pendingTimer = null;
+    const trigger = (t) => {
+      clearTimeout(pendingTimer);
+      pendingTimer = setTimeout(() => onChange(t), 300);
+    };
+    for (const t of tables) {
+      this.client.channel('rt:' + t)
+        .on('postgres_changes', { event: '*', schema: 'public', table: t }, () => trigger(t))
+        .subscribe();
+    }
+  },
+};
 
 // ---------- DEFAULT SEED DATA ----------
 function defaultData() {
@@ -597,7 +762,41 @@ let CURRENT_VIEW = 'dashboard';
 let CURRENT_BRANCH = '*';
 let CHARTS = {};
 
-function loadData() {
+async function loadData() {
+  // 1. Try Supabase first
+  if (db.enabled) {
+    const remote = await db.loadAll();
+    if (remote) {
+      const empty = await db.isEmpty();
+      if (empty) {
+        // First-run: seed Supabase with localStorage data if available, else defaults
+        let seedSrc = null;
+        try {
+          const raw = localStorage.getItem(LS_KEY);
+          if (raw) seedSrc = JSON.parse(raw);
+        } catch {}
+        DATA = seedSrc || defaultData();
+        await db.pushAll(DATA);
+      } else {
+        const seed = defaultData();
+        DATA = {
+          settings:      remote.settings  || seed.settings,
+          branches:      remote.branches.length  ? remote.branches  : seed.branches,
+          users:         remote.users.length     ? remote.users     : seed.users,
+          employees:     remote.employees,
+          members:       remote.members,
+          sales:         remote.sales,
+          trainings:     remote.trainings,
+          alerts:        remote.alerts,
+          loginLog:      remote.loginLog,
+          lastDailyRun:  remote.lastDailyRun,
+        };
+      }
+      localStorage.setItem(LS_KEY, JSON.stringify(DATA));
+      return;
+    }
+  }
+  // 2. Fallback to localStorage
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) {
@@ -615,6 +814,7 @@ function loadData() {
 
 function saveData() {
   localStorage.setItem(LS_KEY, JSON.stringify(DATA));
+  db.pushAllDebounced(DATA);
 }
 
 function loadSession() {
@@ -640,8 +840,10 @@ function doLogin() {
   }
   SESSION = { email: u.email, name: u.name, role: u.role, branch: u.branch, loginAt: new Date().toISOString() };
   saveSession(SESSION);
-  DATA.loginLog.unshift({ ts: SESSION.loginAt, email: u.email, role: u.role, branch: u.branch, action: 'LOGIN' });
+  const logEntry = { ts: SESSION.loginAt, email: u.email, role: u.role, branch: u.branch, action: 'LOGIN' };
+  DATA.loginLog.unshift(logEntry);
   if (DATA.loginLog.length > 200) DATA.loginLog = DATA.loginLog.slice(0, 200);
+  db.appendLogin(logEntry);
   saveData();
   bootApp();
 }
@@ -1501,6 +1703,7 @@ function saveMember(e, idOrNull) {
 function deleteMember(id) {
   if (!confirm('ลบสมาชิก ' + id + ' ?')) return;
   DATA.members = DATA.members.filter(m => m.id !== id);
+  db.del('members', id);
   saveData();
   closeModal();
   toast('ลบสมาชิกเรียบร้อย', 'ok');
@@ -1722,6 +1925,7 @@ function deleteEmployee(id) {
   if (!isOwner()) { toast('เฉพาะ Admin เท่านั้นที่ลบพนักงานได้', 'bad'); return; }
   if (!confirm('ลบพนักงาน ' + id + ' ?')) return;
   DATA.employees = DATA.employees.filter(e => e.id !== id);
+  db.del('employees', id);
   saveData(); closeModal(); toast('ลบเรียบร้อย', 'ok'); navigate('employees');
 }
 
@@ -1923,8 +2127,10 @@ function addBranch() {
   saveData(); navigate('settings');
 }
 function deleteBranch(idx) {
-  if (!confirm('ลบสาขา ' + DATA.branches[idx].code + ' ?')) return;
+  const code = DATA.branches[idx].code;
+  if (!confirm('ลบสาขา ' + code + ' ?')) return;
   DATA.branches.splice(idx, 1);
+  db.del('branches', code);
   saveData(); navigate('settings');
 }
 function addUser() {
@@ -1944,8 +2150,11 @@ function changePassword(idx) {
   DATA.users[idx].pwd = newPwd; saveData(); toast('รีเซ็ตรหัสเรียบร้อย', 'ok');
 }
 function deleteUser(idx) {
-  if (!confirm('ลบผู้ใช้ ' + DATA.users[idx].email + ' ?')) return;
-  DATA.users.splice(idx, 1); saveData(); navigate('settings');
+  const email = DATA.users[idx].email;
+  if (!confirm('ลบผู้ใช้ ' + email + ' ?')) return;
+  DATA.users.splice(idx, 1);
+  db.del('users', email);
+  saveData(); navigate('settings');
 }
 
 // ============ EXPORT/IMPORT ============
@@ -2000,9 +2209,41 @@ function closeModal() {
 }
 
 // ============ INIT ============
-loadData();
-SESSION = loadSession();
-if (SESSION) bootApp();
+(async () => {
+  db.init();
+  await loadData();
+  SESSION = loadSession();
+  if (SESSION) bootApp();
+
+  // Real-time sync: when other devices change data, reload + re-render
+  let isReloading = false;
+  db.subscribe(async () => {
+    if (isReloading) return;
+    if (document.getElementById('modal-host').innerHTML.trim()) return; // skip if modal open
+    if (!SESSION) return;
+    isReloading = true;
+    try {
+      const remote = await db.loadAll();
+      if (remote) {
+        const seed = defaultData();
+        DATA = {
+          settings:     remote.settings  || seed.settings,
+          branches:     remote.branches.length ? remote.branches : DATA.branches,
+          users:        remote.users.length    ? remote.users    : DATA.users,
+          employees:    remote.employees,
+          members:      remote.members,
+          sales:        remote.sales,
+          trainings:    remote.trainings,
+          alerts:       remote.alerts,
+          loginLog:     remote.loginLog,
+          lastDailyRun: remote.lastDailyRun,
+        };
+        localStorage.setItem(LS_KEY, JSON.stringify(DATA));
+        if (CURRENT_VIEW) navigate(CURRENT_VIEW);
+      }
+    } finally { isReloading = false; }
+  });
+})();
 
 // Allow Enter key to submit login
 document.getElementById('login-pwd').addEventListener('keydown', e => {
