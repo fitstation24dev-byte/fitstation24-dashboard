@@ -2136,11 +2136,10 @@ function renderEmployees(root) {
     return;
   }
 
-  const grid = document.createElement('div');
-  grid.className = 'emp-grid';
-  list.forEach(e => {
-    const card = document.createElement('div');
-    card.className = 'emp-card';
+  const trainers = list.filter(e => e.position === 'เทรนเนอร์');
+  const sales    = list.filter(e => e.position !== 'เทรนเนอร์');
+
+  const renderEmpCard = (e) => {
     const initial = (e.name || '?').charAt(0);
     const avatar = e.photo
       ? `<img class="emp-avatar" src="${e.photo}" alt="">`
@@ -2150,17 +2149,31 @@ function renderEmployees(root) {
         <button class="btn small secondary" onclick="openEmployeeModal('${e.id}')">แก้</button>
         <button class="btn small danger" onclick="deleteEmployee('${e.id}')">ลบ</button>
       </div>` : '';
-    card.innerHTML = `
-      ${avatar}
-      <div class="ename">${e.name} ${e.surname}</div>
-      <div class="epos">${e.position}</div>
-      <div class="eid">${e.id}</div>
-      <div class="emeta">${e.branch} · ${statusBadge(e.status)}</div>
-      ${actions}
-    `;
-    grid.appendChild(card);
-  });
-  root.appendChild(grid);
+    return `
+      <div class="emp-card">
+        ${avatar}
+        <div class="ename">${e.name} ${e.surname}</div>
+        <div class="epos">${e.position}</div>
+        <div class="eid">${e.id}</div>
+        <div class="emeta">${e.branch} · ${statusBadge(e.status)}</div>
+        ${actions}
+      </div>`;
+  };
+
+  const renderSection = (title, items) => {
+    const section = document.createElement('div');
+    section.className = 'card';
+    if (items.length === 0) {
+      section.innerHTML = `<h2>${title} <small>0 คน</small></h2><div class="muted center" style="padding: 16px;">ไม่มีพนักงานในหมวดนี้</div>`;
+    } else {
+      const cards = items.map(renderEmpCard).join('');
+      section.innerHTML = `<h2>${title} <small>${items.length} คน</small></h2><div class="emp-grid">${cards}</div>`;
+    }
+    root.appendChild(section);
+  };
+
+  renderSection('Sale', sales);
+  renderSection('Trainer', trainers);
 }
 
 function openEmployeeModal(id) {
