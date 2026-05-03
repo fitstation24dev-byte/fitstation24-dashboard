@@ -731,11 +731,12 @@ function defaultData() {
     settings: {
       currency: '฿',
       expiryWarnDays: 15,
-      trainerWarnHrs: 3,
+      trainerWarnHrs: 5,
       lineConfigured: false,
       brandName: 'FITSTATION 24',
       rolePermissions: defaultRolePermissions(),
       expiryNotified: {},
+      hoursNotified: {},
     },
     branches: [
       { code: 'BR01', name: 'FITSTATION 24 - สาขา 1', lineToken: '', lineGroupId: '', managerPwd: 'mgr#1234' },
@@ -1035,6 +1036,7 @@ function runDailyMaintenance() {
 
   // Fire-and-forget: notify branch LINE group about expiring members
   sendDailyExpiryAlertsToGroup().catch(err => console.error('[daily] expiry alert push failed', err));
+  sendDailyHoursLowAlertsToGroup().catch(err => console.error('[daily] hours-low alert push failed', err));
 }
 
 // ---------- BOOT ----------
@@ -1624,6 +1626,45 @@ async function sendSaleToLine(sale, slipUrl) {
   await sendLineMessage(text, slipUrl);
 }
 
+async function sendDailyHoursLowAlertsToGroup() {
+  if (!DATA.settings.hoursNotified) DATA.settings.hoursNotified = {};
+  const notified = DATA.settings.hoursNotified;
+  const threshold = DATA.settings.trainerWarnHrs;
+  let changed = false;
+
+  const lowHours = [];
+  DATA.members.forEach(m => {
+    if (m.status !== 'Active') return;
+    if (m.hours > threshold) {
+      if (notified[m.id]) { delete notified[m.id]; changed = true; }
+    } else if (m.hours >= 0 && !notified[m.id]) {
+      lowHours.push(m);
+    }
+  });
+  if (changed) saveData();
+  if (lowHours.length === 0) return;
+
+  const byBranch = {};
+  lowHours.forEach(m => { (byBranch[m.branch] = byBranch[m.branch] || []).push(m); });
+
+  for (const code of Object.keys(byBranch)) {
+    const br = DATA.branches.find(b => b.code === code);
+    const items = byBranch[code].sort((a, b) => a.hours - b.hours);
+    const lines = items.map(m =>
+      `• ${m.id} — ${m.name} ${m.surname} (เหลือ ${m.hours} ครั้ง)`).join('\n');
+    const text = `⚠️ ชั่วโมงเทรนใกล้หมด — ${br ? br.name : code}
+${lines}
+รวม ${items.length} คน · เหลือ ≤ ${threshold} ครั้ง`;
+    try {
+      await sendLineMessage(text);
+      items.forEach(m => { notified[m.id] = true; });
+      saveData();
+    } catch (err) {
+      console.error('[hours-alert] send failed for branch', code, err);
+    }
+  }
+}
+
 async function sendDailyExpiryAlertsToGroup() {
   const ref = todayStart();
   if (!DATA.settings.expiryNotified) DATA.settings.expiryNotified = {};
@@ -1868,6 +1909,7 @@ function onSubmitTrain(e) {
   saveData();
   toast('หักชั่วโมงสำเร็จ — เหลือ ' + member.hours + ' ครั้ง', 'ok');
   navigate('trainings');
+  sendDailyHoursLowAlertsToGroup().catch(err => console.error('[hours-alert] post-train push failed', err));
 }
 
 // ============ MEMBERS ============
