@@ -787,6 +787,9 @@ let SESSION = null;
 let CURRENT_VIEW = 'dashboard';
 let CURRENT_BRANCH = '*';
 let CHARTS = {};
+let DASHBOARD_DATE = '';      // empty = today
+let SALES_LOG_DATE_FROM = '';
+let SALES_LOG_DATE_TO = '';
 
 async function loadData() {
   // 1. Try Supabase first
@@ -1133,8 +1136,11 @@ function navigate(view) {
 
 // ============ DASHBOARD ============
 function renderDashboard(root) {
-  const ref = todayStart();
-  const tomorrow = new Date(ref); tomorrow.setDate(tomorrow.getDate() + 1);
+  const today = todayStart();
+  const dateStr = DASHBOARD_DATE || today.toISOString().slice(0,10);
+  const ref = new Date(dateStr + 'T00:00:00'); ref.setHours(0,0,0,0);
+  const isToday = ref.getTime() === today.getTime();
+  const dateLabel = isToday ? 'วันนี้' : fmtDate(ref.toISOString());
 
   const sales = filterByBranch(DATA.sales);
   const trainings = filterByBranch(DATA.trainings);
@@ -1149,27 +1155,40 @@ function renderDashboard(root) {
   const memCount = todaySales.filter(s => s.type === 'MEM').length;
   const ptCount  = todaySales.filter(s => s.type === 'PT').length;
 
+  // Date picker toolbar
+  const tb = document.createElement('div');
+  tb.className = 'toolbar';
+  tb.innerHTML = `
+    <div class="filters" style="align-items: center;">
+      <label class="muted small" style="margin-right: 6px;">วันที่:</label>
+      <input type="date" id="db-date" value="${dateStr}" max="${today.toISOString().slice(0,10)}" onchange="DASHBOARD_DATE=this.value;renderDashboard(document.getElementById('content'))">
+      ${!isToday ? '<button class="btn small secondary" onclick="DASHBOARD_DATE=\'\';renderDashboard(document.getElementById(\'content\'))">วันนี้</button>' : ''}
+    </div>
+    <div class="muted small">${isToday ? 'แสดงข้อมูลวันนี้' : 'แสดงข้อมูลย้อนหลัง'}</div>
+  `;
+  root.appendChild(tb);
+
   // KPI cards
   const kpi = document.createElement('div');
   kpi.className = 'kpi-grid';
   kpi.innerHTML = `
     <div class="kpi accent">
-      <div class="label">ยอดรวมวันนี้</div>
+      <div class="label">ยอดรวม${dateLabel}</div>
       <div class="value">${thb(todayTotal)}</div>
       <div class="sub">${todaySales.length} รายการ</div>
     </div>
     <div class="kpi">
-      <div class="label">MEM วันนี้</div>
+      <div class="label">MEM ${dateLabel}</div>
       <div class="value">${memCount}</div>
       <div class="sub">${thb(todayMem)}</div>
     </div>
     <div class="kpi">
-      <div class="label">PT วันนี้</div>
+      <div class="label">PT ${dateLabel}</div>
       <div class="value">${ptCount}</div>
       <div class="sub">${thb(todayPt)}</div>
     </div>
     <div class="kpi ok">
-      <div class="label">เทรนวันนี้</div>
+      <div class="label">เทรน${dateLabel}</div>
       <div class="value">${todayTrain}</div>
       <div class="sub">ครั้ง</div>
     </div>
@@ -1216,7 +1235,7 @@ function renderDashboard(root) {
       </tr>`;
   }
   bb.innerHTML = `
-    <h2>ยอดวันนี้แยกตามสาขา</h2>
+    <h2>ยอด${dateLabel}แยกตามสาขา</h2>
     <table>
       <thead><tr>
         <th>สาขา</th><th class="right">MEM</th><th class="right">PT</th><th class="right">Plan</th>
@@ -2079,20 +2098,25 @@ function renderSalesLog(root) {
   const tb = document.createElement('div');
   tb.className = 'toolbar';
   tb.innerHTML = `
-    <div class="filters">
+    <div class="filters" style="align-items: center; flex-wrap: wrap;">
       <select id="sl-type" onchange="renderSalesLog(document.getElementById('content'))">
         <option value="">ทุกประเภท</option>
-        <option value="MEM">MEM</option>
-        <option value="PT">PT</option>
-        <option value="Plan">Plan</option>
-        <option value="Other">อื่นๆ</option>
+        <option value="MEM" ${document.getElementById('sl-type')?.value==='MEM'?'selected':''}>MEM</option>
+        <option value="PT" ${document.getElementById('sl-type')?.value==='PT'?'selected':''}>PT</option>
+        <option value="Plan" ${document.getElementById('sl-type')?.value==='Plan'?'selected':''}>Plan</option>
+        <option value="Other" ${document.getElementById('sl-type')?.value==='Other'?'selected':''}>อื่นๆ</option>
       </select>
       <select id="sl-notify" onchange="renderSalesLog(document.getElementById('content'))">
         <option value="">ทุกสถานะ LINE</option>
-        <option value="Sent">Sent</option>
-        <option value="Pending">Pending</option>
-        <option value="Failed">Failed</option>
+        <option value="Sent" ${document.getElementById('sl-notify')?.value==='Sent'?'selected':''}>Sent</option>
+        <option value="Pending" ${document.getElementById('sl-notify')?.value==='Pending'?'selected':''}>Pending</option>
+        <option value="Failed" ${document.getElementById('sl-notify')?.value==='Failed'?'selected':''}>Failed</option>
       </select>
+      <label class="muted small">จาก:</label>
+      <input type="date" id="sl-from" value="${SALES_LOG_DATE_FROM}" onchange="SALES_LOG_DATE_FROM=this.value;renderSalesLog(document.getElementById('content'))">
+      <label class="muted small">ถึง:</label>
+      <input type="date" id="sl-to" value="${SALES_LOG_DATE_TO}" onchange="SALES_LOG_DATE_TO=this.value;renderSalesLog(document.getElementById('content'))">
+      ${(SALES_LOG_DATE_FROM || SALES_LOG_DATE_TO) ? '<button class="btn small secondary" onclick="SALES_LOG_DATE_FROM=\'\';SALES_LOG_DATE_TO=\'\';renderSalesLog(document.getElementById(\'content\'))">ล้างวันที่</button>' : ''}
     </div>
     <button class="btn secondary" onclick="exportCSV('sales')">Export CSV</button>
   `;
@@ -2104,6 +2128,14 @@ function renderSalesLog(root) {
   let list = filterByBranch(DATA.sales).filter(s => s.type !== 'Train').slice().sort((a,b) => new Date(b.ts) - new Date(a.ts));
   if (fType) list = list.filter(s => s.type === fType);
   if (fNotify) list = list.filter(s => s.notify === fNotify);
+  if (SALES_LOG_DATE_FROM) {
+    const from = new Date(SALES_LOG_DATE_FROM + 'T00:00:00');
+    list = list.filter(s => new Date(s.ts) >= from);
+  }
+  if (SALES_LOG_DATE_TO) {
+    const to = new Date(SALES_LOG_DATE_TO + 'T23:59:59');
+    list = list.filter(s => new Date(s.ts) <= to);
+  }
 
   const card = document.createElement('div');
   card.className = 'card';
