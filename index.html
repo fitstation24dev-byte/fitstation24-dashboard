@@ -735,11 +735,11 @@ function defaultData() {
     // No demo users — admin must be created via Supabase SQL Editor on first setup
     users: [],
     employees: [
-      { id: 'E001', name: 'สมชาย',  surname: 'ใจดี',     position: 'ผู้จัดการสาขา', branch: 'BR01', status: 'Active' },
-      { id: 'E002', name: 'สมหญิง', surname: 'สวยงาม',   position: 'เคาน์เตอร์',   branch: 'BR01', status: 'Active' },
-      { id: 'E003', name: 'วิชัย',  surname: 'แข็งแรง',  position: 'เทรนเนอร์',     branch: 'BR01', status: 'Active' },
-      { id: 'E004', name: 'พิมพ์',  surname: 'ฟิตเนส',   position: 'เทรนเนอร์',     branch: 'BR01', status: 'Active' },
-      { id: 'E005', name: 'อนันต์', surname: 'เอกชัย',   position: 'ผู้จัดการสาขา', branch: 'BR02', status: 'Active' },
+      { id: 'E001', name: 'สมชาย',  surname: 'ใจดี',     position: 'Sale',    branch: 'BR01', status: 'Active' },
+      { id: 'E002', name: 'สมหญิง', surname: 'สวยงาม',   position: 'Sale',    branch: 'BR01', status: 'Active' },
+      { id: 'E003', name: 'วิชัย',  surname: 'แข็งแรง',  position: 'Trainer', branch: 'BR01', status: 'Active' },
+      { id: 'E004', name: 'พิมพ์',  surname: 'ฟิตเนส',   position: 'Trainer', branch: 'BR01', status: 'Active' },
+      { id: 'E005', name: 'อนันต์', surname: 'เอกชัย',   position: 'Sale',    branch: 'BR02', status: 'Active' },
     ],
     members: [
       { id: 'M0001', name: 'ปกรณ์',     surname: 'สมิธ',      age: 28, branch: 'BR01', startDate: daysAgo(180), endDate: daysAhead(20),  hours: 8,  trainer: 'วิชัย', lineUid: '', status: 'Active' },
@@ -888,6 +888,21 @@ function visibleBranches() {
 function canSeeAllBranches() { return SESSION && SESSION.branch === '*'; }
 function isOwner() { return SESSION && SESSION.role === 'Owner'; }
 function isManagerOrAbove() { return SESSION && (SESSION.role === 'Owner' || SESSION.role === 'Manager'); }
+
+function normalizePosition(pos) {
+  if (pos === 'Trainer' || pos === 'เทรนเนอร์') return 'Trainer';
+  return 'Sale';
+}
+
+function migrateEmployeePositions() {
+  if (!DATA || !Array.isArray(DATA.employees)) return;
+  let changed = false;
+  DATA.employees.forEach(e => {
+    const np = normalizePosition(e.position);
+    if (e.position !== np) { e.position = np; changed = true; }
+  });
+  if (changed) saveData();
+}
 
 const NAV_ITEMS = [
   { id: 'dashboard',  label: 'Dashboard' },
@@ -1057,6 +1072,7 @@ function bootApp() {
     : (canSeeAllBranches() ? '*' : SESSION.branch);
   bf.value = CURRENT_BRANCH;
 
+  migrateEmployeePositions();
   runDailyMaintenance();
 
   // Restore view from sessionStorage if user still has access
@@ -1699,7 +1715,7 @@ function renderTrainingsEntry(root) {
     .filter(m => m.status === 'Active' && m.hours > 0)
     .map(m => `<option value="${m.id} — ${m.name} ${m.surname}" data-id="${m.id}" data-branch="${m.branch}" data-hours="${m.hours}">เหลือ ${m.hours} ครั้ง · สาขา ${m.branch}</option>`).join('');
   const trainerOptions = DATA.employees
-    .filter(e => e.position === 'เทรนเนอร์' && e.status === 'Active')
+    .filter(e => normalizePosition(e.position) === 'Trainer' && e.status === 'Active')
     .map(e => `<option value="${e.id}">${e.id} — ${e.name} ${e.surname}</option>`).join('');
 
   card.innerHTML = `
@@ -2136,8 +2152,8 @@ function renderEmployees(root) {
     return;
   }
 
-  const trainers = list.filter(e => e.position === 'เทรนเนอร์');
-  const sales    = list.filter(e => e.position !== 'เทรนเนอร์');
+  const trainers = list.filter(e => normalizePosition(e.position) === 'Trainer');
+  const sales    = list.filter(e => normalizePosition(e.position) === 'Sale');
 
   const renderEmpCard = (e) => {
     const initial = (e.name || '?').charAt(0);
@@ -2181,8 +2197,8 @@ function openEmployeeModal(id) {
   const e = id ? DATA.employees.find(x => x.id === id) : null;
   const isNew = !e;
   const branches = DATA.branches.map(b => `<option value="${b.code}" ${e && e.branch===b.code?'selected':''}>${b.code}</option>`).join('');
-  const positions = ['ผู้จัดการสาขา','เคาน์เตอร์','เทรนเนอร์','พนักงานทั่วไป']
-    .map(p => `<option value="${p}" ${e && e.position===p?'selected':''}>${p}</option>`).join('');
+  const positions = ['Sale','Trainer']
+    .map(p => `<option value="${p}" ${e && normalizePosition(e.position)===p?'selected':''}>${p}</option>`).join('');
   const newId = isNew ? 'E' + String(100 + DATA.employees.length + 1) : e.id;
   const photoSrc = e && e.photo ? e.photo : '';
   const initial = e && e.name ? e.name.charAt(0) : '👤';
