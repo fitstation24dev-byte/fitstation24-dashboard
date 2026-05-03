@@ -790,6 +790,8 @@ let CHARTS = {};
 let DASHBOARD_DATE = '';      // empty = today
 let SALES_LOG_DATE_FROM = '';
 let SALES_LOG_DATE_TO = '';
+let TRAININGS_DATE_FROM = '';
+let TRAININGS_DATE_TO = '';
 
 async function loadData() {
   // 1. Try Supabase first
@@ -1827,7 +1829,26 @@ function renderTrainingsEntry(root) {
   // Recent trainings list
   const list = document.createElement('div');
   list.className = 'card';
-  const trainings = filterByBranch(DATA.trainings).slice().sort((a,b) => new Date(b.ts) - new Date(a.ts)).slice(0, 15);
+  list.id = 'recent-trainings-card';
+  renderRecentTrainingsContent(list);
+  root.appendChild(list);
+}
+
+function renderRecentTrainingsContent(card) {
+  let trainings = filterByBranch(DATA.trainings).slice().sort((a,b) => new Date(b.ts) - new Date(a.ts));
+  if (TRAININGS_DATE_FROM) {
+    const from = new Date(TRAININGS_DATE_FROM + 'T00:00:00');
+    trainings = trainings.filter(t => new Date(t.ts) >= from);
+  }
+  if (TRAININGS_DATE_TO) {
+    const to = new Date(TRAININGS_DATE_TO + 'T23:59:59');
+    trainings = trainings.filter(t => new Date(t.ts) <= to);
+  }
+  const hasDateFilter = !!(TRAININGS_DATE_FROM || TRAININGS_DATE_TO);
+  const total = trainings.length;
+  const limit = hasDateFilter ? 500 : 15;
+  trainings = trainings.slice(0, limit);
+
   const ownerCanDelete = isOwner();
   let rows = '';
   trainings.forEach(t => {
@@ -1843,13 +1864,27 @@ function renderTrainingsEntry(root) {
     </tr>`;
   });
   const colspan = ownerCanDelete ? 7 : 6;
-  if (rows === '') rows = `<tr><td colspan="${colspan}" class="muted center" style="padding: 16px;">ยังไม่มีการเทรน</td></tr>`;
-  list.innerHTML = `<h2>การเทรนล่าสุด</h2>
+  if (rows === '') rows = `<tr><td colspan="${colspan}" class="muted center" style="padding: 16px;">ไม่พบการเทรน</td></tr>`;
+
+  const subtitle = hasDateFilter
+    ? `${total} รายการในช่วงที่เลือก${total > limit ? ' (แสดง ' + limit + ' รายการล่าสุด)' : ''}`
+    : '15 รายการล่าสุด';
+
+  card.innerHTML = `
+    <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+      <h2 style="margin: 0;">การเทรน <small>${subtitle}</small></h2>
+      <div class="filters" style="align-items: center;">
+        <label class="muted small">จาก:</label>
+        <input type="date" value="${TRAININGS_DATE_FROM}" onchange="TRAININGS_DATE_FROM=this.value;renderRecentTrainingsContent(document.getElementById('recent-trainings-card'))">
+        <label class="muted small">ถึง:</label>
+        <input type="date" value="${TRAININGS_DATE_TO}" onchange="TRAININGS_DATE_TO=this.value;renderRecentTrainingsContent(document.getElementById('recent-trainings-card'))">
+        ${hasDateFilter ? '<button class="btn small secondary" onclick="TRAININGS_DATE_FROM=\'\';TRAININGS_DATE_TO=\'\';renderRecentTrainingsContent(document.getElementById(\'recent-trainings-card\'))">ล้างวันที่</button>' : ''}
+      </div>
+    </div>
     <table>
       <thead><tr><th>เวลา</th><th>สาขา</th><th>สมาชิก</th><th>เทรนเนอร์</th><th class="center">ชั่วโมง</th><th class="center">สถานะ</th>${ownerCanDelete ? '<th class="center">จัดการ</th>' : ''}</tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
-  root.appendChild(list);
 }
 
 function onPickTrainMemberFromInput() {
