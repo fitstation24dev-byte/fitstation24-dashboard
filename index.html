@@ -623,7 +623,7 @@ const db = {
       const tablePromises = tableEntries.map(([name, spec]) =>
         this.client.from(spec.table).select('*').then(r => ({ name, ...r }))
       );
-      const settingsPromise = this.client.from('app_settings').select('*');
+      const settingsPromise = this.client.from('app_settings').select('*').not('key', 'like', 'backup_%');
       const logPromise = this.client.from('app_login_log').select('*').order('id', { ascending: false }).limit(200);
 
       const [tableResults, settingsResult, logResult] = await Promise.all([
@@ -1042,6 +1042,8 @@ function runDailyMaintenance() {
   // Fire-and-forget: notify branch LINE group about expiring members
   sendDailyExpiryAlertsToGroup().catch(err => console.error('[daily] expiry alert push failed', err));
   sendDailyHoursLowAlertsToGroup().catch(err => console.error('[daily] hours-low alert push failed', err));
+  // Fire-and-forget: snapshot DATA into Supabase (rolling 7-day backup)
+  createDailyBackup().catch(err => console.error('[daily] backup failed', err));
 }
 
 // ---------- BOOT ----------
@@ -2634,17 +2636,23 @@ function renderSettings(root) {
   // Backup
   const card4 = document.createElement('div');
   card4.className = 'card';
+  const lastBackup = DATA.settings.lastBackupDate || '—';
   card4.innerHTML = `
-    <h2>สำรองข้อมูล</h2>
-    <p class="muted small" style="margin-bottom: 12px;">ข้อมูลทั้งหมดเก็บใน browser localStorage ของเครื่องนี้ — ใช้ Export เพื่อสำรอง / Import เพื่อย้ายเครื่อง</p>
-    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-      <button class="btn" onclick="exportJSON()">Export JSON</button>
-      <button class="btn secondary" onclick="document.getElementById('import-file').click()">Import JSON</button>
-      <input id="import-file" type="file" accept=".json" style="display: none;" onchange="importJSON(event)">
-      <button class="btn danger" onclick="resetAll()">รีเซ็ตเป็นข้อมูลตั้งต้น</button>
+    <h2>สำรองข้อมูล <small>Auto snapshot รายวันเก็บใน Supabase ${BACKUP_KEEP_DAYS} วันล่าสุด · สำรองล่าสุด: ${lastBackup}</small></h2>
+    <div style="margin-bottom: 16px;">
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;">
+        <button class="btn" onclick="manualBackup()">📥 สำรองตอนนี้</button>
+        <button class="btn secondary" onclick="exportJSON()">Export JSON</button>
+        <button class="btn secondary" onclick="document.getElementById('import-file').click()">Import JSON</button>
+        <input id="import-file" type="file" accept=".json" style="display: none;" onchange="importJSON(event)">
+        <button class="btn danger" onclick="resetAll()">รีเซ็ตเป็นข้อมูลตั้งต้น</button>
+      </div>
     </div>
+    <h3 style="margin: 16px 0 8px;">ประวัติการสำรอง</h3>
+    <div id="backup-history-list"><div class="muted small">กำลังโหลด...</div></div>
   `;
   root.appendChild(card4);
+  renderBackupHistory();
 }
 
 function saveSettings() { saveData(); toast('บันทึกเรียบร้อย', 'ok'); navigate('settings'); }
@@ -2798,6 +2806,112 @@ function importJSON(e) {
 function resetAll() {
   if (!confirm('รีเซ็ตข้อมูลทั้งหมดกลับเป็นค่าตั้งต้น? (ลบทุกอย่าง)')) return;
   DATA = defaultData(); saveData(); toast('รีเซ็ตเรียบร้อย', 'ok'); navigate('dashboard');
+}
+
+// ============ AUTO BACKUP ============
+const BACKUP_KEEP_DAYS = 7;
+
+async function createDailyBackup(force) {
+  if (!db.enabled) return;
+  const today = new Date().toISOString().slice(0, 10);
+  const key = 'backup_' + today;
+  if (!force) {
+    if (DATA.settings.lastBackupDate === today) return;
+  }
+  try {
+    const { error } = await db.client.from('app_settings').upsert({ key, value: DATA }, { onConflict: 'key' });
+    if (error) throw error;
+    DATA.settings.lastBackupDate = today;
+    await cleanupOldBackups();
+  } catch (e) {
+    console.error('[backup] create failed', e);
+  }
+}
+
+async function listBackups() {
+  if (!db.enabled) return [];
+  const { data, error } = await db.client.from('app_settings').select('key').like('key', 'backup_%').order('key', { ascending: false });
+  if (error) { console.error('[backup] list failed', error); return []; }
+  return (data || []).map(r => r.key.replace('backup_', ''));
+}
+
+async function cleanupOldBackups() {
+  if (!db.enabled) return;
+  const { data, error } = await db.client.from('app_settings').select('key').like('key', 'backup_%').order('key', { ascending: false });
+  if (error || !data || data.length <= BACKUP_KEEP_DAYS) return;
+  const toDelete = data.slice(BACKUP_KEEP_DAYS).map(r => r.key);
+  for (const k of toDelete) {
+    await db.client.from('app_settings').delete().eq('key', k);
+  }
+}
+
+async function restoreBackup(date) {
+  if (!isOwner()) { toast('เฉพาะ Owner เท่านั้น', 'bad'); return; }
+  if (!confirm('Restore ข้อมูลทั้งหมดเป็นของวันที่ ' + date + '?\n⚠️ ข้อมูลปัจจุบันจะถูกแทนที่ทันที กดอีกครั้งเพื่อยืนยัน')) return;
+  if (!confirm('ยืนยันอีกครั้ง — Restore ข้อมูลของวันที่ ' + date + '?')) return;
+  try {
+    const { data, error } = await db.client.from('app_settings').select('value').eq('key', 'backup_' + date).single();
+    if (error || !data) throw error || new Error('not found');
+    DATA = data.value;
+    if (!DATA.settings.lastBackupDate) DATA.settings.lastBackupDate = date;
+    saveData();
+    toast('Restore สำเร็จ — กำลัง refresh...', 'ok');
+    setTimeout(() => location.reload(), 1500);
+  } catch (e) {
+    console.error('[backup] restore failed', e);
+    toast('Restore ล้มเหลว: ' + (e.message || e), 'bad');
+  }
+}
+
+async function downloadBackup(date) {
+  if (!db.enabled) return;
+  try {
+    const { data, error } = await db.client.from('app_settings').select('value').eq('key', 'backup_' + date).single();
+    if (error || !data) throw error;
+    const blob = new Blob([JSON.stringify(data.value, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'fitstation24-backup-' + date + '.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('Download สำเร็จ', 'ok');
+  } catch (e) {
+    console.error('[backup] download failed', e);
+    toast('Download ล้มเหลว', 'bad');
+  }
+}
+
+async function manualBackup() {
+  if (!isOwner()) { toast('เฉพาะ Owner เท่านั้น', 'bad'); return; }
+  toast('กำลังสำรองข้อมูล...', 'ok');
+  await createDailyBackup(true);
+  toast('สำรองข้อมูลสำเร็จ', 'ok');
+  navigate('settings');
+}
+
+async function renderBackupHistory() {
+  const list = document.getElementById('backup-history-list');
+  if (!list) return;
+  const dates = await listBackups();
+  if (dates.length === 0) {
+    list.innerHTML = '<div class="muted small">ยังไม่มีประวัติการสำรอง — กด "สำรองตอนนี้" เพื่อสร้าง</div>';
+    return;
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  list.innerHTML = `
+    <table>
+      <thead><tr><th>วันที่</th><th></th></tr></thead>
+      <tbody>${dates.map(d => `
+        <tr>
+          <td>${d} ${d === today ? '<span class="badge ok">วันนี้</span>' : ''}</td>
+          <td class="row-actions" style="text-align: right;">
+            <button class="btn small secondary" onclick="downloadBackup('${d}')">Download</button>
+            <button class="btn small danger" onclick="restoreBackup('${d}')">Restore</button>
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  `;
 }
 function exportCSV(kind) {
   let rows = [];
