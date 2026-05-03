@@ -1006,6 +1006,9 @@ function runDailyMaintenance() {
   // Replace today's alerts with new ones (avoid daily duplicates)
   DATA.alerts = newAlerts.concat(DATA.alerts.filter(a => !isSameDay(a.ts, ref))).slice(0, 200);
   saveData();
+
+  // Fire-and-forget: notify branch LINE group about expiring members
+  sendDailyExpiryAlertsToGroup().catch(err => console.error('[daily] expiry alert push failed', err));
 }
 
 // ---------- BOOT ----------
@@ -1571,6 +1574,16 @@ async function uploadSlipToStorage(dataUrl, saleId) {
   return data.publicUrl;
 }
 
+async function sendLineMessage(text, slipUrl) {
+  const res = await fetch(LINE_FUNCTION_URL, {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: text, slipUrl: slipUrl || undefined }),
+  });
+  const result = await res.json().catch(() => ({}));
+  if (!res.ok || !result.ok) throw new Error(result.error || ('HTTP ' + res.status));
+}
+
 async function sendSaleToLine(sale, slipUrl) {
   const branch = DATA.branches.find(b => b.code === sale.branch);
   const emp = DATA.employees.find(e => e.id === sale.empId);
@@ -1581,13 +1594,36 @@ async function sendSaleToLine(sale, slipUrl) {
 พนักงาน: ${emp ? emp.name + ' ' + emp.surname : sale.empId}
 ยอด: ${DATA.settings.currency}${Number(sale.amount).toLocaleString()}${sale.note ? '\nหมายเหตุ: ' + sale.note : ''}
 เวลา: ${new Date(sale.ts).toLocaleString('th-TH')}`;
-  const res = await fetch(LINE_FUNCTION_URL, {
-    method: 'POST',
-    headers: { 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: text, slipUrl: slipUrl || undefined }),
+  await sendLineMessage(text, slipUrl);
+}
+
+async function sendDailyExpiryAlertsToGroup() {
+  const ref = todayStart();
+  const expiring = DATA.members
+    .filter(m => m.status === 'Active' && m.endDate)
+    .map(m => ({ m, dl: daysBetween(m.endDate, ref) }))
+    .filter(x => x.dl >= 0 && x.dl <= DATA.settings.expiryWarnDays);
+  if (expiring.length === 0) return;
+
+  const byBranch = {};
+  expiring.forEach(({ m, dl }) => {
+    (byBranch[m.branch] = byBranch[m.branch] || []).push({ m, dl });
   });
-  const result = await res.json().catch(() => ({}));
-  if (!res.ok || !result.ok) throw new Error(result.error || ('HTTP ' + res.status));
+
+  for (const code of Object.keys(byBranch)) {
+    const br = DATA.branches.find(b => b.code === code);
+    const items = byBranch[code].sort((a, b) => a.dl - b.dl);
+    const lines = items.map(({ m, dl }) =>
+      `• ${m.id} — ${m.name} ${m.surname} (อีก ${dl} วัน)`).join('\n');
+    const text = `⏰ สมาชิกใกล้หมดอายุ — ${br ? br.name : code}
+${lines}
+รวม ${items.length} คน · ส่งภายใน ${DATA.settings.expiryWarnDays} วัน`;
+    try {
+      await sendLineMessage(text);
+    } catch (err) {
+      console.error('[expiry-alert] send failed for branch', code, err);
+    }
+  }
 }
 
 async function onSubmitSale(e) {
