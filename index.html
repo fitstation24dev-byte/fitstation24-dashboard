@@ -725,6 +725,7 @@ function defaultData() {
       lineConfigured: false,
       brandName: 'FITSTATION 24',
       rolePermissions: defaultRolePermissions(),
+      expiryNotified: {},
     },
     branches: [
       { code: 'BR01', name: 'FITSTATION 24 - สาขา 1', lineToken: '', lineGroupId: '', managerPwd: 'mgr#1234' },
@@ -1599,10 +1600,13 @@ async function sendSaleToLine(sale, slipUrl) {
 
 async function sendDailyExpiryAlertsToGroup() {
   const ref = todayStart();
+  if (!DATA.settings.expiryNotified) DATA.settings.expiryNotified = {};
+  const notified = DATA.settings.expiryNotified;
   const expiring = DATA.members
     .filter(m => m.status === 'Active' && m.endDate)
     .map(m => ({ m, dl: daysBetween(m.endDate, ref) }))
-    .filter(x => x.dl >= 0 && x.dl <= DATA.settings.expiryWarnDays);
+    .filter(x => x.dl >= 0 && x.dl <= DATA.settings.expiryWarnDays)
+    .filter(x => notified[x.m.id] !== x.m.endDate);
   if (expiring.length === 0) return;
 
   const byBranch = {};
@@ -1620,6 +1624,8 @@ ${lines}
 รวม ${items.length} คน · ส่งภายใน ${DATA.settings.expiryWarnDays} วัน`;
     try {
       await sendLineMessage(text);
+      items.forEach(({ m }) => { notified[m.id] = m.endDate; });
+      saveData();
     } catch (err) {
       console.error('[expiry-alert] send failed for branch', code, err);
     }
