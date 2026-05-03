@@ -2564,16 +2564,39 @@ function deleteBranch(idx) {
   saveData(); navigate('settings');
 }
 function addUser() {
-  const email = prompt('Username ผู้ใช้ใหม่:');
-  if (!email) return;
+  const roles = ['Owner','Manager','Staff','Trainer']
+    .map(r => `<option value="${r}" ${r==='Staff'?'selected':''}>${r}</option>`).join('');
+  const branchOpts = '<option value="*">* (ทุกสาขา)</option>' +
+    DATA.branches.map(b => `<option value="${b.code}">${b.code} · ${b.name}</option>`).join('');
+  showModal(`
+    <h3>เพิ่มผู้ใช้ใหม่</h3>
+    <form onsubmit="saveUserFromModal(event)">
+      <div class="form-grid">
+        <div class="field"><label>Username *</label><input id="ue-email" required autofocus></div>
+        <div class="field"><label>ชื่อ-นามสกุล *</label><input id="ue-name" required></div>
+        <div class="field"><label>Role *</label><select id="ue-role" required>${roles}</select></div>
+        <div class="field"><label>สาขา *</label><select id="ue-branch" required>${branchOpts}</select></div>
+        <div class="field full"><label>รหัสผ่านเริ่มต้น *</label><input id="ue-pwd" required value="changeme"></div>
+      </div>
+      <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px;">
+        <button type="button" class="btn secondary" onclick="closeModal()">ยกเลิก</button>
+        <button type="submit" class="btn">บันทึก</button>
+      </div>
+    </form>
+  `);
+}
+
+function saveUserFromModal(e) {
+  e.preventDefault();
+  const email = document.getElementById('ue-email').value.trim();
+  const name = document.getElementById('ue-name').value.trim();
+  const role = document.getElementById('ue-role').value;
+  const branch = document.getElementById('ue-branch').value;
+  const pwd = document.getElementById('ue-pwd').value;
+  if (!email || !name || !pwd) { toast('กรอกข้อมูลให้ครบ', 'bad'); return; }
   if (DATA.users.some(u => u.email.toLowerCase() === email.toLowerCase())) { toast('Username นี้มีอยู่แล้ว', 'bad'); return; }
-  const name = prompt('ชื่อ-นามสกุล:'); if (!name) return;
-  const role = prompt('Role (Owner/Manager/Staff/Trainer):', 'Staff');
-  if (!['Owner','Manager','Staff','Trainer'].includes(role)) { toast('Role ไม่ถูก', 'bad'); return; }
-  const branchInput = prompt('สาขา (รหัสสาขา หรือ * สำหรับทุกสาขา):', 'BR01');
-  const pwd = prompt('รหัสผ่านเริ่มต้น:', 'changeme');
-  DATA.users.push({ email, pwd, name, role, branch: branchInput || 'BR01' });
-  saveData(); toast('เพิ่มผู้ใช้เรียบร้อย', 'ok'); navigate('settings');
+  DATA.users.push({ email, pwd, name, role, branch });
+  saveData(); closeModal(); toast('เพิ่มผู้ใช้เรียบร้อย', 'ok'); navigate('settings');
 }
 function changePassword(idx) {
   const newPwd = prompt('รหัสผ่านใหม่ของ ' + DATA.users[idx].email + ':');
