@@ -1010,20 +1010,34 @@ function bootApp() {
       bf.appendChild(opt);
     }
   });
-  CURRENT_BRANCH = canSeeAllBranches() ? '*' : SESSION.branch;
+  // Restore branch from sessionStorage if user still has access
+  let savedBranch = '';
+  try { savedBranch = sessionStorage.getItem('fs24_branch') || ''; } catch {}
+  const allowedBranches = Array.from(bf.options).map(o => o.value);
+  CURRENT_BRANCH = (savedBranch && allowedBranches.includes(savedBranch))
+    ? savedBranch
+    : (canSeeAllBranches() ? '*' : SESSION.branch);
   bf.value = CURRENT_BRANCH;
 
   runDailyMaintenance();
-  navigate('dashboard');
+
+  // Restore view from sessionStorage if user still has access
+  const allowedViews = Array.from(document.querySelectorAll('#nav button')).map(b => b.dataset.id);
+  let savedView = '';
+  try { savedView = sessionStorage.getItem('fs24_view') || ''; } catch {}
+  const initialView = (savedView && allowedViews.includes(savedView)) ? savedView : 'dashboard';
+  navigate(initialView);
 }
 
 function onBranchChange() {
   CURRENT_BRANCH = document.getElementById('branch-filter').value;
+  try { sessionStorage.setItem('fs24_branch', CURRENT_BRANCH); } catch {}
   navigate(CURRENT_VIEW);
 }
 
 function navigate(view) {
   CURRENT_VIEW = view;
+  try { sessionStorage.setItem('fs24_view', view); } catch {}
   document.querySelectorAll('#nav button').forEach(b => {
     b.classList.toggle('active', b.dataset.id === view);
   });
