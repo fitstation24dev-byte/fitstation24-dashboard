@@ -1700,8 +1700,10 @@ function renderTrainingsEntry(root) {
   const list = document.createElement('div');
   list.className = 'card';
   const trainings = filterByBranch(DATA.trainings).slice().sort((a,b) => new Date(b.ts) - new Date(a.ts)).slice(0, 15);
+  const ownerCanDelete = isOwner();
   let rows = '';
   trainings.forEach(t => {
+    const actions = ownerCanDelete ? `<td class="center"><button class="btn small danger" onclick="deleteTraining('${t.id}')">ลบ</button></td>` : '';
     rows += `<tr>
       <td>${fmtTime(t.ts)}</td>
       <td>${t.branch}</td>
@@ -1709,12 +1711,14 @@ function renderTrainingsEntry(root) {
       <td>${t.trainerName}</td>
       <td class="center">${t.hoursBefore} → <strong>${t.hoursAfter}</strong></td>
       <td class="center">${t.verified ? '<span class="badge ok">✓ Verified</span>' : '<span class="badge bad">✗ Invalid</span>'}</td>
+      ${actions}
     </tr>`;
   });
-  if (rows === '') rows = '<tr><td colspan="6" class="muted center" style="padding: 16px;">ยังไม่มีการเทรน</td></tr>';
+  const colspan = ownerCanDelete ? 7 : 6;
+  if (rows === '') rows = `<tr><td colspan="${colspan}" class="muted center" style="padding: 16px;">ยังไม่มีการเทรน</td></tr>`;
   list.innerHTML = `<h2>การเทรนล่าสุด</h2>
     <table>
-      <thead><tr><th>เวลา</th><th>สาขา</th><th>สมาชิก</th><th>เทรนเนอร์</th><th class="center">ชั่วโมง</th><th class="center">สถานะ</th></tr></thead>
+      <thead><tr><th>เวลา</th><th>สาขา</th><th>สมาชิก</th><th>เทรนเนอร์</th><th class="center">ชั่วโมง</th><th class="center">สถานะ</th>${ownerCanDelete ? '<th class="center">จัดการ</th>' : ''}</tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
   root.appendChild(list);
@@ -1993,10 +1997,12 @@ function renderSalesLog(root) {
 
   const card = document.createElement('div');
   card.className = 'card';
+  const ownerCanDelete = isOwner();
   let rows = '';
   list.slice(0, 100).forEach(s => {
     const slipLink = s.slip ? `<a href="#" onclick="event.preventDefault(); viewSaleSlipById('${s.id}');" style="color: var(--accent); cursor:pointer;">ดูสลิป</a>` : '<span class="muted">—</span>';
     const channelBadge = s.channel ? `<span class="badge gray">${s.channel}</span>` : '<span class="muted">—</span>';
+    const actions = ownerCanDelete ? `<button class="btn small danger" onclick="deleteSale('${s.id}')">ลบ</button>` : '';
     rows += `<tr>
       <td>${fmtTime(s.ts)}</td>
       <td>${s.branch}</td>
@@ -2008,9 +2014,11 @@ function renderSalesLog(root) {
       <td class="center">${slipLink}</td>
       <td class="center">${renderNotifyBadge(s.notify)}</td>
       <td class="muted small">${s.note || ''}</td>
+      ${ownerCanDelete ? `<td class="center">${actions}</td>` : ''}
     </tr>`;
   });
-  if (rows === '') rows = '<tr><td colspan="10" class="muted center" style="padding: 20px;">ไม่พบรายการ</td></tr>';
+  const colspan = ownerCanDelete ? 11 : 10;
+  if (rows === '') rows = `<tr><td colspan="${colspan}" class="muted center" style="padding: 20px;">ไม่พบรายการ</td></tr>`;
   card.innerHTML = `
     <h2>ประวัติการขาย <small>${list.length} รายการ${list.length > 100 ? ' (แสดง 100 รายการล่าสุด)' : ''}</small></h2>
     <table>
@@ -2018,6 +2026,7 @@ function renderSalesLog(root) {
         <th>เวลา</th><th>สาขา</th><th>ประเภท</th><th class="center">ช่องทาง</th><th>พนักงาน</th>
         <th>สมาชิก</th><th class="right">ยอด</th><th class="center">สลิป</th>
         <th class="center">LINE</th><th>หมายเหตุ</th>
+        ${ownerCanDelete ? '<th class="center">จัดการ</th>' : ''}
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
@@ -2030,6 +2039,7 @@ function renderAlerts(root) {
   const card = document.createElement('div');
   card.className = 'card';
   const list = DATA.alerts.filter(a => CURRENT_BRANCH === '*' || a.branch === CURRENT_BRANCH);
+  const ownerCanDelete = isOwner();
   let rows = '';
   list.forEach(a => {
     const tBadge = a.type === 'Member Expiring'
@@ -2038,6 +2048,7 @@ function renderAlerts(root) {
     const sBadge = a.status === 'Sent' ? '<span class="badge ok">Sent</span>'
                  : a.status === 'No LINE' ? '<span class="badge gray">No LINE</span>'
                  : '<span class="badge bad">Failed</span>';
+    const actions = ownerCanDelete ? `<td class="center"><button class="btn small danger" onclick="deleteAlert('${a.id}')">ลบ</button></td>` : '';
     rows += `<tr>
       <td>${fmtTime(a.ts)}</td>
       <td>${tBadge}</td>
@@ -2046,15 +2057,20 @@ function renderAlerts(root) {
       <td>${a.value}</td>
       <td>${a.message}</td>
       <td class="center">${sBadge}</td>
+      ${actions}
     </tr>`;
   });
-  if (rows === '') rows = '<tr><td colspan="7" class="muted center" style="padding: 20px;">ไม่มีการแจ้งเตือน</td></tr>';
+  const colspan = ownerCanDelete ? 8 : 7;
+  if (rows === '') rows = `<tr><td colspan="${colspan}" class="muted center" style="padding: 20px;">ไม่มีการแจ้งเตือน</td></tr>`;
+  const clearBtn = ownerCanDelete && list.length > 0
+    ? `<div style="margin-top: 12px;"><button class="btn small danger" onclick="clearAlerts()">ล้างทั้งหมดของสาขานี้</button></div>` : '';
   card.innerHTML = `
     <h2>การแจ้งเตือน <small>${list.length} รายการ</small></h2>
     <table>
-      <thead><tr><th>เวลา</th><th>ประเภท</th><th>สาขา</th><th>สมาชิก</th><th>ค่าที่เหลือ</th><th>ข้อความ</th><th class="center">สถานะ</th></tr></thead>
+      <thead><tr><th>เวลา</th><th>ประเภท</th><th>สาขา</th><th>สมาชิก</th><th>ค่าที่เหลือ</th><th>ข้อความ</th><th class="center">สถานะ</th>${ownerCanDelete ? '<th class="center">จัดการ</th>' : ''}</tr></thead>
       <tbody>${rows}</tbody>
     </table>
+    ${clearBtn}
   `;
   root.appendChild(card);
 }
@@ -2178,6 +2194,39 @@ function deleteEmployee(id) {
   DATA.employees = DATA.employees.filter(e => e.id !== id);
   db.del('employees', id);
   saveData(); closeModal(); toast('ลบเรียบร้อย', 'ok'); navigate('employees');
+}
+
+function deleteSale(id) {
+  if (!isOwner()) { toast('เฉพาะ Owner เท่านั้นที่ลบยอดขายได้', 'bad'); return; }
+  if (!confirm('ลบรายการขายนี้?\nการลบจะไม่คืนชั่วโมงเทรนที่หักไปแล้ว')) return;
+  DATA.sales = DATA.sales.filter(s => s.id !== id);
+  db.del('sales', id);
+  saveData(); toast('ลบเรียบร้อย', 'ok'); navigate('sales-log');
+}
+
+function deleteTraining(id) {
+  if (!isOwner()) { toast('เฉพาะ Owner เท่านั้นที่ลบการเทรนได้', 'bad'); return; }
+  if (!confirm('ลบรายการเทรนนี้?\nหมายเหตุ: ชั่วโมงสมาชิกจะไม่ถูกคืนอัตโนมัติ')) return;
+  DATA.trainings = DATA.trainings.filter(t => t.id !== id);
+  db.del('trainings', id);
+  saveData(); toast('ลบเรียบร้อย', 'ok'); navigate('trainings');
+}
+
+function deleteAlert(id) {
+  if (!isOwner()) { toast('เฉพาะ Owner เท่านั้นที่ลบการแจ้งเตือนได้', 'bad'); return; }
+  DATA.alerts = DATA.alerts.filter(a => a.id !== id);
+  db.del('alerts', id);
+  saveData(); navigate('alerts');
+}
+
+function clearAlerts() {
+  if (!isOwner()) { toast('เฉพาะ Owner เท่านั้นที่ลบการแจ้งเตือนได้', 'bad'); return; }
+  const inScope = DATA.alerts.filter(a => CURRENT_BRANCH === '*' || a.branch === CURRENT_BRANCH);
+  if (inScope.length === 0) return;
+  if (!confirm('ล้างการแจ้งเตือนทั้งหมด ' + inScope.length + ' รายการ?')) return;
+  inScope.forEach(a => db.del('alerts', a.id));
+  DATA.alerts = DATA.alerts.filter(a => !(CURRENT_BRANCH === '*' || a.branch === CURRENT_BRANCH));
+  saveData(); toast('ล้างเรียบร้อย', 'ok'); navigate('alerts');
 }
 
 function handleEmpPhoto(ev) {
