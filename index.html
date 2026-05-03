@@ -1304,19 +1304,19 @@ function renderDashboard(root) {
   // Recent sales card
   const rs = document.createElement('div');
   rs.className = 'card';
-  const recent = sales.slice().sort((a,b) => new Date(b.ts) - new Date(a.ts)).slice(0, 8);
+  const recent = sales.filter(s => s.type !== 'Train').slice().sort((a,b) => new Date(b.ts) - new Date(a.ts)).slice(0, 8);
   let rsRows = '';
   recent.forEach(s => {
-    const typeBadge = `<span style="font-weight: 600; color: ${typeColor(s.type)};">${s.type}</span>`;
-    const channel = s.channel ? `<span class="badge gray">${s.channel}</span>` : '<span class="muted">—</span>';
+    const typeBadge = `<span style="font-weight: 600; color: ${typeColor(s.type)};">${_h(s.type)}</span>`;
+    const channel = s.channel ? `<span class="badge gray">${_h(s.channel)}</span>` : '<span class="muted">—</span>';
     const notify = renderNotifyBadge(s.notify);
-    const slipLink = s.slip ? `<a href="#" onclick="event.preventDefault(); viewSaleSlipById('${s.id}');" style="color: var(--accent); cursor:pointer;">ดู</a>` : '<span class="muted">—</span>';
+    const slipLink = s.slip ? `<a href="#" onclick="event.preventDefault(); viewSaleSlipById('${_h(s.id)}');" style="color: var(--accent); cursor:pointer;">ดู</a>` : '<span class="muted">—</span>';
     rsRows += `<tr>
       <td>${fmtTimeShort(s.ts)}</td>
       <td>${typeBadge}</td>
       <td class="center">${channel}</td>
-      <td>${s.memberName || '<span class="muted">—</span>'}</td>
-      <td>${s.branch}</td>
+      <td>${s.memberName ? _h(s.memberName) : '<span class="muted">—</span>'}</td>
+      <td>${_h(s.branch)}</td>
       <td class="right"><strong>${thb(s.amount)}</strong></td>
       <td class="center">${slipLink}</td>
       <td class="center">${notify}</td>
