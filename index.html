@@ -1181,7 +1181,7 @@ function renderDashboard(root) {
   recent.forEach(s => {
     const typeBadge = `<span style="font-weight: 600; color: ${typeColor(s.type)};">${s.type}</span>`;
     const notify = renderNotifyBadge(s.notify);
-    const slipLink = s.slip ? `<a href="${s.slip}" target="_blank" rel="noopener" style="color: var(--accent);">ดู</a>` : '<span class="muted">—</span>';
+    const slipLink = s.slip ? `<a href="#" onclick="event.preventDefault(); viewSaleSlipById('${s.id}');" style="color: var(--accent); cursor:pointer;">ดู</a>` : '<span class="muted">—</span>';
     rsRows += `<tr>
       <td>${fmtTimeShort(s.ts)}</td>
       <td>${typeBadge}</td>
@@ -1438,7 +1438,29 @@ function viewSlip() {
   const slipEl = document.getElementById('se-slip');
   const slip = slipEl ? slipEl.value : '';
   if (!slip) { toast('ยังไม่มีสลิป', 'warn'); return; }
-  window.open(slip, '_blank');
+  viewSlipImage(slip);
+}
+
+function viewSlipImage(url) {
+  if (!url) return;
+  const safe = String(url).replace(/"/g, '&quot;');
+  showModal(`
+    <div style="display:flex; flex-direction:column; align-items:center; gap:14px; max-width: 80vw;">
+      <h3 style="margin:0;">สลิป</h3>
+      <img src="${safe}" alt="สลิป" style="max-width: 100%; max-height: 70vh; border-radius: 8px; object-fit: contain; background: #f3f4f6;">
+      <div style="display:flex; gap:10px;">
+        <a href="${safe}" download="slip-${Date.now()}.jpg" class="btn secondary small" style="text-decoration:none;">บันทึกรูป</a>
+        <button class="btn" onclick="closeModal()">ปิด</button>
+      </div>
+    </div>
+  `);
+}
+
+function viewSaleSlipById(id) {
+  const s = (DATA.sales || []).find(x => x.id === id);
+  if (!s) { toast('ไม่พบรายการ', 'bad'); return; }
+  if (!s.slip) { toast('รายการนี้ไม่มีสลิป', 'warn'); return; }
+  viewSlipImage(s.slip);
 }
 
 function onSubmitSale(e) {
@@ -1811,7 +1833,7 @@ function renderSalesLog(root) {
   card.className = 'card';
   let rows = '';
   list.slice(0, 100).forEach(s => {
-    const slipLink = s.slip ? `<a href="${s.slip}" target="_blank" rel="noopener" style="color: var(--accent);">ดูสลิป</a>` : '<span class="muted">—</span>';
+    const slipLink = s.slip ? `<a href="#" onclick="event.preventDefault(); viewSaleSlipById('${s.id}');" style="color: var(--accent); cursor:pointer;">ดูสลิป</a>` : '<span class="muted">—</span>';
     rows += `<tr>
       <td>${fmtTime(s.ts)}</td>
       <td>${s.branch}</td>
