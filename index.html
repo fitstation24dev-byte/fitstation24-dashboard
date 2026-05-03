@@ -1565,7 +1565,7 @@ function renderTrainingsEntry(root) {
     : `<option value="${SESSION.branch}">${SESSION.branch}</option>`;
   const memberOptions = DATA.members
     .filter(m => m.status === 'Active' && m.hours > 0)
-    .map(m => `<option value="${m.id}" data-branch="${m.branch}" data-hours="${m.hours}">${m.id} — ${m.name} ${m.surname} (เหลือ ${m.hours} ครั้ง)</option>`).join('');
+    .map(m => `<option value="${m.id} — ${m.name} ${m.surname}" data-id="${m.id}" data-branch="${m.branch}" data-hours="${m.hours}">เหลือ ${m.hours} ครั้ง · สาขา ${m.branch}</option>`).join('');
   const trainerOptions = DATA.employees
     .filter(e => e.position === 'เทรนเนอร์' && e.status === 'Active')
     .map(e => `<option value="${e.id}">${e.id} — ${e.name} ${e.surname}</option>`).join('');
@@ -1579,10 +1579,12 @@ function renderTrainingsEntry(root) {
           <select id="te-branch" required>${branches}</select>
         </div>
         <div class="field">
-          <label>สมาชิก *</label>
-          <select id="te-member" required onchange="onPickTrainMember()">
-            <option value="">เลือก...</option>${memberOptions}
-          </select>
+          <label>สมาชิก * <small class="muted">(พิมพ์ ID หรือชื่อเพื่อค้นหา)</small></label>
+          <input id="te-member-search" list="te-members-list" required autocomplete="off"
+                 placeholder="พิมพ์ ID หรือชื่อสมาชิก..."
+                 oninput="onPickTrainMemberFromInput()">
+          <datalist id="te-members-list">${memberOptions}</datalist>
+          <input id="te-member" type="hidden">
         </div>
         <div class="field">
           <label>เทรนเนอร์ *</label>
@@ -1628,11 +1630,18 @@ function renderTrainingsEntry(root) {
   root.appendChild(list);
 }
 
-function onPickTrainMember() {
-  const sel = document.getElementById('te-member');
-  const opt = sel.options[sel.selectedIndex];
-  if (opt && opt.dataset.branch) {
-    document.getElementById('te-branch').value = opt.dataset.branch;
+function onPickTrainMemberFromInput() {
+  const inp = document.getElementById('te-member-search');
+  const list = document.getElementById('te-members-list');
+  const hidden = document.getElementById('te-member');
+  const opt = Array.from(list.options).find(o => o.value === inp.value);
+  if (opt) {
+    hidden.value = opt.dataset.id || '';
+    if (opt.dataset.branch) document.getElementById('te-branch').value = opt.dataset.branch;
+    inp.setCustomValidity('');
+  } else {
+    hidden.value = '';
+    inp.setCustomValidity(inp.value ? 'กรุณาเลือกสมาชิกจากรายการที่ขึ้นมา' : '');
   }
 }
 
@@ -1644,6 +1653,7 @@ function onSubmitTrain(e) {
   const pwd = document.getElementById('te-pwd').value;
   const note = document.getElementById('te-note').value;
 
+  if (!memberId) { toast('กรุณาเลือกสมาชิกจากรายการ (พิมพ์แล้วเลือกตัวเลือกที่ขึ้น)', 'bad'); return; }
   const member = DATA.members.find(m => m.id === memberId);
   const trainer = DATA.employees.find(e => e.id === trainerId);
   const br = DATA.branches.find(b => b.code === branch);
