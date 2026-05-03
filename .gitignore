@@ -1,0 +1,14 @@
+# Office lock files
+.~lock.*
+
+# OS
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+
+# Claude local settings (keep settings.json shared, ignore local overrides)
+.claude/settings.local.json

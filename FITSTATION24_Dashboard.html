@@ -1546,12 +1546,9 @@ function renderAlerts(root) {
 
 // ============ EMPLOYEES ============
 function renderEmployees(root) {
-  const canEdit = isOwner();
   const tb = document.createElement('div');
   tb.className = 'toolbar';
-  tb.innerHTML = canEdit
-    ? `<div class="muted">สิทธิ์: Admin · เพิ่ม/แก้/ลบ ได้</div><button class="btn" onclick="openEmployeeModal()">+ เพิ่มพนักงาน</button>`
-    : `<div class="muted">โหมดดูอย่างเดียว · เฉพาะ Admin เท่านั้นที่เพิ่ม/ลบพนักงานได้</div><div></div>`;
+  tb.innerHTML = `<div></div><button class="btn" onclick="openEmployeeModal()">+ เพิ่มพนักงาน</button>`;
   root.appendChild(tb);
 
   const card = document.createElement('div');
@@ -1559,16 +1556,13 @@ function renderEmployees(root) {
   const list = filterByBranch(DATA.employees);
   let rows = '';
   list.forEach(e => {
-    const actionBtn = canEdit
-      ? `<button class="btn small secondary" onclick="openEmployeeModal('${e.id}')">แก้</button>`
-      : `<span class="muted">—</span>`;
     rows += `<tr>
       <td>${e.id}</td>
       <td><strong>${e.name} ${e.surname}</strong></td>
       <td>${e.position}</td>
       <td class="center">${e.branch}</td>
       <td class="center">${statusBadge(e.status)}</td>
-      <td class="row-actions">${actionBtn}</td>
+      <td class="row-actions"><button class="btn small secondary" onclick="openEmployeeModal('${e.id}')">แก้</button></td>
     </tr>`;
   });
   if (rows === '') rows = '<tr><td colspan="6" class="muted center" style="padding: 20px;">ไม่พบพนักงาน</td></tr>';
@@ -1580,7 +1574,6 @@ function renderEmployees(root) {
 }
 
 function openEmployeeModal(id) {
-  if (!isOwner()) { toast('เฉพาะ Admin เท่านั้นที่เพิ่ม/แก้/ลบพนักงานได้', 'bad'); return; }
   const e = id ? DATA.employees.find(x => x.id === id) : null;
   const isNew = !e;
   const branches = DATA.branches.map(b => `<option value="${b.code}" ${e && e.branch===b.code?'selected':''}>${b.code}</option>`).join('');
@@ -1614,7 +1607,6 @@ function openEmployeeModal(id) {
 
 function saveEmployee(ev, idOrNull) {
   ev.preventDefault();
-  if (!isOwner()) { toast('เฉพาะ Admin เท่านั้นที่เพิ่ม/แก้พนักงานได้', 'bad'); return; }
   const obj = {
     id: document.getElementById('ee-id').value,
     branch: document.getElementById('ee-branch').value,
@@ -1633,7 +1625,6 @@ function saveEmployee(ev, idOrNull) {
   saveData(); closeModal(); toast('บันทึกเรียบร้อย', 'ok'); navigate('employees');
 }
 function deleteEmployee(id) {
-  if (!isOwner()) { toast('เฉพาะ Admin เท่านั้นที่ลบพนักงานได้', 'bad'); return; }
   if (!confirm('ลบพนักงาน ' + id + ' ?')) return;
   DATA.employees = DATA.employees.filter(e => e.id !== id);
   saveData(); closeModal(); toast('ลบเรียบร้อย', 'ok'); navigate('employees');
