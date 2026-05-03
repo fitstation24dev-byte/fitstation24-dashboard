@@ -313,6 +313,21 @@
   .photo-upload .controls { display: flex; flex-direction: column; gap: 6px; flex: 1; }
   .photo-upload input[type=file] { font-size: 12px; }
 
+  /* Slip upload (in sales form) */
+  .slip-input { display: flex; gap: 12px; align-items: flex-start; }
+  .slip-preview {
+    width: 72px; height: 72px; border-radius: 8px;
+    background: var(--bg); border: 1px dashed var(--border);
+    flex-shrink: 0; cursor: pointer; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px; color: var(--muted);
+    transition: border-color 0.15s;
+  }
+  .slip-preview:hover { border-color: var(--accent); }
+  .slip-preview img { width: 100%; height: 100%; object-fit: cover; }
+  .slip-controls { display: flex; flex-direction: column; gap: 6px; flex: 1; min-width: 0; }
+  .slip-controls input[type=file] { font-size: 12px; }
+
   /* ====== Tables ====== */
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   thead th {
@@ -1300,8 +1315,15 @@ function renderSalesEntry(root) {
           <input id="se-mname" type="text" placeholder="ชื่อ-นามสกุล">
         </div>
         <div class="field full">
-          <label>สลิป (URL หรือลิงก์ Google Drive) <span id="se-slip-req" style="color: var(--bad);">*</span></label>
-          <input id="se-slip" type="text" placeholder="https://drive.google.com/file/...">
+          <label>สลิป (อัปโหลดรูป หรือใส่ URL) <span id="se-slip-req" style="color: var(--bad);">*</span></label>
+          <div class="slip-input">
+            <div class="slip-preview" id="se-slip-preview" onclick="viewSlip()" title="คลิกเพื่อดูรูปขนาดเต็ม">📎</div>
+            <div class="slip-controls">
+              <input type="file" id="se-slip-file" accept="image/*" onchange="handleSaleSlip(event)">
+              <input id="se-slip" type="text" placeholder="หรือวาง URL: https://drive.google.com/..." oninput="updateSlipPreview(); updateLinePreview();">
+              <button type="button" class="btn small secondary" onclick="clearSaleSlip()" style="align-self: flex-start;">ลบสลิป</button>
+            </div>
+          </div>
         </div>
         <div class="field full">
           <label>หมายเหตุ</label>
@@ -1373,7 +1395,63 @@ ${note ? 'หมายเหตุ: ' + note + '\n' : ''}เวลา: ${new Dat
 
 function resetSaleForm() {
   document.getElementById('sales-form').reset();
+  updateSlipPreview();
   updateLinePreview();
+}
+
+function handleSaleSlip(ev) {
+  const file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) { toast('กรุณาเลือกไฟล์รูปภาพ', 'bad'); return; }
+  if (file.size > 8 * 1024 * 1024) { toast('ไฟล์ใหญ่เกิน 8MB', 'bad'); return; }
+  const reader = new FileReader();
+  reader.onload = ev2 => {
+    const img = new Image();
+    img.onload = () => {
+      const max = 800;
+      const ratio = Math.min(max / img.width, max / img.height, 1);
+      const w = Math.round(img.width * ratio);
+      const h = Math.round(img.height * ratio);
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      const slipEl = document.getElementById('se-slip');
+      if (slipEl) { slipEl.value = dataUrl; updateSlipPreview(); updateLinePreview(); }
+    };
+    img.onerror = () => toast('ไม่สามารถอ่านไฟล์รูปได้', 'bad');
+    img.src = ev2.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearSaleSlip() {
+  const slipEl = document.getElementById('se-slip');
+  const fileEl = document.getElementById('se-slip-file');
+  if (slipEl) slipEl.value = '';
+  if (fileEl) fileEl.value = '';
+  updateSlipPreview();
+  updateLinePreview();
+}
+
+function updateSlipPreview() {
+  const slipEl = document.getElementById('se-slip');
+  const prev = document.getElementById('se-slip-preview');
+  if (!prev) return;
+  const slip = slipEl ? slipEl.value : '';
+  if (!slip) { prev.innerHTML = '📎'; return; }
+  if (slip.startsWith('data:image/') || /\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(slip)) {
+    prev.innerHTML = `<img src="${slip}" alt="">`;
+  } else {
+    prev.innerHTML = '🔗';
+  }
+}
+
+function viewSlip() {
+  const slipEl = document.getElementById('se-slip');
+  const slip = slipEl ? slipEl.value : '';
+  if (!slip) { toast('ยังไม่มีสลิป', 'warn'); return; }
+  window.open(slip, '_blank');
 }
 
 function onSubmitSale(e) {
