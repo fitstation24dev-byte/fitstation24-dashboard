@@ -1289,7 +1289,7 @@ function renderSalesEntry(root) {
   const employees = DATA.employees
     .filter(e => SESSION.branch === '*' || e.branch === SESSION.branch || true)
     .map(e => `<option value="${e.id}">${e.id} — ${e.name} ${e.surname}</option>`).join('');
-  const memberOptions = DATA.members.map(m => `<option value="${m.id}">${m.id} — ${m.name} ${m.surname}</option>`).join('');
+  const memberOptions = DATA.members.map(m => `<option value="${m.name} ${m.surname}" data-id="${m.id}">${m.id} · สาขา ${m.branch}</option>`).join('');
 
   card.innerHTML = `
     <h2>บันทึกยอดขายใหม่ <small>MEM/PT จะส่ง LINE Group เมื่อแนบสลิป</small></h2>
@@ -1323,13 +1323,15 @@ function renderSalesEntry(root) {
             <option value="">เลือก...</option>
             <option value="Walk-In">Walk-In</option>
             <option value="Online">Online</option>
-            <option value="Renew">Renew</option>
+            <option value="Renew" disabled>Renew (เฉพาะสมาชิกเก่า)</option>
             <option value="Boot">Boot</option>
           </select>
         </div>
         <div class="field">
-          <label>ชื่อสมาชิก</label>
-          <input id="se-mname" type="text" placeholder="ชื่อ-นามสกุล">
+          <label>ชื่อสมาชิก <small class="muted">(พิมพ์เพื่อค้นหาสมาชิกเก่า)</small></label>
+          <input id="se-mname" list="se-members-list" type="text" autocomplete="off" placeholder="ชื่อ-นามสกุล" oninput="onSaleMemberInput()">
+          <datalist id="se-members-list">${memberOptions}</datalist>
+          <input id="se-member-id" type="hidden">
         </div>
         <div class="field full">
           <label>สลิป (อัปโหลดรูป) <span id="se-slip-req" style="color: var(--bad);">*</span></label>
@@ -1386,6 +1388,33 @@ function updateSaleSlipReq() {
   updateLinePreview();
 }
 
+function onSaleMemberInput() {
+  const inp = document.getElementById('se-mname');
+  const list = document.getElementById('se-members-list');
+  const hidden = document.getElementById('se-member-id');
+  const opt = list ? Array.from(list.options).find(o => o.value === inp.value) : null;
+  hidden.value = opt ? (opt.dataset.id || '') : '';
+  updateRenewAvailability();
+}
+
+function updateRenewAvailability() {
+  const memberId = (document.getElementById('se-member-id') || {}).value || '';
+  const channelSel = document.getElementById('se-channel');
+  const renewOpt = channelSel ? channelSel.querySelector('option[value="Renew"]') : null;
+  if (!renewOpt) return;
+  if (memberId) {
+    renewOpt.disabled = false;
+    renewOpt.textContent = 'Renew';
+  } else {
+    renewOpt.disabled = true;
+    renewOpt.textContent = 'Renew (เฉพาะสมาชิกเก่า)';
+    if (channelSel.value === 'Renew') {
+      channelSel.value = '';
+      updateLinePreview();
+    }
+  }
+}
+
 function updateLinePreview() {
   const t = document.getElementById('se-type').value;
   if (!['MEM','PT'].includes(t)) {
@@ -1414,6 +1443,9 @@ ${note ? 'หมายเหตุ: ' + note + '\n' : ''}เวลา: ${new Dat
 
 function resetSaleForm() {
   document.getElementById('sales-form').reset();
+  const hidden = document.getElementById('se-member-id');
+  if (hidden) hidden.value = '';
+  updateRenewAvailability();
   updateSlipPreview();
   updateLinePreview();
 }
@@ -1538,8 +1570,13 @@ async function onSubmitSale(e) {
   const amount = Number(document.getElementById('se-amount').value);
   const channel = document.getElementById('se-channel').value;
   const memberName = document.getElementById('se-mname').value;
+  const memberId = (document.getElementById('se-member-id') || {}).value || '';
   const slip = document.getElementById('se-slip').value;
   const note = document.getElementById('se-note').value;
+
+  if (channel === 'Renew' && !memberId) {
+    toast('ช่องทาง Renew ใช้ได้กับสมาชิกเก่าเท่านั้น', 'bad'); return;
+  }
 
   if ((type === 'MEM' || type === 'PT') && !slip) {
     if (!confirm('ประเภท ' + type + ' ปกติต้องแนบสลิป\nบันทึกโดยไม่มีสลิปจริงหรือ?')) return;
@@ -1548,7 +1585,7 @@ async function onSubmitSale(e) {
   const needsLine = (type === 'MEM' || type === 'PT');
   const sale = {
     id: nid(), ts: new Date().toISOString(),
-    branch, empId, type, memberId: '', memberName, amount, channel, slip, note,
+    branch, empId, type, memberId, memberName, amount, channel, slip, note,
     notify: needsLine ? 'Pending' : '—',
   };
   DATA.sales.unshift(sale);
