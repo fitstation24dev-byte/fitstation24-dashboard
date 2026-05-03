@@ -1812,7 +1812,7 @@ function onSubmitTrain(e) {
   const branch = document.getElementById('te-branch').value;
   const memberId = document.getElementById('te-member').value;
   const trainerId = document.getElementById('te-trainer').value;
-  const pwd = document.getElementById('te-pwd').value;
+  const pwd = document.getElementById('te-pwd').value.trim();
   const note = document.getElementById('te-note').value;
 
   if (!memberId) { toast('กรุณาเลือกสมาชิกจากรายการ (พิมพ์แล้วเลือกตัวเลือกที่ขึ้น)', 'bad'); return; }
