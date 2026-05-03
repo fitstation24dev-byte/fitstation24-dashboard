@@ -1875,12 +1875,12 @@ function renderAlerts(root) {
 
 // ============ EMPLOYEES ============
 function renderEmployees(root) {
-  const canEdit = isOwner();
+  const canEdit = isManagerOrAbove();
   const tb = document.createElement('div');
   tb.className = 'toolbar';
   tb.innerHTML = canEdit
-    ? `<div class="muted">สิทธิ์: Admin · เพิ่ม/แก้/ลบ ได้</div><button class="btn" onclick="openEmployeeModal()">+ เพิ่มพนักงาน</button>`
-    : `<div class="muted">โหมดดูอย่างเดียว · เฉพาะ Admin เท่านั้นที่เพิ่ม/ลบพนักงานได้</div><div></div>`;
+    ? `<div class="muted">สิทธิ์: ${SESSION.role} · เพิ่ม/แก้/ลบ ได้</div><button class="btn" onclick="openEmployeeModal()">+ เพิ่มพนักงาน</button>`
+    : `<div class="muted">โหมดดูอย่างเดียว · เฉพาะ Admin/Manager เท่านั้นที่เพิ่ม/ลบพนักงานได้</div><div></div>`;
   root.appendChild(tb);
 
   const list = filterByBranch(DATA.employees);
@@ -1920,7 +1920,7 @@ function renderEmployees(root) {
 }
 
 function openEmployeeModal(id) {
-  if (!isOwner()) { toast('เฉพาะ Admin เท่านั้นที่เพิ่ม/แก้/ลบพนักงานได้', 'bad'); return; }
+  if (!isManagerOrAbove()) { toast('เฉพาะ Admin/Manager เท่านั้นที่เพิ่ม/แก้/ลบพนักงานได้', 'bad'); return; }
   const e = id ? DATA.employees.find(x => x.id === id) : null;
   const isNew = !e;
   const branches = DATA.branches.map(b => `<option value="${b.code}" ${e && e.branch===b.code?'selected':''}>${b.code}</option>`).join('');
@@ -1967,7 +1967,7 @@ function openEmployeeModal(id) {
 
 function saveEmployee(ev, idOrNull) {
   ev.preventDefault();
-  if (!isOwner()) { toast('เฉพาะ Admin เท่านั้นที่เพิ่ม/แก้พนักงานได้', 'bad'); return; }
+  if (!isManagerOrAbove()) { toast('เฉพาะ Admin/Manager เท่านั้นที่เพิ่ม/แก้พนักงานได้', 'bad'); return; }
   const obj = {
     id: document.getElementById('ee-id').value,
     branch: document.getElementById('ee-branch').value,
@@ -1987,7 +1987,7 @@ function saveEmployee(ev, idOrNull) {
   saveData(); closeModal(); toast('บันทึกเรียบร้อย', 'ok'); navigate('employees');
 }
 function deleteEmployee(id) {
-  if (!isOwner()) { toast('เฉพาะ Admin เท่านั้นที่ลบพนักงานได้', 'bad'); return; }
+  if (!isManagerOrAbove()) { toast('เฉพาะ Admin/Manager เท่านั้นที่ลบพนักงานได้', 'bad'); return; }
   if (!confirm('ลบพนักงาน ' + id + ' ?')) return;
   DATA.employees = DATA.employees.filter(e => e.id !== id);
   db.del('employees', id);
