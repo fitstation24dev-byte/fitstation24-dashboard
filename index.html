@@ -1730,7 +1730,7 @@ function renderTrainingsEntry(root) {
 
   card.innerHTML = `
     <h2>บันทึกการเทรน <small>หักชั่วโมง 1 ครั้งเมื่อรหัสเมเนเจอร์ถูกต้อง</small></h2>
-    <form id="train-form" onsubmit="onSubmitTrain(event)">
+    <form id="train-form" autocomplete="off" onsubmit="onSubmitTrain(event)">
       <div class="form-grid">
         <div class="field">
           <label>สาขา *</label>
@@ -1752,7 +1752,7 @@ function renderTrainingsEntry(root) {
         </div>
         <div class="field">
           <label>รหัสเมเนเจอร์สาขา *</label>
-          <input id="te-pwd" type="password" required placeholder="••••••••">
+          <input id="te-pwd" type="password" required placeholder="••••••••" autocomplete="new-password">
         </div>
         <div class="field full">
           <label>หมายเหตุ</label>
