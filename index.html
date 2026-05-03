@@ -2496,6 +2496,13 @@ function renderSettings(root) {
         <input value="${DATA.settings.currency}" onchange="DATA.settings.currency=this.value;saveData();">
       </div>
     </div>
+    <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);">
+      <div class="muted small" style="margin-bottom: 8px;">ทดสอบส่งแจ้งเตือนเข้า LINE Group ทันที (รีเซ็ตการจดที่ส่งไปแล้วก่อน):</div>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <button class="btn small secondary" onclick="testSendExpiryAlerts()">▶ ทดสอบ: สมาชิกใกล้หมดอายุ</button>
+        <button class="btn small secondary" onclick="testSendHoursLowAlerts()">▶ ทดสอบ: ชั่วโมงเทรนเหลือน้อย</button>
+      </div>
+    </div>
   `;
   root.appendChild(card2);
 
@@ -2566,6 +2573,34 @@ function renderSettings(root) {
 }
 
 function saveSettings() { saveData(); toast('บันทึกเรียบร้อย', 'ok'); navigate('settings'); }
+
+async function testSendExpiryAlerts() {
+  if (!isOwner()) return;
+  if (!confirm('รีเซ็ตการจดที่เคยส่ง แล้วส่งแจ้งเตือนสมาชิกใกล้หมดอายุเข้า LINE Group ทันที?')) return;
+  DATA.settings.expiryNotified = {}; saveData();
+  toast('กำลังส่ง...', 'ok');
+  try {
+    await sendDailyExpiryAlertsToGroup();
+    toast('ส่งสำเร็จ — เช็คใน LINE Group', 'ok');
+  } catch (err) {
+    console.error(err);
+    toast('ส่งไม่สำเร็จ: ' + (err.message || err), 'bad');
+  }
+}
+
+async function testSendHoursLowAlerts() {
+  if (!isOwner()) return;
+  if (!confirm('รีเซ็ตการจดที่เคยส่ง แล้วส่งแจ้งเตือนชั่วโมงเทรนเหลือน้อยเข้า LINE Group ทันที?')) return;
+  DATA.settings.hoursNotified = {}; saveData();
+  toast('กำลังส่ง...', 'ok');
+  try {
+    await sendDailyHoursLowAlertsToGroup();
+    toast('ส่งสำเร็จ — เช็คใน LINE Group', 'ok');
+  } catch (err) {
+    console.error(err);
+    toast('ส่งไม่สำเร็จ: ' + (err.message || err), 'bad');
+  }
+}
 
 function rebuildNav() {
   const nav = document.getElementById('nav');
