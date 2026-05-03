@@ -553,7 +553,7 @@ const TABLE_SPEC = {
   users:     { table: 'app_users',     pk: 'email', fields: [['email','email'],['pwd','pwd'],['name','name'],['role','role'],['branch','branch']] },
   employees: { table: 'app_employees', pk: 'id',    fields: [['id','id'],['name','name'],['surname','surname'],['position','position'],['branch','branch'],['status','status'],['photo','photo']] },
   members:   { table: 'app_members',   pk: 'id',    fields: [['id','id'],['name','name'],['surname','surname'],['age','age'],['branch','branch'],['startDate','start_date'],['endDate','end_date'],['hours','hours'],['trainer','trainer'],['lineUid','line_uid'],['status','status']] },
-  sales:     { table: 'app_sales',     pk: 'id',    fields: [['id','id'],['ts','ts'],['branch','branch'],['empId','emp_id'],['type','type'],['memberId','member_id'],['memberName','member_name'],['amount','amount'],['slip','slip'],['note','note'],['notify','notify']] },
+  sales:     { table: 'app_sales',     pk: 'id',    fields: [['id','id'],['ts','ts'],['branch','branch'],['empId','emp_id'],['type','type'],['memberId','member_id'],['memberName','member_name'],['amount','amount'],['channel','channel'],['slip','slip'],['note','note'],['notify','notify']] },
   trainings: { table: 'app_trainings', pk: 'id',    fields: [['id','id'],['ts','ts'],['branch','branch'],['memberId','member_id'],['memberName','member_name'],['trainerId','trainer_id'],['trainerName','trainer_name'],['verified','verified'],['hoursBefore','hours_before'],['hoursAfter','hours_after']] },
   alerts:    { table: 'app_alerts',    pk: 'id',    fields: [['id','id'],['ts','ts'],['kind','kind'],['message','message'],['branch','branch'],['read','read']] },
 };
@@ -1293,14 +1293,17 @@ function renderSalesEntry(root) {
           <input id="se-amount" type="number" min="0" step="1" required placeholder="0">
         </div>
         <div class="field">
-          <label>สมาชิก (ถ้ามี)</label>
-          <select id="se-member" onchange="onMemberPick()">
-            <option value="">walk-in / ไม่ระบุ</option>
-            ${memberOptions}
+          <label>ช่องทาง *</label>
+          <select id="se-channel" required>
+            <option value="">เลือก...</option>
+            <option value="Walk-In">Walk-In</option>
+            <option value="Online">Online</option>
+            <option value="Renew">Renew</option>
+            <option value="Boot">Boot</option>
           </select>
         </div>
         <div class="field">
-          <label>ชื่อสมาชิก (กรณี walk-in)</label>
+          <label>ชื่อสมาชิก</label>
           <input id="se-mname" type="text" placeholder="ชื่อ-นามสกุล">
         </div>
         <div class="field full">
@@ -1334,7 +1337,7 @@ function renderSalesEntry(root) {
   `;
   root.appendChild(prev);
 
-  ['se-branch','se-type','se-amount','se-member','se-mname','se-note'].forEach(id => {
+  ['se-branch','se-type','se-amount','se-channel','se-mname','se-note'].forEach(id => {
     document.getElementById(id).addEventListener('input', updateLinePreview);
     document.getElementById(id).addEventListener('change', updateLinePreview);
   });
@@ -1369,11 +1372,13 @@ function updateLinePreview() {
   const empId = document.getElementById('se-emp').value;
   const emp = DATA.employees.find(e => e.id === empId);
   const amount = document.getElementById('se-amount').value || '0';
+  const channel = document.getElementById('se-channel').value || '-';
   const memName = document.getElementById('se-mname').value || '-';
   const note = document.getElementById('se-note').value || '';
-  const slip = document.getElementById('se-slip').value || '(ยังไม่แนบสลิป)';
+  const slip = document.getElementById('se-slip').value ? '(แนบแล้ว)' : '(ยังไม่แนบสลิป)';
   const text = `🧾 ยอดใหม่ — ${br ? br.name : branch}
 ประเภท: ${t}
+ช่องทาง: ${channel}
 สมาชิก: ${memName}
 พนักงาน: ${emp ? emp.name + ' ' + emp.surname : empId}
 ยอด: ${DATA.settings.currency}${Number(amount).toLocaleString()}
@@ -1486,6 +1491,7 @@ async function sendSaleToLine(sale, slipUrl) {
   const emp = DATA.employees.find(e => e.id === sale.empId);
   const text = `🧾 ยอดใหม่ — ${branch ? branch.name : sale.branch}
 ประเภท: ${sale.type}
+ช่องทาง: ${sale.channel || '-'}
 สมาชิก: ${sale.memberName || '-'}
 พนักงาน: ${emp ? emp.name + ' ' + emp.surname : sale.empId}
 ยอด: ${DATA.settings.currency}${Number(sale.amount).toLocaleString()}${sale.note ? '\nหมายเหตุ: ' + sale.note : ''}
@@ -1505,7 +1511,7 @@ async function onSubmitSale(e) {
   const empId = document.getElementById('se-emp').value;
   const type = document.getElementById('se-type').value;
   const amount = Number(document.getElementById('se-amount').value);
-  const memberId = document.getElementById('se-member').value;
+  const channel = document.getElementById('se-channel').value;
   const memberName = document.getElementById('se-mname').value;
   const slip = document.getElementById('se-slip').value;
   const note = document.getElementById('se-note').value;
@@ -1517,7 +1523,7 @@ async function onSubmitSale(e) {
   const needsLine = (type === 'MEM' || type === 'PT');
   const sale = {
     id: nid(), ts: new Date().toISOString(),
-    branch, empId, type, memberId, memberName, amount, slip, note,
+    branch, empId, type, memberId: '', memberName, amount, channel, slip, note,
     notify: needsLine ? 'Pending' : '—',
   };
   DATA.sales.unshift(sale);
