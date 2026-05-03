@@ -251,6 +251,67 @@
     font-weight: 400;
   }
 
+  /* ====== Employee cards ====== */
+  .emp-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 14px;
+  }
+  .emp-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px 16px 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    transition: box-shadow 0.15s, transform 0.15s;
+  }
+  .emp-card:hover {
+    box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+    transform: translateY(-2px);
+  }
+  .emp-avatar {
+    width: 84px;
+    height: 84px;
+    border-radius: 50%;
+    background: var(--bg);
+    border: 2px solid var(--border);
+    object-fit: cover;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    color: var(--muted);
+    overflow: hidden;
+    font-weight: 600;
+  }
+  img.emp-avatar { display: block; }
+  .emp-card .ename { font-weight: 600; font-size: 14px; color: var(--text); }
+  .emp-card .epos { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .emp-card .eid {
+    font-size: 10px; color: var(--muted); margin-top: 6px;
+    letter-spacing: 0.5px; font-family: ui-monospace, monospace;
+  }
+  .emp-card .emeta { font-size: 11px; color: var(--muted); margin-top: 8px; }
+  .emp-card .eactions { margin-top: 14px; display: flex; gap: 6px; width: 100%; }
+  .emp-card .eactions button { flex: 1; }
+
+  /* Photo upload (in modal) */
+  .photo-upload { display: flex; align-items: center; gap: 14px; }
+  .photo-upload .preview {
+    width: 72px; height: 72px; border-radius: 50%;
+    background: var(--bg); border: 1px dashed var(--border);
+    overflow: hidden; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 26px; color: var(--muted);
+  }
+  .photo-upload .preview img { width: 100%; height: 100%; object-fit: cover; }
+  .photo-upload .controls { display: flex; flex-direction: column; gap: 6px; flex: 1; }
+  .photo-upload input[type=file] { font-size: 12px; }
+
   /* ====== Tables ====== */
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
   thead th {
@@ -1554,29 +1615,40 @@ function renderEmployees(root) {
     : `<div class="muted">โหมดดูอย่างเดียว · เฉพาะ Admin เท่านั้นที่เพิ่ม/ลบพนักงานได้</div><div></div>`;
   root.appendChild(tb);
 
-  const card = document.createElement('div');
-  card.className = 'card';
   const list = filterByBranch(DATA.employees);
-  let rows = '';
+  if (list.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'card';
+    empty.innerHTML = '<div class="muted center" style="padding: 30px;">ไม่พบพนักงาน</div>';
+    root.appendChild(empty);
+    return;
+  }
+
+  const grid = document.createElement('div');
+  grid.className = 'emp-grid';
   list.forEach(e => {
-    const actionBtn = canEdit
-      ? `<button class="btn small secondary" onclick="openEmployeeModal('${e.id}')">แก้</button>`
-      : `<span class="muted">—</span>`;
-    rows += `<tr>
-      <td>${e.id}</td>
-      <td><strong>${e.name} ${e.surname}</strong></td>
-      <td>${e.position}</td>
-      <td class="center">${e.branch}</td>
-      <td class="center">${statusBadge(e.status)}</td>
-      <td class="row-actions">${actionBtn}</td>
-    </tr>`;
+    const card = document.createElement('div');
+    card.className = 'emp-card';
+    const initial = (e.name || '?').charAt(0);
+    const avatar = e.photo
+      ? `<img class="emp-avatar" src="${e.photo}" alt="">`
+      : `<div class="emp-avatar">${initial}</div>`;
+    const actions = canEdit ? `
+      <div class="eactions">
+        <button class="btn small secondary" onclick="openEmployeeModal('${e.id}')">แก้</button>
+        <button class="btn small danger" onclick="deleteEmployee('${e.id}')">ลบ</button>
+      </div>` : '';
+    card.innerHTML = `
+      ${avatar}
+      <div class="ename">${e.name} ${e.surname}</div>
+      <div class="epos">${e.position}</div>
+      <div class="eid">${e.id}</div>
+      <div class="emeta">${e.branch} · ${statusBadge(e.status)}</div>
+      ${actions}
+    `;
+    grid.appendChild(card);
   });
-  if (rows === '') rows = '<tr><td colspan="6" class="muted center" style="padding: 20px;">ไม่พบพนักงาน</td></tr>';
-  card.innerHTML = `<table>
-    <thead><tr><th>ID</th><th>ชื่อ-นามสกุล</th><th>ตำแหน่ง</th><th class="center">สาขา</th><th class="center">สถานะ</th><th></th></tr></thead>
-    <tbody>${rows}</tbody>
-  </table>`;
-  root.appendChild(card);
+  root.appendChild(grid);
 }
 
 function openEmployeeModal(id) {
@@ -1587,10 +1659,23 @@ function openEmployeeModal(id) {
   const positions = ['ผู้จัดการสาขา','เคาน์เตอร์','เทรนเนอร์','พนักงานทั่วไป']
     .map(p => `<option value="${p}" ${e && e.position===p?'selected':''}>${p}</option>`).join('');
   const newId = isNew ? 'E' + String(100 + DATA.employees.length + 1) : e.id;
+  const photoSrc = e && e.photo ? e.photo : '';
+  const initial = e && e.name ? e.name.charAt(0) : '👤';
   showModal(`
     <h3>${isNew ? 'เพิ่มพนักงานใหม่' : 'แก้ไขพนักงาน ' + e.id}</h3>
     <form onsubmit="saveEmployee(event, ${isNew ? 'null' : "'" + e.id + "'"})">
       <div class="form-grid">
+        <div class="field full">
+          <label>รูปพนักงาน</label>
+          <div class="photo-upload">
+            <div class="preview" id="ee-photo-preview">${photoSrc ? `<img src="${photoSrc}">` : initial}</div>
+            <div class="controls">
+              <input type="file" id="ee-photo-file" accept="image/*" onchange="handleEmpPhoto(event)">
+              <button type="button" class="btn small secondary" onclick="clearEmpPhoto()">ลบรูป</button>
+            </div>
+          </div>
+          <input type="hidden" id="ee-photo" value="${photoSrc}">
+        </div>
         <div class="field"><label>EmpID</label><input id="ee-id" value="${newId}" ${isNew?'':'readonly'}></div>
         <div class="field"><label>สาขา *</label><select id="ee-branch" required>${branches}</select></div>
         <div class="field"><label>ชื่อ *</label><input id="ee-name" required value="${e ? e.name : ''}"></div>
@@ -1622,6 +1707,7 @@ function saveEmployee(ev, idOrNull) {
     surname: document.getElementById('ee-surname').value,
     position: document.getElementById('ee-position').value,
     status: document.getElementById('ee-status').value,
+    photo: document.getElementById('ee-photo').value || '',
   };
   if (!idOrNull) {
     if (DATA.employees.some(x => x.id === obj.id)) { toast('EmpID ซ้ำ', 'bad'); return; }
@@ -1637,6 +1723,43 @@ function deleteEmployee(id) {
   if (!confirm('ลบพนักงาน ' + id + ' ?')) return;
   DATA.employees = DATA.employees.filter(e => e.id !== id);
   saveData(); closeModal(); toast('ลบเรียบร้อย', 'ok'); navigate('employees');
+}
+
+function handleEmpPhoto(ev) {
+  const file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  if (!file.type.startsWith('image/')) { toast('กรุณาเลือกไฟล์รูปภาพ', 'bad'); return; }
+  if (file.size > 5 * 1024 * 1024) { toast('ไฟล์ใหญ่เกิน 5MB', 'bad'); return; }
+  const reader = new FileReader();
+  reader.onload = ev2 => {
+    const img = new Image();
+    img.onload = () => {
+      const max = 256;
+      const ratio = Math.min(max / img.width, max / img.height, 1);
+      const w = Math.round(img.width * ratio);
+      const h = Math.round(img.height * ratio);
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+      const photoEl = document.getElementById('ee-photo');
+      const previewEl = document.getElementById('ee-photo-preview');
+      if (photoEl) photoEl.value = dataUrl;
+      if (previewEl) previewEl.innerHTML = `<img src="${dataUrl}">`;
+    };
+    img.onerror = () => toast('ไม่สามารถอ่านไฟล์รูปได้', 'bad');
+    img.src = ev2.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearEmpPhoto() {
+  const photoEl = document.getElementById('ee-photo');
+  const previewEl = document.getElementById('ee-photo-preview');
+  const fileEl = document.getElementById('ee-photo-file');
+  if (photoEl) photoEl.value = '';
+  if (previewEl) previewEl.innerHTML = '👤';
+  if (fileEl) fileEl.value = '';
 }
 
 // ============ REPORTS ============
