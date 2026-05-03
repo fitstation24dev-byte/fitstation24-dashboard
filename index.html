@@ -306,6 +306,14 @@
     letter-spacing: 0.5px; font-family: ui-monospace, monospace;
   }
   .emp-card .emeta { font-size: 11px; color: var(--muted); margin-top: 8px; }
+  .emp-card .estats {
+    margin-top: 12px; padding-top: 12px;
+    border-top: 1px dashed var(--border);
+    display: flex; gap: 12px; width: 100%; justify-content: center;
+  }
+  .emp-card .estat { flex: 1; }
+  .emp-card .estat-label { font-size: 10px; color: var(--muted); }
+  .emp-card .estat-value { font-size: 13px; font-weight: 600; color: var(--text); margin-top: 2px; }
   .emp-card .eactions { margin-top: 14px; display: flex; gap: 6px; width: 100%; }
   .emp-card .eactions button { flex: 1; }
 
@@ -2289,6 +2297,25 @@ function renderEmployees(root) {
     const avatar = e.photo
       ? `<img class="emp-avatar" src="${e.photo}" alt="">`
       : `<div class="emp-avatar">${initial}</div>`;
+    const salesAmount = DATA.sales
+      .filter(s => s.empId === e.id && (s.type === 'MEM' || s.type === 'PT'))
+      .reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+    const isTrainer = normalizePosition(e.position) === 'Trainer';
+    const trainCount = isTrainer
+      ? DATA.trainings.filter(t => t.trainerId === e.id && t.verified).length
+      : 0;
+    const stats = `
+      <div class="estats">
+        <div class="estat">
+          <div class="estat-label">ยอดขาย</div>
+          <div class="estat-value">${thb(salesAmount)}</div>
+        </div>
+        ${isTrainer ? `
+        <div class="estat">
+          <div class="estat-label">เทรนสะสม</div>
+          <div class="estat-value">${trainCount} ครั้ง</div>
+        </div>` : ''}
+      </div>`;
     const actions = canEdit ? `
       <div class="eactions">
         <button class="btn small secondary" onclick="openEmployeeModal('${e.id}')">แก้</button>
@@ -2301,6 +2328,7 @@ function renderEmployees(root) {
         <div class="epos">${e.position}</div>
         <div class="eid">${e.id}</div>
         <div class="emeta">${e.branch} · ${statusBadge(e.status)}</div>
+        ${stats}
         ${actions}
       </div>`;
   };
