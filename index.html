@@ -913,6 +913,18 @@ function canSeeAllBranches() { return SESSION && SESSION.branch === '*'; }
 function isOwner() { return SESSION && SESSION.role === 'Owner'; }
 function isManagerOrAbove() { return SESSION && (SESSION.role === 'Owner' || SESSION.role === 'Manager'); }
 
+// Escape user-controlled strings for safe insertion into HTML (XSS defense)
+function escapeHtml(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+const _h = escapeHtml;
+
 function normalizePosition(pos) {
   if (pos === 'Trainer' || pos === 'เทรนเนอร์') return 'Trainer';
   return 'Sale';
@@ -1225,7 +1237,7 @@ function renderDashboard(root) {
     totals.mem += mem; totals.pt += pt; totals.plan += pl; totals.all += tot; totals.train += tr; totals.overdue += overdue;
     rows += `
       <tr>
-        <td><strong>${code}</strong> · <span class="muted">${br ? br.name.replace(code + ' - ', '') : ''}</span></td>
+        <td><strong>${_h(code)}</strong> · <span class="muted">${br ? _h(br.name.replace(code + ' - ', '')) : ''}</span></td>
         <td class="right">${thb(mem)}</td>
         <td class="right">${thb(pt)}</td>
         <td class="right">${thb(pl)}</td>
@@ -1277,10 +1289,10 @@ function renderDashboard(root) {
     recentAlerts.forEach(a => {
       const cls = a.type === 'Member Expiring' ? 'warn' : 'info';
       alertHtml += `<div style="display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border);">
-        <span class="badge ${cls}" style="white-space: nowrap;">${a.value}</span>
+        <span class="badge ${cls}" style="white-space: nowrap;">${_h(a.value)}</span>
         <div style="min-width: 0; flex: 1;">
-          <div style="font-weight: 500;">${a.memberName}</div>
-          <div class="muted small">${a.branch} · ${a.message}</div>
+          <div style="font-weight: 500;">${_h(a.memberName)}</div>
+          <div class="muted small">${_h(a.branch)} · ${_h(a.message)}</div>
         </div>
       </div>`;
     });
@@ -1375,12 +1387,12 @@ function renderSalesEntry(root) {
   const card = document.createElement('div');
   card.className = 'card';
   const branches = canSeeAllBranches()
-    ? DATA.branches.map(b => `<option value="${b.code}">${b.code} · ${b.name}</option>`).join('')
-    : `<option value="${SESSION.branch}">${SESSION.branch}</option>`;
+    ? DATA.branches.map(b => `<option value="${_h(b.code)}">${_h(b.code)} · ${_h(b.name)}</option>`).join('')
+    : `<option value="${_h(SESSION.branch)}">${_h(SESSION.branch)}</option>`;
   const employees = DATA.employees
     .filter(e => SESSION.branch === '*' || e.branch === SESSION.branch || true)
-    .map(e => `<option value="${e.id}">${e.id} — ${e.name} ${e.surname}</option>`).join('');
-  const memberOptions = DATA.members.map(m => `<option value="${m.name} ${m.surname}" data-id="${m.id}">${m.id} · สาขา ${m.branch}</option>`).join('');
+    .map(e => `<option value="${_h(e.id)}">${_h(e.id)} — ${_h(e.name)} ${_h(e.surname)}</option>`).join('');
+  const memberOptions = DATA.members.map(m => `<option value="${_h(m.name)} ${_h(m.surname)}" data-id="${_h(m.id)}">${_h(m.id)} · สาขา ${_h(m.branch)}</option>`).join('');
 
   card.innerHTML = `
     <h2>บันทึกยอดขายใหม่ <small>MEM/PT จะส่ง LINE Group เมื่อแนบสลิป</small></h2>
@@ -1791,14 +1803,14 @@ function renderTrainingsEntry(root) {
   const card = document.createElement('div');
   card.className = 'card';
   const branches = canSeeAllBranches()
-    ? DATA.branches.map(b => `<option value="${b.code}">${b.code} · ${b.name}</option>`).join('')
-    : `<option value="${SESSION.branch}">${SESSION.branch}</option>`;
+    ? DATA.branches.map(b => `<option value="${_h(b.code)}">${_h(b.code)} · ${_h(b.name)}</option>`).join('')
+    : `<option value="${_h(SESSION.branch)}">${_h(SESSION.branch)}</option>`;
   const memberOptions = DATA.members
     .filter(m => m.status === 'Active' && m.hours > 0)
-    .map(m => `<option value="${m.id} — ${m.name} ${m.surname}" data-id="${m.id}" data-branch="${m.branch}" data-hours="${m.hours}">เหลือ ${m.hours} ครั้ง · สาขา ${m.branch}</option>`).join('');
+    .map(m => `<option value="${_h(m.id)} — ${_h(m.name)} ${_h(m.surname)}" data-id="${_h(m.id)}" data-branch="${_h(m.branch)}" data-hours="${m.hours}">เหลือ ${m.hours} ครั้ง · สาขา ${_h(m.branch)}</option>`).join('');
   const trainerOptions = DATA.employees
     .filter(e => normalizePosition(e.position) === 'Trainer' && e.status === 'Active')
-    .map(e => `<option value="${e.id}">${e.id} — ${e.name} ${e.surname}</option>`).join('');
+    .map(e => `<option value="${_h(e.id)}">${_h(e.id)} — ${_h(e.name)} ${_h(e.surname)}</option>`).join('');
 
   card.innerHTML = `
     <h2>บันทึกการเทรน <small>หักชั่วโมง 1 ครั้งเมื่อรหัสเมเนเจอร์ถูกต้อง</small></h2>
@@ -1865,9 +1877,9 @@ function renderRecentTrainingsContent(card) {
     const actions = ownerCanDelete ? `<td class="center"><button class="btn small danger" onclick="deleteTraining('${t.id}')">ลบ</button></td>` : '';
     rows += `<tr>
       <td>${fmtTime(t.ts)}</td>
-      <td>${t.branch}</td>
-      <td>${t.memberName}</td>
-      <td>${t.trainerName}</td>
+      <td>${_h(t.branch)}</td>
+      <td>${_h(t.memberName)}</td>
+      <td>${_h(t.trainerName)}</td>
       <td class="center">${t.hoursBefore} → <strong>${t.hoursAfter}</strong></td>
       <td class="center">${t.verified ? '<span class="badge ok">✓ Verified</span>' : '<span class="badge bad">✗ Invalid</span>'}</td>
       ${actions}
@@ -2028,17 +2040,17 @@ function renderMembers(root) {
     const dayCls = days < 0 ? 'days-low' : (days <= DATA.settings.expiryWarnDays ? 'days-warn' : '');
     const hrCls = m.hours > 0 && m.hours <= DATA.settings.trainerWarnHrs ? 'hrs-low' : '';
     rows += `<tr>
-      <td>${m.id}</td>
-      <td><strong>${m.name} ${m.surname}</strong></td>
+      <td>${_h(m.id)}</td>
+      <td><strong>${_h(m.name)} ${_h(m.surname)}</strong></td>
       <td class="center">${m.age}</td>
-      <td class="center">${m.branch}</td>
+      <td class="center">${_h(m.branch)}</td>
       <td class="center">${fmtDate(m.endDate)}</td>
       <td class="center ${dayCls}">${days < 0 ? 'หมดแล้ว ' + (-days) + ' วัน' : days + ' วัน'}</td>
       <td class="center ${hrCls}">${m.hours}</td>
-      <td>${m.trainer || '<span class="muted">—</span>'}</td>
+      <td>${m.trainer ? _h(m.trainer) : '<span class="muted">—</span>'}</td>
       <td class="center">${statusBadge(m.status)}</td>
       ${editable ? `<td class="row-actions">
-        <button class="btn small secondary" onclick="openMemberModal('${m.id}')">แก้</button>
+        <button class="btn small secondary" onclick="openMemberModal('${_h(m.id)}')">แก้</button>
       </td>` : ''}
     </tr>`;
   });
@@ -2069,7 +2081,7 @@ function statusBadge(s) {
 function openMemberModal(id) {
   const m = id ? DATA.members.find(x => x.id === id) : null;
   const isNew = !m;
-  const branches = DATA.branches.map(b => `<option value="${b.code}" ${m && m.branch===b.code?'selected':''}>${b.code}</option>`).join('');
+  const branches = DATA.branches.map(b => `<option value="${_h(b.code)}" ${m && m.branch===b.code?'selected':''}>${_h(b.code)}</option>`).join('');
   const statuses = ['Active','Frozen','Expired','Cancelled']
     .map(s => `<option value="${s}" ${m && m.status===s?'selected':''}>${s}</option>`).join('');
 
@@ -2077,23 +2089,23 @@ function openMemberModal(id) {
   const today = new Date().toISOString().slice(0,10);
   const oneYearLater = new Date(); oneYearLater.setFullYear(oneYearLater.getFullYear()+1);
   showModal(`
-    <h3>${isNew ? 'เพิ่มสมาชิกใหม่' : 'แก้ไขสมาชิก ' + m.id}</h3>
-    <form id="member-form" onsubmit="saveMember(event, ${isNew ? 'null' : "'" + m.id + "'"})">
+    <h3>${isNew ? 'เพิ่มสมาชิกใหม่' : 'แก้ไขสมาชิก ' + _h(m.id)}</h3>
+    <form id="member-form" onsubmit="saveMember(event, ${isNew ? 'null' : "'" + _h(m.id) + "'"})">
       <div class="form-grid">
-        <div class="field"><label>Member ID</label><input id="mm-id" value="${newId}" ${isNew ? '' : 'readonly'}></div>
+        <div class="field"><label>Member ID</label><input id="mm-id" value="${_h(newId)}" ${isNew ? '' : 'readonly'}></div>
         <div class="field"><label>สาขา *</label><select id="mm-branch" required>${branches}</select></div>
-        <div class="field"><label>ชื่อ *</label><input id="mm-name" required value="${m ? m.name : ''}"></div>
-        <div class="field"><label>นามสกุล *</label><input id="mm-surname" required value="${m ? m.surname : ''}"></div>
+        <div class="field"><label>ชื่อ *</label><input id="mm-name" required value="${m ? _h(m.name) : ''}"></div>
+        <div class="field"><label>นามสกุล *</label><input id="mm-surname" required value="${m ? _h(m.surname) : ''}"></div>
         <div class="field"><label>อายุ</label><input id="mm-age" type="number" min="0" value="${m ? m.age : ''}"></div>
         <div class="field"><label>วันสมัคร</label><input id="mm-start" type="date" value="${m ? m.startDate.slice(0,10) : today}"></div>
         <div class="field"><label>วันหมดอายุ</label><input id="mm-end" type="date" value="${m ? m.endDate.slice(0,10) : oneYearLater.toISOString().slice(0,10)}"></div>
         <div class="field"><label>ชม.เทรนคงเหลือ</label><input id="mm-hours" type="number" min="0" value="${m ? m.hours : 0}"></div>
-        <div class="field"><label>เทรนเนอร์ประจำ</label><input id="mm-trainer" value="${m ? m.trainer : ''}"></div>
-        <div class="field"><label>LINE User ID</label><input id="mm-line" value="${m ? m.lineUid : ''}" placeholder="Uxxxxxxxxxxxxxx"></div>
+        <div class="field"><label>เทรนเนอร์ประจำ</label><input id="mm-trainer" value="${m ? _h(m.trainer) : ''}"></div>
+        <div class="field"><label>LINE User ID</label><input id="mm-line" value="${m ? _h(m.lineUid) : ''}" placeholder="Uxxxxxxxxxxxxxx"></div>
         <div class="field"><label>สถานะ</label><select id="mm-status">${statuses}</select></div>
       </div>
       <div class="actions">
-        ${!isNew && isManagerOrAbove() ? `<button type="button" class="btn danger" onclick="deleteMember('${m.id}')">ลบ</button>` : ''}
+        ${!isNew && isManagerOrAbove() ? `<button type="button" class="btn danger" onclick="deleteMember('${_h(m.id)}')">ลบ</button>` : ''}
         <button type="button" class="btn secondary" onclick="closeModal()">ยกเลิก</button>
         <button type="submit" class="btn">บันทึก</button>
       </div>
@@ -2200,15 +2212,15 @@ function renderSalesLog(root) {
     const actions = ownerCanDelete ? `<button class="btn small danger" onclick="deleteSale('${s.id}')">ลบ</button>` : '';
     rows += `<tr>
       <td>${fmtTime(s.ts)}</td>
-      <td>${s.branch}</td>
-      <td><span style="font-weight: 600; color: ${typeColor(s.type)};">${s.type}</span></td>
+      <td>${_h(s.branch)}</td>
+      <td><span style="font-weight: 600; color: ${typeColor(s.type)};">${_h(s.type)}</span></td>
       <td class="center">${channelBadge}</td>
-      <td>${s.empId}</td>
-      <td>${s.memberName || '<span class="muted">—</span>'}</td>
+      <td>${_h(s.empId)}</td>
+      <td>${s.memberName ? _h(s.memberName) : '<span class="muted">—</span>'}</td>
       <td class="right"><strong>${thb(s.amount)}</strong></td>
       <td class="center">${slipLink}</td>
       <td class="center">${renderNotifyBadge(s.notify)}</td>
-      <td class="muted small">${s.note || ''}</td>
+      <td class="muted small">${_h(s.note || '')}</td>
       ${ownerCanDelete ? `<td class="center">${actions}</td>` : ''}
     </tr>`;
   });
@@ -2247,10 +2259,10 @@ function renderAlerts(root) {
     rows += `<tr>
       <td>${fmtTime(a.ts)}</td>
       <td>${tBadge}</td>
-      <td>${a.branch}</td>
-      <td><strong>${a.memberName}</strong></td>
-      <td>${a.value}</td>
-      <td>${a.message}</td>
+      <td>${_h(a.branch)}</td>
+      <td><strong>${_h(a.memberName)}</strong></td>
+      <td>${_h(a.value)}</td>
+      <td>${_h(a.message)}</td>
       <td class="center">${sBadge}</td>
       ${actions}
     </tr>`;
@@ -2324,10 +2336,10 @@ function renderEmployees(root) {
     return `
       <div class="emp-card">
         ${avatar}
-        <div class="ename">${e.name} ${e.surname}</div>
-        <div class="epos">${e.position}</div>
-        <div class="eid">${e.id}</div>
-        <div class="emeta">${e.branch} · ${statusBadge(e.status)}</div>
+        <div class="ename">${_h(e.name)} ${_h(e.surname)}</div>
+        <div class="epos">${_h(e.position)}</div>
+        <div class="eid">${_h(e.id)}</div>
+        <div class="emeta">${_h(e.branch)} · ${statusBadge(e.status)}</div>
         ${stats}
         ${actions}
       </div>`;
@@ -2353,31 +2365,31 @@ function openEmployeeModal(id) {
   if (!isManagerOrAbove()) { toast('เฉพาะ Admin/Manager เท่านั้นที่เพิ่ม/แก้/ลบพนักงานได้', 'bad'); return; }
   const e = id ? DATA.employees.find(x => x.id === id) : null;
   const isNew = !e;
-  const branches = DATA.branches.map(b => `<option value="${b.code}" ${e && e.branch===b.code?'selected':''}>${b.code}</option>`).join('');
+  const branches = DATA.branches.map(b => `<option value="${_h(b.code)}" ${e && e.branch===b.code?'selected':''}>${_h(b.code)}</option>`).join('');
   const positions = ['Sale','Trainer']
     .map(p => `<option value="${p}" ${e && normalizePosition(e.position)===p?'selected':''}>${p}</option>`).join('');
   const newId = isNew ? 'E' + String(100 + DATA.employees.length + 1) : e.id;
   const photoSrc = e && e.photo ? e.photo : '';
-  const initial = e && e.name ? e.name.charAt(0) : '👤';
+  const initial = e && e.name ? _h(e.name.charAt(0)) : '👤';
   showModal(`
-    <h3>${isNew ? 'เพิ่มพนักงานใหม่' : 'แก้ไขพนักงาน ' + e.id}</h3>
-    <form onsubmit="saveEmployee(event, ${isNew ? 'null' : "'" + e.id + "'"})">
+    <h3>${isNew ? 'เพิ่มพนักงานใหม่' : 'แก้ไขพนักงาน ' + _h(e.id)}</h3>
+    <form onsubmit="saveEmployee(event, ${isNew ? 'null' : "'" + _h(e.id) + "'"})">
       <div class="form-grid">
         <div class="field full">
           <label>รูปพนักงาน</label>
           <div class="photo-upload">
-            <div class="preview" id="ee-photo-preview">${photoSrc ? `<img src="${photoSrc}">` : initial}</div>
+            <div class="preview" id="ee-photo-preview">${photoSrc ? `<img src="${_h(photoSrc)}">` : initial}</div>
             <div class="controls">
               <input type="file" id="ee-photo-file" accept="image/*" onchange="handleEmpPhoto(event)">
               <button type="button" class="btn small secondary" onclick="clearEmpPhoto()">ลบรูป</button>
             </div>
           </div>
-          <input type="hidden" id="ee-photo" value="${photoSrc}">
+          <input type="hidden" id="ee-photo" value="${_h(photoSrc)}">
         </div>
-        <div class="field"><label>EmpID</label><input id="ee-id" value="${newId}" ${isNew?'':'readonly'}></div>
+        <div class="field"><label>EmpID</label><input id="ee-id" value="${_h(newId)}" ${isNew?'':'readonly'}></div>
         <div class="field"><label>สาขา *</label><select id="ee-branch" required>${branches}</select></div>
-        <div class="field"><label>ชื่อ *</label><input id="ee-name" required value="${e ? e.name : ''}"></div>
-        <div class="field"><label>นามสกุล *</label><input id="ee-surname" required value="${e ? e.surname : ''}"></div>
+        <div class="field"><label>ชื่อ *</label><input id="ee-name" required value="${e ? _h(e.name) : ''}"></div>
+        <div class="field"><label>นามสกุล *</label><input id="ee-surname" required value="${e ? _h(e.surname) : ''}"></div>
         <div class="field"><label>ตำแหน่ง *</label><select id="ee-position">${positions}</select></div>
         <div class="field"><label>สถานะ</label>
           <select id="ee-status">
@@ -2564,11 +2576,11 @@ function renderSettings(root) {
   let brRows = '';
   DATA.branches.forEach((b, i) => {
     brRows += `<tr>
-      <td><input value="${b.code}" onchange="DATA.branches[${i}].code=this.value" style="width: 60px;"></td>
-      <td><input value="${b.name}" onchange="DATA.branches[${i}].name=this.value" style="width: 100%;"></td>
-      <td><input type="password" value="${b.managerPwd}" onchange="DATA.branches[${i}].managerPwd=this.value" style="width: 130px;" placeholder="••••"></td>
-      <td><input value="${b.lineToken}" onchange="DATA.branches[${i}].lineToken=this.value" style="width: 100%;" placeholder="Channel Access Token"></td>
-      <td><input value="${b.lineGroupId}" onchange="DATA.branches[${i}].lineGroupId=this.value" style="width: 100%;" placeholder="LINE Group ID"></td>
+      <td><input value="${_h(b.code)}" onchange="DATA.branches[${i}].code=this.value" style="width: 60px;"></td>
+      <td><input value="${_h(b.name)}" onchange="DATA.branches[${i}].name=this.value" style="width: 100%;"></td>
+      <td><input type="password" value="${_h(b.managerPwd)}" onchange="DATA.branches[${i}].managerPwd=this.value" style="width: 130px;" placeholder="••••"></td>
+      <td><input value="${_h(b.lineToken)}" onchange="DATA.branches[${i}].lineToken=this.value" style="width: 100%;" placeholder="Channel Access Token"></td>
+      <td><input value="${_h(b.lineGroupId)}" onchange="DATA.branches[${i}].lineGroupId=this.value" style="width: 100%;" placeholder="LINE Group ID"></td>
       <td class="row-actions"><button class="btn small danger" onclick="deleteBranch(${i})">ลบ</button></td>
     </tr>`;
   });
@@ -2641,10 +2653,10 @@ function renderSettings(root) {
   let uRows = '';
   DATA.users.forEach((u, i) => {
     uRows += `<tr>
-      <td>${u.email}</td>
-      <td><strong>${u.name}</strong></td>
-      <td><span class="badge gray">${u.role}</span></td>
-      <td>${u.branch === '*' ? 'ทุกสาขา' : u.branch}</td>
+      <td>${_h(u.email)}</td>
+      <td><strong>${_h(u.name)}</strong></td>
+      <td><span class="badge gray">${_h(u.role)}</span></td>
+      <td>${u.branch === '*' ? 'ทุกสาขา' : _h(u.branch)}</td>
       <td class="row-actions">
         <button class="btn small secondary" onclick="changePassword(${i})">รีเซ็ตรหัส</button>
         ${u.role !== 'Owner' ? `<button class="btn small danger" onclick="deleteUser(${i})">ลบ</button>` : ''}
@@ -2765,7 +2777,7 @@ function addUser() {
   const roles = ['Owner','Manager','Staff','Trainer']
     .map(r => `<option value="${r}" ${r==='Staff'?'selected':''}>${r}</option>`).join('');
   const branchOpts = '<option value="*">* (ทุกสาขา)</option>' +
-    DATA.branches.map(b => `<option value="${b.code}">${b.code} · ${b.name}</option>`).join('');
+    DATA.branches.map(b => `<option value="${_h(b.code)}">${_h(b.code)} · ${_h(b.name)}</option>`).join('');
   showModal(`
     <h3>เพิ่มผู้ใช้ใหม่</h3>
     <form onsubmit="saveUserFromModal(event)">
