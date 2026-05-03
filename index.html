@@ -1937,6 +1937,10 @@ function onSubmitTrain(e) {
   // Deduct
   const hoursBefore = member.hours;
   member.hours = Math.max(0, member.hours - 1);
+  // If member was above threshold and just crossed below, clear the notify flag so we re-alert
+  if (hoursBefore > DATA.settings.trainerWarnHrs && DATA.settings.hoursNotified) {
+    delete DATA.settings.hoursNotified[member.id];
+  }
   DATA.trainings.unshift({
     id: nid(), ts: new Date().toISOString(), branch, memberId,
     memberName: member.name + ' ' + member.surname,
@@ -2111,6 +2115,10 @@ function saveMember(e, idOrNull) {
   } else {
     const idx = DATA.members.findIndex(m => m.id === idOrNull);
     DATA.members[idx] = { ...DATA.members[idx], ...obj };
+  }
+  // If hours topped up above threshold, clear the hours-low notify flag so we'll re-alert next time it drops
+  if (obj.hours > DATA.settings.trainerWarnHrs && DATA.settings.hoursNotified) {
+    delete DATA.settings.hoursNotified[obj.id];
   }
   saveData();
   closeModal();
