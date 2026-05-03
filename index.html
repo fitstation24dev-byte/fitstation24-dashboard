@@ -619,21 +619,31 @@ const db = {
   async loadAll() {
     if (!this.enabled) return null;
     try {
+      const tableEntries = Object.entries(TABLE_SPEC);
+      const tablePromises = tableEntries.map(([name, spec]) =>
+        this.client.from(spec.table).select('*').then(r => ({ name, ...r }))
+      );
+      const settingsPromise = this.client.from('app_settings').select('*');
+      const logPromise = this.client.from('app_login_log').select('*').order('id', { ascending: false }).limit(200);
+
+      const [tableResults, settingsResult, logResult] = await Promise.all([
+        Promise.all(tablePromises),
+        settingsPromise,
+        logPromise,
+      ]);
+
       const out = {};
-      for (const [name, spec] of Object.entries(TABLE_SPEC)) {
-        const { data, error } = await this.client.from(spec.table).select('*');
-        if (error) throw error;
-        out[name] = (data || []).map(r => this.toItem(name, r));
+      for (const r of tableResults) {
+        if (r.error) throw r.error;
+        out[r.name] = (r.data || []).map(row => this.toItem(r.name, row));
       }
-      const { data: settingsRows, error: se } = await this.client.from('app_settings').select('*');
-      if (se) throw se;
+      if (settingsResult.error) throw settingsResult.error;
       const sm = {};
-      for (const r of (settingsRows || [])) sm[r.key] = r.value;
+      for (const r of (settingsResult.data || [])) sm[r.key] = r.value;
       out.settings = sm.global || null;
       out.lastDailyRun = sm.lastDailyRun || '';
-      const { data: logRows, error: le } = await this.client.from('app_login_log').select('*').order('id', { ascending: false }).limit(200);
-      if (le) throw le;
-      out.loginLog = (logRows || []).map(r => ({ ts: r.ts, email: r.email, role: r.role, branch: r.branch, action: r.action }));
+      if (logResult.error) throw logResult.error;
+      out.loginLog = (logResult.data || []).map(r => ({ ts: r.ts, email: r.email, role: r.role, branch: r.branch, action: r.action }));
       this.setStatus('online');
       return out;
     } catch (e) {
@@ -782,7 +792,7 @@ async function loadData() {
   if (db.enabled) {
     const remote = await db.loadAll();
     if (remote) {
-      const empty = await db.isEmpty();
+      const empty = (remote.branches || []).length === 0;
       if (empty) {
         // First-run: seed Supabase with localStorage data if available, else defaults
         let seedSrc = null;
