@@ -1,0 +1,1881 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FITSTATION 24 — Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  :root {
+    --brand: #0B132B;
+    --accent: #FF5C00;
+    --teal: #5BC0BE;
+    --ok: #16A34A;
+    --warn: #F59E0B;
+    --bad: #DC2626;
+    --bg: #F4F4F5;
+    --surface: #FFFFFF;
+    --border: #E5E7EB;
+    --muted: #6B7280;
+    --text: #1F2A44;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Sarabun', 'Noto Sans Thai', Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  button { font-family: inherit; cursor: pointer; }
+  input, select, textarea { font-family: inherit; font-size: 14px; }
+  .hidden { display: none !important; }
+
+  /* ====== LOGIN ====== */
+  #login-screen {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #0B132B 0%, #1C2541 100%);
+    padding: 20px;
+  }
+  .login-card {
+    background: white;
+    padding: 40px;
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    width: 100%;
+    max-width: 380px;
+  }
+  .login-card .logo {
+    text-align: center;
+    margin-bottom: 24px;
+  }
+  .login-card .logo .name {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--brand);
+    letter-spacing: 1px;
+  }
+  .login-card .logo .sub {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+  .login-card label {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 6px;
+    margin-top: 14px;
+  }
+  .login-card input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .login-card input:focus { border-color: var(--accent); }
+  .login-card .err {
+    background: #FEE2E2;
+    color: var(--bad);
+    padding: 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    margin-top: 14px;
+    display: none;
+  }
+  .login-card .err.show { display: block; }
+  .login-card button.primary {
+    width: 100%;
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 12px;
+    border-radius: 8px;
+    font-weight: 600;
+    margin-top: 20px;
+    transition: background 0.15s;
+  }
+  .login-card button.primary:hover { background: #E04D00; }
+  .login-card .demo {
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .login-card .demo-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-family: ui-monospace, 'SF Mono', Monaco, monospace;
+    cursor: pointer;
+  }
+  .login-card .demo-row:hover { color: var(--accent); }
+
+  /* ====== APP LAYOUT ====== */
+  .app { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: 240px;
+    background: var(--brand);
+    color: white;
+    padding: 20px 0;
+    flex-shrink: 0;
+  }
+  .sidebar .brand {
+    padding: 0 20px 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+  .sidebar .brand .name {
+    font-weight: 700;
+    font-size: 16px;
+    letter-spacing: 1px;
+  }
+  .sidebar .brand .sub {
+    font-size: 11px;
+    color: #9CA3AF;
+    margin-top: 2px;
+  }
+  .sidebar nav { padding: 12px 0; }
+  .sidebar nav button {
+    display: block;
+    width: 100%;
+    padding: 10px 20px;
+    background: transparent;
+    color: #D1D5DB;
+    border: none;
+    text-align: left;
+    font-size: 13px;
+    transition: all 0.12s;
+    border-left: 3px solid transparent;
+  }
+  .sidebar nav button:hover {
+    background: rgba(255,255,255,0.05);
+    color: white;
+  }
+  .sidebar nav button.active {
+    background: rgba(255,92,0,0.1);
+    color: white;
+    border-left-color: var(--accent);
+    font-weight: 600;
+  }
+  .sidebar .user-box {
+    margin-top: auto;
+    padding: 16px 20px;
+    border-top: 1px solid rgba(255,255,255,0.1);
+    font-size: 12px;
+  }
+  .sidebar .user-box .uname { color: white; font-weight: 600; }
+  .sidebar .user-box .urole { color: #9CA3AF; font-size: 11px; }
+  .sidebar .user-box button {
+    margin-top: 8px;
+    background: transparent;
+    color: #D1D5DB;
+    border: 1px solid rgba(255,255,255,0.2);
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    width: 100%;
+  }
+  .sidebar .user-box button:hover { background: rgba(255,255,255,0.05); }
+
+  .main {
+    flex: 1;
+    overflow-x: hidden;
+  }
+  .topbar {
+    background: white;
+    padding: 14px 28px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .topbar h1 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .topbar .branch-pick select {
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    font-size: 13px;
+  }
+  .content { padding: 24px 28px; }
+
+  /* ====== KPI cards ====== */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 14px;
+    margin-bottom: 22px;
+  }
+  .kpi {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .kpi .label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .kpi .value { font-size: 26px; font-weight: 700; color: var(--brand); }
+  .kpi .sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .kpi.accent .value { color: var(--accent); }
+  .kpi.ok .value { color: var(--ok); }
+
+  /* ====== Cards ====== */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin-bottom: 18px;
+  }
+  .card h2 {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 14px;
+    color: var(--text);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .card h2 small {
+    font-size: 11px;
+    color: var(--muted);
+    font-weight: 400;
+  }
+
+  /* ====== Tables ====== */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    text-align: left;
+    color: var(--muted);
+    font-weight: 500;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+  tbody td {
+    padding: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  tbody tr:hover { background: var(--bg); }
+  td.right, th.right { text-align: right; }
+  td.center, th.center { text-align: center; }
+
+  /* Badges */
+  .badge {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .badge.ok { background: #DCFCE7; color: #166534; }
+  .badge.warn { background: #FEF3C7; color: #92400E; }
+  .badge.bad { background: #FEE2E2; color: #991B1B; }
+  .badge.info { background: #DBEAFE; color: #1E40AF; }
+  .badge.gray { background: #F3F4F6; color: #4B5563; }
+
+  /* ====== Forms ====== */
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .form-grid .field { display: flex; flex-direction: column; gap: 4px; }
+  .form-grid label { font-size: 11px; color: var(--muted); }
+  .form-grid input, .form-grid select, .form-grid textarea {
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    outline: none;
+    transition: border-color 0.15s;
+    background: white;
+  }
+  .form-grid input:focus, .form-grid select:focus, .form-grid textarea:focus {
+    border-color: var(--accent);
+  }
+  .form-grid .field.full { grid-column: 1 / -1; }
+
+  button.btn {
+    background: var(--accent);
+    color: white;
+    border: none;
+    padding: 9px 18px;
+    border-radius: 7px;
+    font-weight: 600;
+    font-size: 13px;
+    transition: background 0.15s;
+  }
+  button.btn:hover { background: #E04D00; }
+  button.btn.secondary {
+    background: white;
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  button.btn.secondary:hover { background: var(--bg); }
+  button.btn.danger { background: var(--bad); }
+  button.btn.small { padding: 5px 10px; font-size: 12px; }
+
+  .row-actions { display: flex; gap: 6px; }
+
+  /* Charts */
+  .chart-wrap {
+    position: relative;
+    height: 240px;
+    width: 100%;
+  }
+
+  /* Two-col layout */
+  .two-col {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+    gap: 18px;
+  }
+  @media (max-width: 900px) {
+    .two-col { grid-template-columns: 1fr; }
+    .sidebar { width: 60px; }
+    .sidebar nav button { padding: 10px 18px; font-size: 0; }
+    .sidebar .brand, .sidebar .user-box { padding-left: 14px; padding-right: 14px; }
+  }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 1000;
+  }
+  .modal {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    width: 95%;
+    max-width: 520px;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  .modal h3 { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+  .modal .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 24px; right: 24px;
+    background: var(--brand); color: white;
+    padding: 12px 18px; border-radius: 8px;
+    font-size: 13px; z-index: 2000;
+    transition: opacity 0.3s, transform 0.3s;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  }
+  .toast.ok { background: var(--ok); }
+  .toast.bad { background: var(--bad); }
+  .toast.warn { background: var(--warn); color: #422006; }
+
+  /* Member status colors */
+  .days-low { color: var(--bad); font-weight: 600; }
+  .days-warn { color: var(--warn); font-weight: 600; }
+  .hrs-low { color: var(--bad); font-weight: 600; }
+
+  /* Misc */
+  .muted { color: var(--muted); }
+  .small { font-size: 12px; }
+  .toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .toolbar .filters { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .toolbar input, .toolbar select {
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: white;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ============== LOGIN SCREEN ============== -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="logo">
+      <div class="name">FITSTATION 24</div>
+      <div class="sub">Dashboard System</div>
+    </div>
+    <label>อีเมล</label>
+    <input id="login-email" type="email" placeholder="your.email@example.com" autocomplete="username">
+    <label>รหัสผ่าน</label>
+    <input id="login-pwd" type="password" placeholder="••••••••" autocomplete="current-password">
+    <div id="login-err" class="err">อีเมลหรือรหัสผ่านไม่ถูกต้อง</div>
+    <button class="primary" onclick="doLogin()">เข้าสู่ระบบ</button>
+    <div class="demo">
+      <div style="margin-bottom: 6px;">บัญชีทดสอบ (คลิกเพื่อกรอกอัตโนมัติ):</div>
+      <div class="demo-row" onclick="fillLogin('owner@fitstation.com','admin123')"><span>owner@fitstation.com</span><span>Owner</span></div>
+      <div class="demo-row" onclick="fillLogin('manager.br1@fitstation.com','m1pass')"><span>manager.br1@fitstation.com</span><span>Manager BR01</span></div>
+      <div class="demo-row" onclick="fillLogin('staff.br1@fitstation.com','s1pass')"><span>staff.br1@fitstation.com</span><span>Staff BR01</span></div>
+      <div class="demo-row" onclick="fillLogin('trainer1@fitstation.com','t1pass')"><span>trainer1@fitstation.com</span><span>Trainer</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============== MAIN APP ============== -->
+<div id="app" class="app hidden">
+  <aside class="sidebar" style="display: flex; flex-direction: column;">
+    <div class="brand">
+      <div class="name">FITSTATION 24</div>
+      <div class="sub">Dashboard System</div>
+    </div>
+    <nav id="nav" style="flex: 1;"></nav>
+    <div class="user-box">
+      <div class="uname" id="user-name">—</div>
+      <div class="urole" id="user-role">—</div>
+      <button onclick="doLogout()">ออกจากระบบ</button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <h1 id="page-title">Dashboard</h1>
+      <div class="branch-pick">
+        <select id="branch-filter" onchange="onBranchChange()"></select>
+      </div>
+    </div>
+    <div class="content" id="content"></div>
+  </div>
+</div>
+
+<div id="modal-host"></div>
+
+<script>
+// ============================================================
+// FITSTATION 24 — Single-file dashboard
+// All data persists in localStorage. Export/Import for backup.
+// ============================================================
+
+const LS_KEY = 'fitstation24_data_v1';
+const SESSION_KEY = 'fitstation24_session';
+
+// ---------- DEFAULT SEED DATA ----------
+function defaultData() {
+  const today = new Date();
+  const daysAgo = (n) => { const d = new Date(today); d.setDate(d.getDate() - n); return d.toISOString(); };
+  const daysAhead = (n) => { const d = new Date(today); d.setDate(d.getDate() + n); return d.toISOString(); };
+
+  return {
+    settings: {
+      currency: '฿',
+      expiryWarnDays: 15,
+      trainerWarnHrs: 3,
+      lineConfigured: false,
+      brandName: 'FITSTATION 24',
+    },
+    branches: [
+      { code: 'BR01', name: 'FITSTATION 24 - สาขา 1', lineToken: '', lineGroupId: '', managerPwd: 'mgr#1234' },
+      { code: 'BR02', name: 'FITSTATION 24 - สาขา 2', lineToken: '', lineGroupId: '', managerPwd: 'mgr#5678' },
+      { code: 'BR03', name: 'FITSTATION 24 - สาขา 3', lineToken: '', lineGroupId: '', managerPwd: 'mgr#9012' },
+    ],
+    users: [
+      { email: 'owner@fitstation.com',         pwd: 'admin123', name: 'เจ้าของกิจการ',     role: 'Owner',   branch: '*'   },
+      { email: 'manager.br1@fitstation.com',   pwd: 'm1pass',   name: 'สมชาย ใจดี',         role: 'Manager', branch: 'BR01' },
+      { email: 'manager.br2@fitstation.com',   pwd: 'm2pass',   name: 'อนันต์ เอกชัย',     role: 'Manager', branch: 'BR02' },
+      { email: 'staff.br1@fitstation.com',     pwd: 's1pass',   name: 'สมหญิง สวยงาม',     role: 'Staff',   branch: 'BR01' },
+      { email: 'trainer1@fitstation.com',      pwd: 't1pass',   name: 'วิชัย แข็งแรง',     role: 'Trainer', branch: 'BR01' },
+      { email: 'trainer2@fitstation.com',      pwd: 't2pass',   name: 'พิมพ์ ฟิตเนส',       role: 'Trainer', branch: 'BR01' },
+    ],
+    employees: [
+      { id: 'E001', name: 'สมชาย',  surname: 'ใจดี',     position: 'ผู้จัดการสาขา', branch: 'BR01', status: 'Active' },
+      { id: 'E002', name: 'สมหญิง', surname: 'สวยงาม',   position: 'เคาน์เตอร์',   branch: 'BR01', status: 'Active' },
+      { id: 'E003', name: 'วิชัย',  surname: 'แข็งแรง',  position: 'เทรนเนอร์',     branch: 'BR01', status: 'Active' },
+      { id: 'E004', name: 'พิมพ์',  surname: 'ฟิตเนส',   position: 'เทรนเนอร์',     branch: 'BR01', status: 'Active' },
+      { id: 'E005', name: 'อนันต์', surname: 'เอกชัย',   position: 'ผู้จัดการสาขา', branch: 'BR02', status: 'Active' },
+    ],
+    members: [
+      { id: 'M0001', name: 'ปกรณ์',     surname: 'สมิธ',      age: 28, branch: 'BR01', startDate: daysAgo(180), endDate: daysAhead(20),  hours: 8,  trainer: 'วิชัย', lineUid: '', status: 'Active' },
+      { id: 'M0002', name: 'นภัสกร',    surname: 'ใจกล้า',    age: 34, branch: 'BR01', startDate: daysAgo(90),  endDate: daysAhead(10),  hours: 2,  trainer: 'พิมพ์', lineUid: '', status: 'Active' },
+      { id: 'M0003', name: 'สิรินทรา',   surname: 'วงศ์ทอง',   age: 22, branch: 'BR01', startDate: daysAgo(30),  endDate: daysAhead(335), hours: 0,  trainer: '',     lineUid: '', status: 'Active' },
+      { id: 'M0004', name: 'ธนวัฒน์',   surname: 'อยู่ดี',     age: 45, branch: 'BR02', startDate: daysAgo(360), endDate: daysAhead(5),   hours: 1,  trainer: 'วิชัย', lineUid: '', status: 'Active' },
+      { id: 'M0005', name: 'อรณิชา',     surname: 'พิทักษ์',   age: 31, branch: 'BR02', startDate: daysAgo(60),  endDate: daysAhead(305), hours: 12, trainer: 'พิมพ์', lineUid: '', status: 'Active' },
+    ],
+    sales: [
+      { id: nid(), ts: daysAgo(0), branch: 'BR01', empId: 'E002', type: 'MEM',  memberId: 'M0003', memberName: 'สิรินทรา วงศ์ทอง', amount: 12000, slip: 'https://example.com/slip-1.jpg', note: 'สมัคร 12 เดือน', notify: 'Sent' },
+      { id: nid(), ts: daysAgo(0), branch: 'BR01', empId: 'E003', type: 'PT',   memberId: 'M0001', memberName: 'ปกรณ์ สมิธ',       amount: 8000,  slip: 'https://example.com/slip-2.jpg', note: 'PT 10 ครั้ง',     notify: 'Sent' },
+      { id: nid(), ts: daysAgo(0), branch: 'BR02', empId: 'E005', type: 'MEM',  memberId: 'M0005', memberName: 'อรณิชา พิทักษ์',  amount: 10000, slip: 'https://example.com/slip-3.jpg', note: '',                notify: 'Sent' },
+      { id: nid(), ts: daysAgo(0), branch: 'BR02', empId: 'E005', type: 'PT',   memberId: 'M0004', memberName: 'ธนวัฒน์ อยู่ดี',  amount: 4000,  slip: '',                                note: '',                notify: 'Pending' },
+      { id: nid(), ts: daysAgo(0), branch: 'BR01', empId: 'E002', type: 'Plan', memberId: '',      memberName: '',                amount: 500,   slip: '',                                note: 'Plan รายวัน',     notify: '—' },
+      { id: nid(), ts: daysAgo(1), branch: 'BR01', empId: 'E002', type: 'MEM',  memberId: '',      memberName: 'walk-in',         amount: 6000,  slip: 'https://example.com/slip-4.jpg', note: '6 เดือน',         notify: 'Sent' },
+      { id: nid(), ts: daysAgo(2), branch: 'BR01', empId: 'E003', type: 'PT',   memberId: '',      memberName: 'walk-in',         amount: 12000, slip: 'https://example.com/slip-5.jpg', note: '',                notify: 'Sent' },
+      { id: nid(), ts: daysAgo(3), branch: 'BR02', empId: 'E005', type: 'MEM',  memberId: '',      memberName: 'walk-in',         amount: 18000, slip: 'https://example.com/slip-6.jpg', note: '',                notify: 'Sent' },
+    ],
+    trainings: [
+      { id: nid(), ts: daysAgo(0), branch: 'BR01', memberId: 'M0001', memberName: 'ปกรณ์ สมิธ', trainerId: 'E003', trainerName: 'วิชัย', verified: true, hoursBefore: 9,  hoursAfter: 8 },
+      { id: nid(), ts: daysAgo(1), branch: 'BR01', memberId: 'M0002', memberName: 'นภัสกร ใจกล้า', trainerId: 'E004', trainerName: 'พิมพ์', verified: true, hoursBefore: 3, hoursAfter: 2 },
+    ],
+    alerts: [],
+    loginLog: [],
+    lastDailyRun: '',
+  };
+}
+
+function nid() { return Math.random().toString(36).slice(2, 10); }
+
+// ---------- STORAGE ----------
+let DATA = null;
+let SESSION = null;
+let CURRENT_VIEW = 'dashboard';
+let CURRENT_BRANCH = '*';
+let CHARTS = {};
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) {
+      DATA = defaultData();
+      saveData();
+    } else {
+      DATA = JSON.parse(raw);
+    }
+  } catch (e) {
+    console.error('loadData error', e);
+    DATA = defaultData();
+    saveData();
+  }
+}
+
+function saveData() {
+  localStorage.setItem(LS_KEY, JSON.stringify(DATA));
+}
+
+function loadSession() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function saveSession(s) {
+  if (s) sessionStorage.setItem(SESSION_KEY, JSON.stringify(s));
+  else sessionStorage.removeItem(SESSION_KEY);
+}
+
+// ---------- AUTH ----------
+function doLogin() {
+  const email = document.getElementById('login-email').value.trim().toLowerCase();
+  const pwd = document.getElementById('login-pwd').value;
+  const u = DATA.users.find(x => x.email.toLowerCase() === email && x.pwd === pwd);
+  if (!u) {
+    document.getElementById('login-err').classList.add('show');
+    return;
+  }
+  SESSION = { email: u.email, name: u.name, role: u.role, branch: u.branch, loginAt: new Date().toISOString() };
+  saveSession(SESSION);
+  DATA.loginLog.unshift({ ts: SESSION.loginAt, email: u.email, role: u.role, branch: u.branch, action: 'LOGIN' });
+  if (DATA.loginLog.length > 200) DATA.loginLog = DATA.loginLog.slice(0, 200);
+  saveData();
+  bootApp();
+}
+
+function doLogout() {
+  SESSION = null;
+  saveSession(null);
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('login-screen').classList.remove('hidden');
+  document.getElementById('login-email').value = '';
+  document.getElementById('login-pwd').value = '';
+  document.getElementById('login-err').classList.remove('show');
+}
+
+function fillLogin(email, pwd) {
+  document.getElementById('login-email').value = email;
+  document.getElementById('login-pwd').value = pwd;
+}
+
+// ---------- ROLE / BRANCH HELPERS ----------
+function visibleBranches() {
+  if (!SESSION) return [];
+  if (SESSION.branch === '*') return DATA.branches.map(b => b.code);
+  return [SESSION.branch];
+}
+
+function canSeeAllBranches() { return SESSION && SESSION.branch === '*'; }
+function isOwner() { return SESSION && SESSION.role === 'Owner'; }
+function isManagerOrAbove() { return SESSION && (SESSION.role === 'Owner' || SESSION.role === 'Manager'); }
+function effectiveBranchFilter() {
+  // If user can only see one branch, force-pick it
+  if (!canSeeAllBranches()) return SESSION.branch;
+  return CURRENT_BRANCH;
+}
+function filterByBranch(arr) {
+  const b = effectiveBranchFilter();
+  if (b === '*') return arr;
+  return arr.filter(x => x.branch === b);
+}
+
+// ---------- FORMATTERS ----------
+function thb(n) { return DATA.settings.currency + Number(n || 0).toLocaleString('th-TH'); }
+function fmtTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleString('th-TH', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+}
+function fmtDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+function fmtTimeShort(iso) {
+  const d = new Date(iso);
+  return d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+function todayStart() { const d = new Date(); d.setHours(0,0,0,0); return d; }
+function isSameDay(iso, refDate) {
+  const d = new Date(iso);
+  return d.getFullYear() === refDate.getFullYear() && d.getMonth() === refDate.getMonth() && d.getDate() === refDate.getDate();
+}
+function daysBetween(iso1, ref) {
+  const a = new Date(iso1); a.setHours(0,0,0,0);
+  const b = new Date(ref);  b.setHours(0,0,0,0);
+  return Math.round((a - b) / (1000*60*60*24));
+}
+
+// ---------- TOAST ----------
+function toast(msg, kind) {
+  const t = document.createElement('div');
+  t.className = 'toast ' + (kind || '');
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transform = 'translateY(8px)'; }, 2400);
+  setTimeout(() => t.remove(), 2800);
+}
+
+// ---------- DAILY DECREMENT (run on first load each day) ----------
+function runDailyMaintenance() {
+  const today = new Date().toISOString().slice(0, 10);
+  if (DATA.lastDailyRun === today) return;
+  DATA.lastDailyRun = today;
+
+  // Build alerts list
+  const newAlerts = [];
+  const ref = todayStart();
+  DATA.members.forEach(m => {
+    if (m.status !== 'Active') return;
+    if (m.endDate) {
+      const dl = daysBetween(m.endDate, ref);
+      if (dl >= 0 && dl <= DATA.settings.expiryWarnDays) {
+        newAlerts.push({
+          id: nid(), ts: new Date().toISOString(),
+          type: 'Member Expiring', branch: m.branch,
+          memberId: m.id, memberName: m.name + ' ' + m.surname,
+          value: dl + ' วัน', message: 'หมดอายุในอีก ' + dl + ' วัน',
+          status: m.lineUid ? 'Sent' : 'No LINE',
+        });
+      }
+    }
+    if (m.hours > 0 && m.hours <= DATA.settings.trainerWarnHrs) {
+      newAlerts.push({
+        id: nid(), ts: new Date().toISOString(),
+        type: 'Trainer Hours Low', branch: m.branch,
+        memberId: m.id, memberName: m.name + ' ' + m.surname,
+        value: m.hours + ' ครั้ง', message: 'เหลือชั่วโมงเทรน ' + m.hours + ' ครั้ง',
+        status: m.lineUid ? 'Sent' : 'No LINE',
+      });
+    }
+  });
+  // Replace today's alerts with new ones (avoid daily duplicates)
+  DATA.alerts = newAlerts.concat(DATA.alerts.filter(a => !isSameDay(a.ts, ref))).slice(0, 200);
+  saveData();
+}
+
+// ---------- BOOT ----------
+function bootApp() {
+  document.getElementById('login-screen').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  document.getElementById('user-name').textContent = SESSION.name;
+  document.getElementById('user-role').textContent = SESSION.role + (SESSION.branch !== '*' ? ' · ' + SESSION.branch : '');
+
+  // Build nav
+  const nav = document.getElementById('nav');
+  const items = [
+    { id: 'dashboard',  label: 'Dashboard',         roles: ['Owner','Manager','Staff','Trainer'] },
+    { id: 'sales',      label: 'บันทึกยอดขาย',      roles: ['Owner','Manager','Staff'] },
+    { id: 'trainings',  label: 'บันทึกการเทรน',     roles: ['Owner','Manager','Staff','Trainer'] },
+    { id: 'members',    label: 'สมาชิก',            roles: ['Owner','Manager','Staff','Trainer'] },
+    { id: 'sales-log',  label: 'ประวัติการขาย',     roles: ['Owner','Manager','Staff'] },
+    { id: 'alerts',     label: 'การแจ้งเตือน',     roles: ['Owner','Manager','Staff'] },
+    { id: 'employees',  label: 'พนักงาน',           roles: ['Owner','Manager'] },
+    { id: 'reports',    label: 'รายงาน',            roles: ['Owner','Manager'] },
+    { id: 'settings',   label: 'ตั้งค่าระบบ',       roles: ['Owner'] },
+  ];
+  nav.innerHTML = '';
+  items.forEach(i => {
+    if (!i.roles.includes(SESSION.role)) return;
+    const b = document.createElement('button');
+    b.textContent = i.label;
+    b.dataset.id = i.id;
+    b.onclick = () => navigate(i.id);
+    nav.appendChild(b);
+  });
+
+  // Branch picker
+  const bf = document.getElementById('branch-filter');
+  bf.innerHTML = '';
+  if (canSeeAllBranches()) {
+    const opt = document.createElement('option');
+    opt.value = '*'; opt.textContent = 'ทุกสาขา';
+    bf.appendChild(opt);
+  }
+  visibleBranches().forEach(code => {
+    const br = DATA.branches.find(b => b.code === code);
+    if (br) {
+      const opt = document.createElement('option');
+      opt.value = code;
+      opt.textContent = br.name;
+      bf.appendChild(opt);
+    }
+  });
+  CURRENT_BRANCH = canSeeAllBranches() ? '*' : SESSION.branch;
+  bf.value = CURRENT_BRANCH;
+
+  runDailyMaintenance();
+  navigate('dashboard');
+}
+
+function onBranchChange() {
+  CURRENT_BRANCH = document.getElementById('branch-filter').value;
+  navigate(CURRENT_VIEW);
+}
+
+function navigate(view) {
+  CURRENT_VIEW = view;
+  document.querySelectorAll('#nav button').forEach(b => {
+    b.classList.toggle('active', b.dataset.id === view);
+  });
+  Object.values(CHARTS).forEach(c => c.destroy && c.destroy());
+  CHARTS = {};
+  const titles = {
+    'dashboard': 'Dashboard', 'sales': 'บันทึกยอดขาย', 'trainings': 'บันทึกการเทรน',
+    'members': 'สมาชิก', 'sales-log': 'ประวัติการขาย', 'alerts': 'การแจ้งเตือน',
+    'employees': 'พนักงาน', 'reports': 'รายงาน', 'settings': 'ตั้งค่าระบบ',
+  };
+  document.getElementById('page-title').textContent = titles[view] || view;
+  const c = document.getElementById('content');
+  c.innerHTML = '';
+  if (view === 'dashboard')      renderDashboard(c);
+  else if (view === 'sales')     renderSalesEntry(c);
+  else if (view === 'trainings') renderTrainingsEntry(c);
+  else if (view === 'members')   renderMembers(c);
+  else if (view === 'sales-log') renderSalesLog(c);
+  else if (view === 'alerts')    renderAlerts(c);
+  else if (view === 'employees') renderEmployees(c);
+  else if (view === 'reports')   renderReports(c);
+  else if (view === 'settings')  renderSettings(c);
+}
+
+// ============ DASHBOARD ============
+function renderDashboard(root) {
+  const ref = todayStart();
+  const tomorrow = new Date(ref); tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const sales = filterByBranch(DATA.sales);
+  const trainings = filterByBranch(DATA.trainings);
+
+  const todaySales = sales.filter(s => isSameDay(s.ts, ref));
+  const todayMem = todaySales.filter(s => s.type === 'MEM').reduce((a,b) => a + b.amount, 0);
+  const todayPt  = todaySales.filter(s => s.type === 'PT').reduce((a,b) => a + b.amount, 0);
+  const todayPlan = todaySales.filter(s => s.type === 'Plan').reduce((a,b) => a + b.amount, 0);
+  const todayTotal = todayMem + todayPt + todayPlan;
+  const todayTrain = trainings.filter(t => t.verified && isSameDay(t.ts, ref)).length;
+
+  const memCount = todaySales.filter(s => s.type === 'MEM').length;
+  const ptCount  = todaySales.filter(s => s.type === 'PT').length;
+
+  // KPI cards
+  const kpi = document.createElement('div');
+  kpi.className = 'kpi-grid';
+  kpi.innerHTML = `
+    <div class="kpi accent">
+      <div class="label">ยอดรวมวันนี้</div>
+      <div class="value">${thb(todayTotal)}</div>
+      <div class="sub">${todaySales.length} รายการ</div>
+    </div>
+    <div class="kpi">
+      <div class="label">MEM วันนี้</div>
+      <div class="value">${memCount}</div>
+      <div class="sub">${thb(todayMem)}</div>
+    </div>
+    <div class="kpi">
+      <div class="label">PT วันนี้</div>
+      <div class="value">${ptCount}</div>
+      <div class="sub">${thb(todayPt)}</div>
+    </div>
+    <div class="kpi ok">
+      <div class="label">เทรนวันนี้</div>
+      <div class="value">${todayTrain}</div>
+      <div class="sub">ครั้ง</div>
+    </div>
+  `;
+  root.appendChild(kpi);
+
+  // Branch breakdown card
+  const bb = document.createElement('div');
+  bb.className = 'card';
+  let rows = '';
+  const showBranches = canSeeAllBranches() ? DATA.branches.map(b => b.code) : [SESSION.branch];
+  let totals = { mem: 0, pt: 0, plan: 0, all: 0, train: 0, overdue: 0 };
+  showBranches.forEach(code => {
+    const br = DATA.branches.find(x => x.code === code);
+    const bs = DATA.sales.filter(s => s.branch === code && isSameDay(s.ts, ref));
+    const mem = bs.filter(x => x.type === 'MEM').reduce((a,b) => a + b.amount, 0);
+    const pt  = bs.filter(x => x.type === 'PT').reduce((a,b) => a + b.amount, 0);
+    const pl  = bs.filter(x => x.type === 'Plan').reduce((a,b) => a + b.amount, 0);
+    const tot = mem + pt + pl;
+    const tr  = DATA.trainings.filter(t => t.branch === code && t.verified && isSameDay(t.ts, ref)).length;
+    const overdue = DATA.members.filter(m => m.branch === code && m.status === 'Active' && new Date(m.endDate) < ref).length;
+    totals.mem += mem; totals.pt += pt; totals.plan += pl; totals.all += tot; totals.train += tr; totals.overdue += overdue;
+    rows += `
+      <tr>
+        <td><strong>${code}</strong> · <span class="muted">${br ? br.name.replace(code + ' - ', '') : ''}</span></td>
+        <td class="right">${thb(mem)}</td>
+        <td class="right">${thb(pt)}</td>
+        <td class="right">${thb(pl)}</td>
+        <td class="right"><strong>${thb(tot)}</strong></td>
+        <td class="right">${tr}</td>
+        <td class="right">${overdue > 0 ? '<span class="badge bad">'+overdue+'</span>' : '<span class="muted">0</span>'}</td>
+      </tr>`;
+  });
+  if (showBranches.length > 1) {
+    rows += `
+      <tr style="background: var(--bg); font-weight: 600;">
+        <td>รวม</td>
+        <td class="right">${thb(totals.mem)}</td>
+        <td class="right">${thb(totals.pt)}</td>
+        <td class="right">${thb(totals.plan)}</td>
+        <td class="right">${thb(totals.all)}</td>
+        <td class="right">${totals.train}</td>
+        <td class="right">${totals.overdue}</td>
+      </tr>`;
+  }
+  bb.innerHTML = `
+    <h2>ยอดวันนี้แยกตามสาขา</h2>
+    <table>
+      <thead><tr>
+        <th>สาขา</th><th class="right">MEM</th><th class="right">PT</th><th class="right">Plan</th>
+        <th class="right">รวม</th><th class="right">เทรน</th><th class="right">เกินกำหนด</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+  root.appendChild(bb);
+
+  // Two-col: revenue chart + alerts
+  const tc = document.createElement('div');
+  tc.className = 'two-col';
+
+  const left = document.createElement('div');
+  left.className = 'card';
+  left.innerHTML = `<h2>ยอดขายรวมรายวัน <small>14 วันล่าสุด</small></h2><div class="chart-wrap"><canvas id="dashChartRev"></canvas></div>`;
+  tc.appendChild(left);
+
+  const right = document.createElement('div');
+  right.className = 'card';
+  const recentAlerts = DATA.alerts.filter(a => !canSeeAllBranches() ? a.branch === SESSION.branch : (CURRENT_BRANCH === '*' || a.branch === CURRENT_BRANCH)).slice(0, 6);
+  let alertHtml = '';
+  if (recentAlerts.length === 0) {
+    alertHtml = '<div class="muted small" style="padding: 16px 0;">ไม่มีการแจ้งเตือน</div>';
+  } else {
+    recentAlerts.forEach(a => {
+      const cls = a.type === 'Member Expiring' ? 'warn' : 'info';
+      alertHtml += `<div style="display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border);">
+        <span class="badge ${cls}" style="white-space: nowrap;">${a.value}</span>
+        <div style="min-width: 0; flex: 1;">
+          <div style="font-weight: 500;">${a.memberName}</div>
+          <div class="muted small">${a.branch} · ${a.message}</div>
+        </div>
+      </div>`;
+    });
+  }
+  right.innerHTML = `<h2>การแจ้งเตือน</h2>${alertHtml}`;
+  tc.appendChild(right);
+  root.appendChild(tc);
+
+  // Recent sales card
+  const rs = document.createElement('div');
+  rs.className = 'card';
+  const recent = sales.slice().sort((a,b) => new Date(b.ts) - new Date(a.ts)).slice(0, 8);
+  let rsRows = '';
+  recent.forEach(s => {
+    const typeBadge = `<span style="font-weight: 600; color: ${typeColor(s.type)};">${s.type}</span>`;
+    const notify = renderNotifyBadge(s.notify);
+    const slipLink = s.slip ? `<a href="${s.slip}" target="_blank" rel="noopener" style="color: var(--accent);">ดู</a>` : '<span class="muted">—</span>';
+    rsRows += `<tr>
+      <td>${fmtTimeShort(s.ts)}</td>
+      <td>${typeBadge}</td>
+      <td>${s.memberName || '<span class="muted">—</span>'}</td>
+      <td>${s.branch}</td>
+      <td class="right"><strong>${thb(s.amount)}</strong></td>
+      <td class="center">${slipLink}</td>
+      <td class="center">${notify}</td>
+    </tr>`;
+  });
+  if (rsRows === '') rsRows = '<tr><td colspan="7" class="muted center" style="padding: 20px;">ยังไม่มีรายการขาย</td></tr>';
+  rs.innerHTML = `<h2>รายการขายล่าสุด</h2>
+    <table>
+      <thead><tr>
+        <th>เวลา</th><th>ประเภท</th><th>สมาชิก</th><th>สาขา</th>
+        <th class="right">ยอด</th><th class="center">สลิป</th><th class="center">LINE</th>
+      </tr></thead>
+      <tbody>${rsRows}</tbody>
+    </table>`;
+  root.appendChild(rs);
+
+  // Build chart
+  const days = [];
+  const totals2 = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(ref); d.setDate(d.getDate() - i);
+    days.push(d.toLocaleDateString('th-TH', { day: '2-digit', month: 'short' }));
+    const sum = DATA.sales.filter(s => isSameDay(s.ts, d) && (CURRENT_BRANCH === '*' || s.branch === CURRENT_BRANCH))
+                          .reduce((a, b) => a + b.amount, 0);
+    totals2.push(sum);
+  }
+  CHARTS.dashRev = new Chart(document.getElementById('dashChartRev'), {
+    type: 'line',
+    data: {
+      labels: days,
+      datasets: [{
+        label: 'ยอดรวม', data: totals2,
+        borderColor: '#FF5C00', backgroundColor: 'rgba(255,92,0,0.1)',
+        fill: true, tension: 0.35, pointRadius: 3,
+        pointBackgroundColor: '#FF5C00', borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => '฿' + c.parsed.y.toLocaleString() } }
+      },
+      scales: {
+        x: { ticks: { color: '#6B7280', font: { size: 10 }, autoSkip: true, maxTicksLimit: 7 }, grid: { display: false } },
+        y: { ticks: { color: '#6B7280', font: { size: 10 }, callback: v => '฿' + (v/1000).toFixed(0) + 'K' }, grid: { color: '#E5E7EB' } }
+      }
+    }
+  });
+}
+
+function typeColor(t) {
+  return { 'MEM': '#534AB7', 'PT': '#185FA5', 'Plan': '#888780', 'Train': '#16A34A' }[t] || '#6B7280';
+}
+function renderNotifyBadge(n) {
+  if (n === 'Sent') return '<span class="badge ok">Sent</span>';
+  if (n === 'Failed') return '<span class="badge bad">Failed</span>';
+  if (n === 'Pending') return '<span class="badge warn">Pending</span>';
+  return '<span class="muted">—</span>';
+}
+
+// ============ SALES ENTRY ============
+function renderSalesEntry(root) {
+  if (!['Owner','Manager','Staff'].includes(SESSION.role)) {
+    root.innerHTML = '<div class="card"><div class="muted">คุณไม่มีสิทธิ์เข้าถึงหน้านี้</div></div>';
+    return;
+  }
+  const card = document.createElement('div');
+  card.className = 'card';
+  const branches = canSeeAllBranches()
+    ? DATA.branches.map(b => `<option value="${b.code}">${b.code} · ${b.name}</option>`).join('')
+    : `<option value="${SESSION.branch}">${SESSION.branch}</option>`;
+  const employees = DATA.employees
+    .filter(e => SESSION.branch === '*' || e.branch === SESSION.branch || true)
+    .map(e => `<option value="${e.id}">${e.id} — ${e.name} ${e.surname}</option>`).join('');
+  const memberOptions = DATA.members.map(m => `<option value="${m.id}">${m.id} — ${m.name} ${m.surname}</option>`).join('');
+
+  card.innerHTML = `
+    <h2>บันทึกยอดขายใหม่ <small>MEM/PT จะส่ง LINE Group เมื่อแนบสลิป</small></h2>
+    <form id="sales-form" onsubmit="onSubmitSale(event)">
+      <div class="form-grid">
+        <div class="field">
+          <label>สาขา *</label>
+          <select id="se-branch" required>${branches}</select>
+        </div>
+        <div class="field">
+          <label>พนักงาน *</label>
+          <select id="se-emp" required><option value="">เลือก...</option>${employees}</select>
+        </div>
+        <div class="field">
+          <label>ประเภท *</label>
+          <select id="se-type" required onchange="updateSaleSlipReq()">
+            <option value="">เลือก...</option>
+            <option value="MEM">MEM (สมาชิก)</option>
+            <option value="PT">PT (เทรน)</option>
+            <option value="Plan">Plan (รายวัน)</option>
+            <option value="Other">อื่นๆ</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>จำนวนเงิน *</label>
+          <input id="se-amount" type="number" min="0" step="1" required placeholder="0">
+        </div>
+        <div class="field">
+          <label>สมาชิก (ถ้ามี)</label>
+          <select id="se-member" onchange="onMemberPick()">
+            <option value="">walk-in / ไม่ระบุ</option>
+            ${memberOptions}
+          </select>
+        </div>
+        <div class="field">
+          <label>ชื่อสมาชิก (กรณี walk-in)</label>
+          <input id="se-mname" type="text" placeholder="ชื่อ-นามสกุล">
+        </div>
+        <div class="field full">
+          <label>สลิป (URL หรือลิงก์ Google Drive) <span id="se-slip-req" style="color: var(--bad);">*</span></label>
+          <input id="se-slip" type="text" placeholder="https://drive.google.com/file/...">
+        </div>
+        <div class="field full">
+          <label>หมายเหตุ</label>
+          <input id="se-note" type="text" placeholder="">
+        </div>
+      </div>
+      <button type="submit" class="btn">บันทึก + ส่ง LINE</button>
+      <button type="button" class="btn secondary" onclick="resetSaleForm()">ล้างฟอร์ม</button>
+    </form>
+  `;
+  root.appendChild(card);
+
+  // Show LINE preview area
+  const prev = document.createElement('div');
+  prev.className = 'card';
+  prev.innerHTML = `
+    <h2>ตัวอย่างข้อความ LINE <small>กดบันทึกเพื่อส่งจริง (ต้องตั้งค่า LINE OA)</small></h2>
+    <div id="se-line-preview" class="muted small" style="padding: 12px; background: var(--bg); border-radius: 8px; min-height: 80px; white-space: pre-wrap; font-family: ui-monospace, monospace;">กรอกข้อมูลเพื่อดูตัวอย่าง...</div>
+  `;
+  root.appendChild(prev);
+
+  ['se-branch','se-type','se-amount','se-member','se-mname','se-note'].forEach(id => {
+    document.getElementById(id).addEventListener('input', updateLinePreview);
+    document.getElementById(id).addEventListener('change', updateLinePreview);
+  });
+}
+
+function onMemberPick() {
+  const id = document.getElementById('se-member').value;
+  const m = DATA.members.find(x => x.id === id);
+  if (m) {
+    document.getElementById('se-mname').value = m.name + ' ' + m.surname;
+    document.getElementById('se-branch').value = m.branch;
+  }
+  updateLinePreview();
+}
+
+function updateSaleSlipReq() {
+  const t = document.getElementById('se-type').value;
+  const req = document.getElementById('se-slip-req');
+  if (t === 'MEM' || t === 'PT') req.style.display = '';
+  else req.style.display = 'none';
+  updateLinePreview();
+}
+
+function updateLinePreview() {
+  const t = document.getElementById('se-type').value;
+  if (!['MEM','PT'].includes(t)) {
+    document.getElementById('se-line-preview').textContent = 'ประเภท ' + (t || '—') + ' ไม่ต้องส่ง LINE';
+    return;
+  }
+  const branch = document.getElementById('se-branch').value;
+  const br = DATA.branches.find(b => b.code === branch);
+  const empId = document.getElementById('se-emp').value;
+  const emp = DATA.employees.find(e => e.id === empId);
+  const amount = document.getElementById('se-amount').value || '0';
+  const memName = document.getElementById('se-mname').value || '-';
+  const note = document.getElementById('se-note').value || '';
+  const slip = document.getElementById('se-slip').value || '(ยังไม่แนบสลิป)';
+  const text = `🧾 ยอดใหม่ — ${br ? br.name : branch}
+ประเภท: ${t}
+สมาชิก: ${memName}
+พนักงาน: ${emp ? emp.name + ' ' + emp.surname : empId}
+ยอด: ${DATA.settings.currency}${Number(amount).toLocaleString()}
+${note ? 'หมายเหตุ: ' + note + '\n' : ''}เวลา: ${new Date().toLocaleString('th-TH')}
+สลิป: ${slip}`;
+  document.getElementById('se-line-preview').textContent = text;
+}
+
+function resetSaleForm() {
+  document.getElementById('sales-form').reset();
+  updateLinePreview();
+}
+
+function onSubmitSale(e) {
+  e.preventDefault();
+  const branch = document.getElementById('se-branch').value;
+  const empId = document.getElementById('se-emp').value;
+  const type = document.getElementById('se-type').value;
+  const amount = Number(document.getElementById('se-amount').value);
+  const memberId = document.getElementById('se-member').value;
+  const memberName = document.getElementById('se-mname').value;
+  const slip = document.getElementById('se-slip').value;
+  const note = document.getElementById('se-note').value;
+
+  if ((type === 'MEM' || type === 'PT') && !slip) {
+    if (!confirm('ประเภท ' + type + ' ปกติต้องแนบสลิป\nบันทึกโดยไม่มีสลิปจริงหรือ?')) return;
+  }
+
+  const sale = {
+    id: nid(), ts: new Date().toISOString(),
+    branch, empId, type, memberId, memberName, amount, slip, note,
+    notify: (type === 'MEM' || type === 'PT')
+              ? (slip ? (DATA.settings.lineConfigured ? 'Sent' : 'Pending') : 'Pending')
+              : '—',
+  };
+  DATA.sales.unshift(sale);
+  saveData();
+  toast('บันทึกยอดเรียบร้อย ' + thb(amount), 'ok');
+  if (sale.notify === 'Sent') toast('ส่ง LINE Group แล้ว', 'ok');
+  else if (sale.notify === 'Pending') toast('รอส่ง LINE (ตั้งค่า LINE OA ก่อน)', 'warn');
+  resetSaleForm();
+}
+
+// ============ TRAININGS ENTRY ============
+function renderTrainingsEntry(root) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  const branches = canSeeAllBranches()
+    ? DATA.branches.map(b => `<option value="${b.code}">${b.code} · ${b.name}</option>`).join('')
+    : `<option value="${SESSION.branch}">${SESSION.branch}</option>`;
+  const memberOptions = DATA.members
+    .filter(m => m.status === 'Active' && m.hours > 0)
+    .map(m => `<option value="${m.id}" data-branch="${m.branch}" data-hours="${m.hours}">${m.id} — ${m.name} ${m.surname} (เหลือ ${m.hours} ครั้ง)</option>`).join('');
+  const trainerOptions = DATA.employees
+    .filter(e => e.position === 'เทรนเนอร์' && e.status === 'Active')
+    .map(e => `<option value="${e.id}">${e.id} — ${e.name} ${e.surname}</option>`).join('');
+
+  card.innerHTML = `
+    <h2>บันทึกการเทรน <small>หักชั่วโมง 1 ครั้งเมื่อรหัสเมเนเจอร์ถูกต้อง</small></h2>
+    <form id="train-form" onsubmit="onSubmitTrain(event)">
+      <div class="form-grid">
+        <div class="field">
+          <label>สาขา *</label>
+          <select id="te-branch" required>${branches}</select>
+        </div>
+        <div class="field">
+          <label>สมาชิก *</label>
+          <select id="te-member" required onchange="onPickTrainMember()">
+            <option value="">เลือก...</option>${memberOptions}
+          </select>
+        </div>
+        <div class="field">
+          <label>เทรนเนอร์ *</label>
+          <select id="te-trainer" required>
+            <option value="">เลือก...</option>${trainerOptions}
+          </select>
+        </div>
+        <div class="field">
+          <label>รหัสเมเนเจอร์สาขา *</label>
+          <input id="te-pwd" type="password" required placeholder="••••••••">
+        </div>
+        <div class="field full">
+          <label>หมายเหตุ</label>
+          <input id="te-note" type="text" placeholder="">
+        </div>
+      </div>
+      <button type="submit" class="btn">ยืนยัน + หักชั่วโมง</button>
+    </form>
+  `;
+  root.appendChild(card);
+
+  // Recent trainings list
+  const list = document.createElement('div');
+  list.className = 'card';
+  const trainings = filterByBranch(DATA.trainings).slice().sort((a,b) => new Date(b.ts) - new Date(a.ts)).slice(0, 15);
+  let rows = '';
+  trainings.forEach(t => {
+    rows += `<tr>
+      <td>${fmtTime(t.ts)}</td>
+      <td>${t.branch}</td>
+      <td>${t.memberName}</td>
+      <td>${t.trainerName}</td>
+      <td class="center">${t.hoursBefore} → <strong>${t.hoursAfter}</strong></td>
+      <td class="center">${t.verified ? '<span class="badge ok">✓ Verified</span>' : '<span class="badge bad">✗ Invalid</span>'}</td>
+    </tr>`;
+  });
+  if (rows === '') rows = '<tr><td colspan="6" class="muted center" style="padding: 16px;">ยังไม่มีการเทรน</td></tr>';
+  list.innerHTML = `<h2>การเทรนล่าสุด</h2>
+    <table>
+      <thead><tr><th>เวลา</th><th>สาขา</th><th>สมาชิก</th><th>เทรนเนอร์</th><th class="center">ชั่วโมง</th><th class="center">สถานะ</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  root.appendChild(list);
+}
+
+function onPickTrainMember() {
+  const sel = document.getElementById('te-member');
+  const opt = sel.options[sel.selectedIndex];
+  if (opt && opt.dataset.branch) {
+    document.getElementById('te-branch').value = opt.dataset.branch;
+  }
+}
+
+function onSubmitTrain(e) {
+  e.preventDefault();
+  const branch = document.getElementById('te-branch').value;
+  const memberId = document.getElementById('te-member').value;
+  const trainerId = document.getElementById('te-trainer').value;
+  const pwd = document.getElementById('te-pwd').value;
+  const note = document.getElementById('te-note').value;
+
+  const member = DATA.members.find(m => m.id === memberId);
+  const trainer = DATA.employees.find(e => e.id === trainerId);
+  const br = DATA.branches.find(b => b.code === branch);
+
+  if (!member || !trainer || !br) {
+    toast('ข้อมูลไม่ครบ', 'bad'); return;
+  }
+  if (member.hours <= 0) {
+    toast('สมาชิกนี้ไม่เหลือชั่วโมงเทรน', 'bad'); return;
+  }
+  const verified = (pwd === br.managerPwd);
+  if (!verified) {
+    DATA.trainings.unshift({
+      id: nid(), ts: new Date().toISOString(), branch, memberId,
+      memberName: member.name + ' ' + member.surname,
+      trainerId, trainerName: trainer.name,
+      verified: false, hoursBefore: member.hours, hoursAfter: member.hours,
+    });
+    saveData();
+    toast('รหัสเมเนเจอร์ไม่ถูกต้อง — ไม่หักชั่วโมง', 'bad');
+    document.getElementById('te-pwd').value = '';
+    return;
+  }
+  // Deduct
+  const hoursBefore = member.hours;
+  member.hours = Math.max(0, member.hours - 1);
+  DATA.trainings.unshift({
+    id: nid(), ts: new Date().toISOString(), branch, memberId,
+    memberName: member.name + ' ' + member.surname,
+    trainerId, trainerName: trainer.name,
+    verified: true, hoursBefore, hoursAfter: member.hours, note,
+  });
+  // Add as a "Train" sale row for tracking
+  DATA.sales.unshift({
+    id: nid(), ts: new Date().toISOString(), branch, empId: trainerId,
+    type: 'Train', memberId, memberName: member.name + ' ' + member.surname,
+    amount: 0, slip: '', note: 'บันทึกเทรน', notify: '—',
+  });
+  // Alert if low hours
+  if (member.hours <= DATA.settings.trainerWarnHrs) {
+    DATA.alerts.unshift({
+      id: nid(), ts: new Date().toISOString(),
+      type: 'Trainer Hours Low', branch,
+      memberId: member.id, memberName: member.name + ' ' + member.surname,
+      value: member.hours + ' ครั้ง',
+      message: 'เหลือชั่วโมงเทรน ' + member.hours + ' ครั้ง',
+      status: member.lineUid ? 'Sent' : 'No LINE',
+    });
+  }
+  saveData();
+  toast('หักชั่วโมงสำเร็จ — เหลือ ' + member.hours + ' ครั้ง', 'ok');
+  navigate('trainings');
+}
+
+// ============ MEMBERS ============
+function renderMembers(root) {
+  const editable = ['Owner','Manager','Staff'].includes(SESSION.role);
+  const tb = document.createElement('div');
+  tb.className = 'toolbar';
+  tb.innerHTML = `
+    <div class="filters">
+      <input id="m-search" type="text" placeholder="ค้นหา ชื่อ/นามสกุล/รหัส..." oninput="renderMembers(document.getElementById('content'))">
+      <select id="m-status" onchange="renderMembers(document.getElementById('content'))">
+        <option value="">ทุกสถานะ</option>
+        <option value="Active">Active</option>
+        <option value="Frozen">Frozen</option>
+        <option value="Expired">Expired</option>
+      </select>
+    </div>
+    ${editable ? '<button class="btn" onclick="openMemberModal()">+ เพิ่มสมาชิก</button>' : ''}
+  `;
+  root.appendChild(tb);
+
+  // preserve search/filter values across re-renders
+  const prevSearch = document.getElementById('m-search') ? document.getElementById('m-search').value : '';
+  const prevStatus = document.getElementById('m-status') ? document.getElementById('m-status').value : '';
+  // (the toolbar HTML re-rendered, so values reset; restore manually)
+  setTimeout(() => {
+    const s = document.getElementById('m-search'); if (s && prevSearch) s.value = prevSearch;
+    const st = document.getElementById('m-status'); if (st && prevStatus) st.value = prevStatus;
+  }, 0);
+
+  const search = (window.event && window.event.target && window.event.target.id === 'm-search') ? window.event.target.value : '';
+  const statusFilter = (window.event && window.event.target && window.event.target.id === 'm-status') ? window.event.target.value : '';
+
+  const card = document.createElement('div');
+  card.className = 'card';
+  const ref = todayStart();
+  let list = filterByBranch(DATA.members);
+  if (search) {
+    const q = search.toLowerCase();
+    list = list.filter(m => (m.name + ' ' + m.surname + ' ' + m.id).toLowerCase().includes(q));
+  }
+  if (statusFilter) list = list.filter(m => m.status === statusFilter);
+  list.sort((a, b) => daysBetween(a.endDate, ref) - daysBetween(b.endDate, ref));
+
+  let rows = '';
+  list.forEach(m => {
+    const days = daysBetween(m.endDate, ref);
+    const dayCls = days < 0 ? 'days-low' : (days <= DATA.settings.expiryWarnDays ? 'days-warn' : '');
+    const hrCls = m.hours > 0 && m.hours <= DATA.settings.trainerWarnHrs ? 'hrs-low' : '';
+    rows += `<tr>
+      <td>${m.id}</td>
+      <td><strong>${m.name} ${m.surname}</strong></td>
+      <td class="center">${m.age}</td>
+      <td class="center">${m.branch}</td>
+      <td class="center">${fmtDate(m.endDate)}</td>
+      <td class="center ${dayCls}">${days < 0 ? 'หมดแล้ว ' + (-days) + ' วัน' : days + ' วัน'}</td>
+      <td class="center ${hrCls}">${m.hours}</td>
+      <td>${m.trainer || '<span class="muted">—</span>'}</td>
+      <td class="center">${statusBadge(m.status)}</td>
+      ${editable ? `<td class="row-actions">
+        <button class="btn small secondary" onclick="openMemberModal('${m.id}')">แก้</button>
+      </td>` : ''}
+    </tr>`;
+  });
+  if (rows === '') rows = `<tr><td colspan="${editable?10:9}" class="muted center" style="padding: 20px;">ไม่พบข้อมูลสมาชิก</td></tr>`;
+
+  card.innerHTML = `
+    <table>
+      <thead><tr>
+        <th>ID</th><th>ชื่อ-นามสกุล</th><th class="center">อายุ</th>
+        <th class="center">สาขา</th><th class="center">วันหมดอายุ</th><th class="center">วันคงเหลือ</th>
+        <th class="center">ชม.เทรน</th><th>เทรนเนอร์</th><th class="center">สถานะ</th>
+        ${editable ? '<th></th>' : ''}
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+  root.appendChild(card);
+}
+
+function statusBadge(s) {
+  if (s === 'Active')   return '<span class="badge ok">Active</span>';
+  if (s === 'Frozen')   return '<span class="badge info">Frozen</span>';
+  if (s === 'Expired')  return '<span class="badge bad">Expired</span>';
+  if (s === 'Cancelled')return '<span class="badge gray">Cancelled</span>';
+  return '<span class="badge gray">' + s + '</span>';
+}
+
+function openMemberModal(id) {
+  const m = id ? DATA.members.find(x => x.id === id) : null;
+  const isNew = !m;
+  const branches = DATA.branches.map(b => `<option value="${b.code}" ${m && m.branch===b.code?'selected':''}>${b.code}</option>`).join('');
+  const statuses = ['Active','Frozen','Expired','Cancelled']
+    .map(s => `<option value="${s}" ${m && m.status===s?'selected':''}>${s}</option>`).join('');
+
+  const newId = isNew ? 'M' + String(1000 + DATA.members.length + 1) : m.id;
+  const today = new Date().toISOString().slice(0,10);
+  const oneYearLater = new Date(); oneYearLater.setFullYear(oneYearLater.getFullYear()+1);
+  showModal(`
+    <h3>${isNew ? 'เพิ่มสมาชิกใหม่' : 'แก้ไขสมาชิก ' + m.id}</h3>
+    <form id="member-form" onsubmit="saveMember(event, ${isNew ? 'null' : "'" + m.id + "'"})">
+      <div class="form-grid">
+        <div class="field"><label>Member ID</label><input id="mm-id" value="${newId}" ${isNew ? '' : 'readonly'}></div>
+        <div class="field"><label>สาขา *</label><select id="mm-branch" required>${branches}</select></div>
+        <div class="field"><label>ชื่อ *</label><input id="mm-name" required value="${m ? m.name : ''}"></div>
+        <div class="field"><label>นามสกุล *</label><input id="mm-surname" required value="${m ? m.surname : ''}"></div>
+        <div class="field"><label>อายุ</label><input id="mm-age" type="number" min="0" value="${m ? m.age : ''}"></div>
+        <div class="field"><label>วันสมัคร</label><input id="mm-start" type="date" value="${m ? m.startDate.slice(0,10) : today}"></div>
+        <div class="field"><label>วันหมดอายุ</label><input id="mm-end" type="date" value="${m ? m.endDate.slice(0,10) : oneYearLater.toISOString().slice(0,10)}"></div>
+        <div class="field"><label>ชม.เทรนคงเหลือ</label><input id="mm-hours" type="number" min="0" value="${m ? m.hours : 0}"></div>
+        <div class="field"><label>เทรนเนอร์ประจำ</label><input id="mm-trainer" value="${m ? m.trainer : ''}"></div>
+        <div class="field"><label>LINE User ID</label><input id="mm-line" value="${m ? m.lineUid : ''}" placeholder="Uxxxxxxxxxxxxxx"></div>
+        <div class="field"><label>สถานะ</label><select id="mm-status">${statuses}</select></div>
+      </div>
+      <div class="actions">
+        ${!isNew && isManagerOrAbove() ? `<button type="button" class="btn danger" onclick="deleteMember('${m.id}')">ลบ</button>` : ''}
+        <button type="button" class="btn secondary" onclick="closeModal()">ยกเลิก</button>
+        <button type="submit" class="btn">บันทึก</button>
+      </div>
+    </form>
+  `);
+}
+
+function saveMember(e, idOrNull) {
+  e.preventDefault();
+  const isNew = !idOrNull;
+  const obj = {
+    id: document.getElementById('mm-id').value,
+    branch: document.getElementById('mm-branch').value,
+    name: document.getElementById('mm-name').value,
+    surname: document.getElementById('mm-surname').value,
+    age: Number(document.getElementById('mm-age').value || 0),
+    startDate: new Date(document.getElementById('mm-start').value).toISOString(),
+    endDate: new Date(document.getElementById('mm-end').value).toISOString(),
+    hours: Number(document.getElementById('mm-hours').value || 0),
+    trainer: document.getElementById('mm-trainer').value,
+    lineUid: document.getElementById('mm-line').value,
+    status: document.getElementById('mm-status').value,
+  };
+  if (isNew) {
+    if (DATA.members.some(m => m.id === obj.id)) {
+      toast('Member ID ซ้ำ', 'bad'); return;
+    }
+    DATA.members.push(obj);
+  } else {
+    const idx = DATA.members.findIndex(m => m.id === idOrNull);
+    DATA.members[idx] = { ...DATA.members[idx], ...obj };
+  }
+  saveData();
+  closeModal();
+  toast('บันทึกสมาชิกเรียบร้อย', 'ok');
+  navigate('members');
+}
+
+function deleteMember(id) {
+  if (!confirm('ลบสมาชิก ' + id + ' ?')) return;
+  DATA.members = DATA.members.filter(m => m.id !== id);
+  saveData();
+  closeModal();
+  toast('ลบสมาชิกเรียบร้อย', 'ok');
+  navigate('members');
+}
+
+// ============ SALES LOG ============
+function renderSalesLog(root) {
+  const tb = document.createElement('div');
+  tb.className = 'toolbar';
+  tb.innerHTML = `
+    <div class="filters">
+      <select id="sl-type" onchange="renderSalesLog(document.getElementById('content'))">
+        <option value="">ทุกประเภท</option>
+        <option value="MEM">MEM</option>
+        <option value="PT">PT</option>
+        <option value="Plan">Plan</option>
+        <option value="Train">Train</option>
+        <option value="Other">อื่นๆ</option>
+      </select>
+      <select id="sl-notify" onchange="renderSalesLog(document.getElementById('content'))">
+        <option value="">ทุกสถานะ LINE</option>
+        <option value="Sent">Sent</option>
+        <option value="Pending">Pending</option>
+        <option value="Failed">Failed</option>
+      </select>
+    </div>
+    <button class="btn secondary" onclick="exportCSV('sales')">Export CSV</button>
+  `;
+  root.appendChild(tb);
+
+  const fType = document.getElementById('sl-type') ? document.getElementById('sl-type').value : '';
+  const fNotify = document.getElementById('sl-notify') ? document.getElementById('sl-notify').value : '';
+
+  let list = filterByBranch(DATA.sales).slice().sort((a,b) => new Date(b.ts) - new Date(a.ts));
+  if (fType) list = list.filter(s => s.type === fType);
+  if (fNotify) list = list.filter(s => s.notify === fNotify);
+
+  const card = document.createElement('div');
+  card.className = 'card';
+  let rows = '';
+  list.slice(0, 100).forEach(s => {
+    const slipLink = s.slip ? `<a href="${s.slip}" target="_blank" rel="noopener" style="color: var(--accent);">ดูสลิป</a>` : '<span class="muted">—</span>';
+    rows += `<tr>
+      <td>${fmtTime(s.ts)}</td>
+      <td>${s.branch}</td>
+      <td><span style="font-weight: 600; color: ${typeColor(s.type)};">${s.type}</span></td>
+      <td>${s.empId}</td>
+      <td>${s.memberName || '<span class="muted">—</span>'}</td>
+      <td class="right"><strong>${thb(s.amount)}</strong></td>
+      <td class="center">${slipLink}</td>
+      <td class="center">${renderNotifyBadge(s.notify)}</td>
+      <td class="muted small">${s.note || ''}</td>
+    </tr>`;
+  });
+  if (rows === '') rows = '<tr><td colspan="9" class="muted center" style="padding: 20px;">ไม่พบรายการ</td></tr>';
+  card.innerHTML = `
+    <h2>ประวัติการขาย <small>${list.length} รายการ${list.length > 100 ? ' (แสดง 100 รายการล่าสุด)' : ''}</small></h2>
+    <table>
+      <thead><tr>
+        <th>เวลา</th><th>สาขา</th><th>ประเภท</th><th>พนักงาน</th>
+        <th>สมาชิก</th><th class="right">ยอด</th><th class="center">สลิป</th>
+        <th class="center">LINE</th><th>หมายเหตุ</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+  root.appendChild(card);
+}
+
+// ============ ALERTS ============
+function renderAlerts(root) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  const list = DATA.alerts.filter(a => CURRENT_BRANCH === '*' || a.branch === CURRENT_BRANCH);
+  let rows = '';
+  list.forEach(a => {
+    const tBadge = a.type === 'Member Expiring'
+      ? '<span class="badge warn">หมดอายุ</span>'
+      : '<span class="badge info">ชม. ใกล้หมด</span>';
+    const sBadge = a.status === 'Sent' ? '<span class="badge ok">Sent</span>'
+                 : a.status === 'No LINE' ? '<span class="badge gray">No LINE</span>'
+                 : '<span class="badge bad">Failed</span>';
+    rows += `<tr>
+      <td>${fmtTime(a.ts)}</td>
+      <td>${tBadge}</td>
+      <td>${a.branch}</td>
+      <td><strong>${a.memberName}</strong></td>
+      <td>${a.value}</td>
+      <td>${a.message}</td>
+      <td class="center">${sBadge}</td>
+    </tr>`;
+  });
+  if (rows === '') rows = '<tr><td colspan="7" class="muted center" style="padding: 20px;">ไม่มีการแจ้งเตือน</td></tr>';
+  card.innerHTML = `
+    <h2>การแจ้งเตือน <small>${list.length} รายการ</small></h2>
+    <table>
+      <thead><tr><th>เวลา</th><th>ประเภท</th><th>สาขา</th><th>สมาชิก</th><th>ค่าที่เหลือ</th><th>ข้อความ</th><th class="center">สถานะ</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+  root.appendChild(card);
+}
+
+// ============ EMPLOYEES ============
+function renderEmployees(root) {
+  const tb = document.createElement('div');
+  tb.className = 'toolbar';
+  tb.innerHTML = `<div></div><button class="btn" onclick="openEmployeeModal()">+ เพิ่มพนักงาน</button>`;
+  root.appendChild(tb);
+
+  const card = document.createElement('div');
+  card.className = 'card';
+  const list = filterByBranch(DATA.employees);
+  let rows = '';
+  list.forEach(e => {
+    rows += `<tr>
+      <td>${e.id}</td>
+      <td><strong>${e.name} ${e.surname}</strong></td>
+      <td>${e.position}</td>
+      <td class="center">${e.branch}</td>
+      <td class="center">${statusBadge(e.status)}</td>
+      <td class="row-actions"><button class="btn small secondary" onclick="openEmployeeModal('${e.id}')">แก้</button></td>
+    </tr>`;
+  });
+  if (rows === '') rows = '<tr><td colspan="6" class="muted center" style="padding: 20px;">ไม่พบพนักงาน</td></tr>';
+  card.innerHTML = `<table>
+    <thead><tr><th>ID</th><th>ชื่อ-นามสกุล</th><th>ตำแหน่ง</th><th class="center">สาขา</th><th class="center">สถานะ</th><th></th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+  root.appendChild(card);
+}
+
+function openEmployeeModal(id) {
+  const e = id ? DATA.employees.find(x => x.id === id) : null;
+  const isNew = !e;
+  const branches = DATA.branches.map(b => `<option value="${b.code}" ${e && e.branch===b.code?'selected':''}>${b.code}</option>`).join('');
+  const positions = ['ผู้จัดการสาขา','เคาน์เตอร์','เทรนเนอร์','พนักงานทั่วไป']
+    .map(p => `<option value="${p}" ${e && e.position===p?'selected':''}>${p}</option>`).join('');
+  const newId = isNew ? 'E' + String(100 + DATA.employees.length + 1) : e.id;
+  showModal(`
+    <h3>${isNew ? 'เพิ่มพนักงานใหม่' : 'แก้ไขพนักงาน ' + e.id}</h3>
+    <form onsubmit="saveEmployee(event, ${isNew ? 'null' : "'" + e.id + "'"})">
+      <div class="form-grid">
+        <div class="field"><label>EmpID</label><input id="ee-id" value="${newId}" ${isNew?'':'readonly'}></div>
+        <div class="field"><label>สาขา *</label><select id="ee-branch" required>${branches}</select></div>
+        <div class="field"><label>ชื่อ *</label><input id="ee-name" required value="${e ? e.name : ''}"></div>
+        <div class="field"><label>นามสกุล *</label><input id="ee-surname" required value="${e ? e.surname : ''}"></div>
+        <div class="field"><label>ตำแหน่ง *</label><select id="ee-position">${positions}</select></div>
+        <div class="field"><label>สถานะ</label>
+          <select id="ee-status">
+            <option value="Active" ${e && e.status==='Active'?'selected':''}>Active</option>
+            <option value="Inactive" ${e && e.status==='Inactive'?'selected':''}>Inactive</option>
+          </select>
+        </div>
+      </div>
+      <div class="actions">
+        ${!isNew ? `<button type="button" class="btn danger" onclick="deleteEmployee('${e.id}')">ลบ</button>` : ''}
+        <button type="button" class="btn secondary" onclick="closeModal()">ยกเลิก</button>
+        <button type="submit" class="btn">บันทึก</button>
+      </div>
+    </form>
+  `);
+}
+
+function saveEmployee(ev, idOrNull) {
+  ev.preventDefault();
+  const obj = {
+    id: document.getElementById('ee-id').value,
+    branch: document.getElementById('ee-branch').value,
+    name: document.getElementById('ee-name').value,
+    surname: document.getElementById('ee-surname').value,
+    position: document.getElementById('ee-position').value,
+    status: document.getElementById('ee-status').value,
+  };
+  if (!idOrNull) {
+    if (DATA.employees.some(x => x.id === obj.id)) { toast('EmpID ซ้ำ', 'bad'); return; }
+    DATA.employees.push(obj);
+  } else {
+    const idx = DATA.employees.findIndex(x => x.id === idOrNull);
+    DATA.employees[idx] = { ...DATA.employees[idx], ...obj };
+  }
+  saveData(); closeModal(); toast('บันทึกเรียบร้อย', 'ok'); navigate('employees');
+}
+function deleteEmployee(id) {
+  if (!confirm('ลบพนักงาน ' + id + ' ?')) return;
+  DATA.employees = DATA.employees.filter(e => e.id !== id);
+  saveData(); closeModal(); toast('ลบเรียบร้อย', 'ok'); navigate('employees');
+}
+
+// ============ REPORTS ============
+function renderReports(root) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `<h2>รายงาน 30 วันล่าสุด</h2><div class="chart-wrap" style="height:280px;"><canvas id="repRev"></canvas></div>`;
+  root.appendChild(card);
+
+  const breakdown = document.createElement('div');
+  breakdown.className = 'two-col';
+  breakdown.innerHTML = `
+    <div class="card"><h2>สัดส่วนยอดตามประเภท</h2><div class="chart-wrap" style="height:240px;"><canvas id="repType"></canvas></div></div>
+    <div class="card"><h2>สัดส่วนยอดตามสาขา</h2><div class="chart-wrap" style="height:240px;"><canvas id="repBranch"></canvas></div></div>
+  `;
+  root.appendChild(breakdown);
+
+  const ref = todayStart();
+  const days = [], totals = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(ref); d.setDate(d.getDate() - i);
+    days.push(d.toLocaleDateString('th-TH', { day:'2-digit', month:'short' }));
+    const sum = DATA.sales.filter(s => isSameDay(s.ts, d) && (CURRENT_BRANCH === '*' || s.branch === CURRENT_BRANCH))
+                          .filter(s => s.type !== 'Train')
+                          .reduce((a,b) => a + b.amount, 0);
+    totals.push(sum);
+  }
+  CHARTS.rep1 = new Chart(document.getElementById('repRev'), {
+    type: 'bar',
+    data: { labels: days, datasets: [{ label: 'ยอด', data: totals, backgroundColor: '#FF5C00' }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#6B7280', font: { size: 9 } }, grid: { display: false } },
+        y: { ticks: { color: '#6B7280', font: { size: 10 }, callback: v => '฿' + (v/1000).toFixed(0) + 'K' }, grid: { color: '#E5E7EB' } }
+      }
+    }
+  });
+
+  const startWindow = new Date(ref); startWindow.setDate(startWindow.getDate() - 29);
+  const ws = DATA.sales.filter(s => new Date(s.ts) >= startWindow && (CURRENT_BRANCH === '*' || s.branch === CURRENT_BRANCH));
+  const byType = { MEM: 0, PT: 0, Plan: 0, Other: 0 };
+  ws.forEach(s => { if (s.type === 'MEM' || s.type === 'PT' || s.type === 'Plan') byType[s.type] += s.amount; else if (s.type !== 'Train') byType.Other += s.amount; });
+  CHARTS.rep2 = new Chart(document.getElementById('repType'), {
+    type: 'doughnut',
+    data: { labels: Object.keys(byType), datasets: [{ data: Object.values(byType), backgroundColor: ['#534AB7','#185FA5','#888780','#BA7517'] }] },
+    options: { responsive: true, maintainAspectRatio: false, cutout: '60%', plugins: { legend: { position: 'right', labels: { font: { size: 11 } } } } }
+  });
+
+  const byBr = {};
+  DATA.branches.forEach(b => byBr[b.code] = 0);
+  ws.filter(s => s.type !== 'Train').forEach(s => { byBr[s.branch] = (byBr[s.branch] || 0) + s.amount; });
+  CHARTS.rep3 = new Chart(document.getElementById('repBranch'), {
+    type: 'doughnut',
+    data: { labels: Object.keys(byBr), datasets: [{ data: Object.values(byBr), backgroundColor: ['#185FA5','#1D9E75','#BA7517','#791F1F'] }] },
+    options: { responsive: true, maintainAspectRatio: false, cutout: '60%', plugins: { legend: { position: 'right', labels: { font: { size: 11 } } } } }
+  });
+}
+
+// ============ SETTINGS ============
+function renderSettings(root) {
+  if (SESSION.role !== 'Owner') {
+    root.innerHTML = '<div class="card"><div class="muted">เฉพาะ Owner เท่านั้น</div></div>';
+    return;
+  }
+  // Branches
+  const card1 = document.createElement('div');
+  card1.className = 'card';
+  let brRows = '';
+  DATA.branches.forEach((b, i) => {
+    brRows += `<tr>
+      <td><input value="${b.code}" onchange="DATA.branches[${i}].code=this.value" style="width: 60px;"></td>
+      <td><input value="${b.name}" onchange="DATA.branches[${i}].name=this.value" style="width: 100%;"></td>
+      <td><input type="password" value="${b.managerPwd}" onchange="DATA.branches[${i}].managerPwd=this.value" style="width: 130px;" placeholder="••••"></td>
+      <td><input value="${b.lineToken}" onchange="DATA.branches[${i}].lineToken=this.value" style="width: 100%;" placeholder="Channel Access Token"></td>
+      <td><input value="${b.lineGroupId}" onchange="DATA.branches[${i}].lineGroupId=this.value" style="width: 100%;" placeholder="LINE Group ID"></td>
+      <td class="row-actions"><button class="btn small danger" onclick="deleteBranch(${i})">ลบ</button></td>
+    </tr>`;
+  });
+  card1.innerHTML = `
+    <h2>สาขา + LINE OA <small>คลิก "บันทึก" หลังแก้</small></h2>
+    <table>
+      <thead><tr><th>รหัส</th><th>ชื่อ</th><th>รหัสเมเนเจอร์</th><th>LINE Token</th><th>Group ID</th><th></th></tr></thead>
+      <tbody>${brRows}</tbody>
+    </table>
+    <div style="margin-top: 12px; display: flex; gap: 8px;">
+      <button class="btn" onclick="saveSettings()">บันทึกการเปลี่ยนแปลง</button>
+      <button class="btn secondary" onclick="addBranch()">+ เพิ่มสาขา</button>
+    </div>
+  `;
+  root.appendChild(card1);
+
+  // Global config
+  const card2 = document.createElement('div');
+  card2.className = 'card';
+  card2.innerHTML = `
+    <h2>ค่าทั่วไป</h2>
+    <div class="form-grid">
+      <div class="field"><label>แจ้งเตือนล่วงหน้าก่อนหมดอายุ (วัน)</label>
+        <input type="number" min="1" value="${DATA.settings.expiryWarnDays}" onchange="DATA.settings.expiryWarnDays=Number(this.value);saveData();">
+      </div>
+      <div class="field"><label>แจ้งเตือนเมื่อชม.เทรนเหลือ ≤</label>
+        <input type="number" min="1" value="${DATA.settings.trainerWarnHrs}" onchange="DATA.settings.trainerWarnHrs=Number(this.value);saveData();">
+      </div>
+      <div class="field"><label>สัญลักษณ์เงิน</label>
+        <input value="${DATA.settings.currency}" onchange="DATA.settings.currency=this.value;saveData();">
+      </div>
+    </div>
+  `;
+  root.appendChild(card2);
+
+  // Users
+  const card3 = document.createElement('div');
+  card3.className = 'card';
+  let uRows = '';
+  DATA.users.forEach((u, i) => {
+    uRows += `<tr>
+      <td>${u.email}</td>
+      <td><strong>${u.name}</strong></td>
+      <td><span class="badge gray">${u.role}</span></td>
+      <td>${u.branch === '*' ? 'ทุกสาขา' : u.branch}</td>
+      <td class="row-actions">
+        <button class="btn small secondary" onclick="changePassword(${i})">รีเซ็ตรหัส</button>
+        ${u.role !== 'Owner' ? `<button class="btn small danger" onclick="deleteUser(${i})">ลบ</button>` : ''}
+      </td>
+    </tr>`;
+  });
+  card3.innerHTML = `
+    <h2>ผู้ใช้งานระบบ <small>Login + Role-based access</small></h2>
+    <table>
+      <thead><tr><th>อีเมล</th><th>ชื่อ</th><th>Role</th><th>สาขา</th><th></th></tr></thead>
+      <tbody>${uRows}</tbody>
+    </table>
+    <div style="margin-top: 12px;"><button class="btn" onclick="addUser()">+ เพิ่มผู้ใช้</button></div>
+  `;
+  root.appendChild(card3);
+
+  // Backup
+  const card4 = document.createElement('div');
+  card4.className = 'card';
+  card4.innerHTML = `
+    <h2>สำรองข้อมูล</h2>
+    <p class="muted small" style="margin-bottom: 12px;">ข้อมูลทั้งหมดเก็บใน browser localStorage ของเครื่องนี้ — ใช้ Export เพื่อสำรอง / Import เพื่อย้ายเครื่อง</p>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+      <button class="btn" onclick="exportJSON()">Export JSON</button>
+      <button class="btn secondary" onclick="document.getElementById('import-file').click()">Import JSON</button>
+      <input id="import-file" type="file" accept=".json" style="display: none;" onchange="importJSON(event)">
+      <button class="btn danger" onclick="resetAll()">รีเซ็ตเป็นข้อมูลตั้งต้น</button>
+    </div>
+  `;
+  root.appendChild(card4);
+}
+
+function saveSettings() { saveData(); toast('บันทึกเรียบร้อย', 'ok'); navigate('settings'); }
+function addBranch() {
+  const code = prompt('รหัสสาขาใหม่ (เช่น BR04):');
+  if (!code) return;
+  if (DATA.branches.some(b => b.code === code)) { toast('รหัสซ้ำ', 'bad'); return; }
+  DATA.branches.push({ code, name: 'FITSTATION 24 - ' + code, lineToken: '', lineGroupId: '', managerPwd: 'changeme' });
+  saveData(); navigate('settings');
+}
+function deleteBranch(idx) {
+  if (!confirm('ลบสาขา ' + DATA.branches[idx].code + ' ?')) return;
+  DATA.branches.splice(idx, 1);
+  saveData(); navigate('settings');
+}
+function addUser() {
+  const email = prompt('อีเมลผู้ใช้ใหม่:');
+  if (!email) return;
+  const name = prompt('ชื่อ-นามสกุล:'); if (!name) return;
+  const role = prompt('Role (Owner/Manager/Staff/Trainer):', 'Staff');
+  if (!['Owner','Manager','Staff','Trainer'].includes(role)) { toast('Role ไม่ถูก', 'bad'); return; }
+  const branchInput = prompt('สาขา (รหัสสาขา หรือ * สำหรับทุกสาขา):', 'BR01');
+  const pwd = prompt('รหัสผ่านเริ่มต้น:', 'changeme');
+  DATA.users.push({ email, pwd, name, role, branch: branchInput || 'BR01' });
+  saveData(); toast('เพิ่มผู้ใช้เรียบร้อย', 'ok'); navigate('settings');
+}
+function changePassword(idx) {
+  const newPwd = prompt('รหัสผ่านใหม่ของ ' + DATA.users[idx].email + ':');
+  if (!newPwd) return;
+  DATA.users[idx].pwd = newPwd; saveData(); toast('รีเซ็ตรหัสเรียบร้อย', 'ok');
+}
+function deleteUser(idx) {
+  if (!confirm('ลบผู้ใช้ ' + DATA.users[idx].email + ' ?')) return;
+  DATA.users.splice(idx, 1); saveData(); navigate('settings');
+}
+
+// ============ EXPORT/IMPORT ============
+function exportJSON() {
+  const blob = new Blob([JSON.stringify(DATA, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'fitstation24-backup-' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('Export สำเร็จ', 'ok');
+}
+function importJSON(e) {
+  const file = e.target.files[0]; if (!file) return;
+  if (!confirm('Import จะแทนที่ข้อมูลทั้งหมด ดำเนินการต่อ?')) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      DATA = JSON.parse(r.result);
+      saveData(); toast('Import สำเร็จ', 'ok'); navigate('settings');
+    } catch (err) { toast('ไฟล์ไม่ถูกต้อง', 'bad'); }
+  };
+  r.readAsText(file);
+}
+function resetAll() {
+  if (!confirm('รีเซ็ตข้อมูลทั้งหมดกลับเป็นค่าตั้งต้น? (ลบทุกอย่าง)')) return;
+  DATA = defaultData(); saveData(); toast('รีเซ็ตเรียบร้อย', 'ok'); navigate('dashboard');
+}
+function exportCSV(kind) {
+  let rows = [];
+  if (kind === 'sales') {
+    rows.push(['Time','Branch','EmpID','Type','MemberID','MemberName','Amount','Slip','Note','Notify']);
+    filterByBranch(DATA.sales).forEach(s => {
+      rows.push([s.ts, s.branch, s.empId, s.type, s.memberId, s.memberName, s.amount, s.slip, s.note, s.notify]);
+    });
+  }
+  const csv = rows.map(r => r.map(v => '"' + String(v||'').replace(/"/g,'""') + '"').join(',')).join('\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = kind + '-' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click(); URL.revokeObjectURL(url);
+}
+
+// ============ MODAL ============
+function showModal(html) {
+  const host = document.getElementById('modal-host');
+  host.innerHTML = `<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal">${html}</div></div>`;
+}
+function closeModal() {
+  document.getElementById('modal-host').innerHTML = '';
+}
+
+// ============ INIT ============
+loadData();
+SESSION = loadSession();
+if (SESSION) bootApp();
+
+// Allow Enter key to submit login
+document.getElementById('login-pwd').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doLogin();
+});
+</script>
+</body>
+</html>
