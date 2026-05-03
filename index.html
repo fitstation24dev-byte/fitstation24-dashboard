@@ -724,6 +724,7 @@ function defaultData() {
       trainerWarnHrs: 3,
       lineConfigured: false,
       brandName: 'FITSTATION 24',
+      rolePermissions: defaultRolePermissions(),
     },
     branches: [
       { code: 'BR01', name: 'FITSTATION 24 - สาขา 1', lineToken: '', lineGroupId: '', managerPwd: 'mgr#1234' },
@@ -886,6 +887,41 @@ function visibleBranches() {
 function canSeeAllBranches() { return SESSION && SESSION.branch === '*'; }
 function isOwner() { return SESSION && SESSION.role === 'Owner'; }
 function isManagerOrAbove() { return SESSION && (SESSION.role === 'Owner' || SESSION.role === 'Manager'); }
+
+const NAV_ITEMS = [
+  { id: 'dashboard',  label: 'Dashboard' },
+  { id: 'sales',      label: 'บันทึกยอดขาย' },
+  { id: 'trainings',  label: 'บันทึกการเทรน' },
+  { id: 'members',    label: 'สมาชิก' },
+  { id: 'sales-log',  label: 'ประวัติการขาย' },
+  { id: 'alerts',     label: 'การแจ้งเตือน' },
+  { id: 'employees',  label: 'พนักงาน' },
+  { id: 'reports',    label: 'รายงาน' },
+  { id: 'settings',   label: 'ตั้งค่าระบบ' },
+];
+const DELEGABLE_ROLES = ['Manager','Staff','Trainer'];
+
+function defaultRolePermissions() {
+  return {
+    Manager: ['dashboard','sales','trainings','members','sales-log','alerts','employees','reports'],
+    Staff:   ['dashboard','sales','trainings','members','sales-log','alerts'],
+    Trainer: ['dashboard','trainings','members'],
+  };
+}
+
+function getRolePermissions() {
+  const stored = (DATA.settings && DATA.settings.rolePermissions) || {};
+  const def = defaultRolePermissions();
+  const out = {};
+  DELEGABLE_ROLES.forEach(r => { out[r] = Array.isArray(stored[r]) ? stored[r] : def[r]; });
+  return out;
+}
+
+function canAccessView(role, viewId) {
+  if (role === 'Owner') return true;
+  const perms = getRolePermissions();
+  return (perms[role] || []).includes(viewId);
+}
 function effectiveBranchFilter() {
   // If user can only see one branch, force-pick it
   if (!canSeeAllBranches()) return SESSION.branch;
@@ -981,20 +1017,9 @@ function bootApp() {
 
   // Build nav
   const nav = document.getElementById('nav');
-  const items = [
-    { id: 'dashboard',  label: 'Dashboard',         roles: ['Owner','Manager','Staff','Trainer'] },
-    { id: 'sales',      label: 'บันทึกยอดขาย',      roles: ['Owner','Manager','Staff'] },
-    { id: 'trainings',  label: 'บันทึกการเทรน',     roles: ['Owner','Manager','Staff','Trainer'] },
-    { id: 'members',    label: 'สมาชิก',            roles: ['Owner','Manager','Staff','Trainer'] },
-    { id: 'sales-log',  label: 'ประวัติการขาย',     roles: ['Owner','Manager','Staff'] },
-    { id: 'alerts',     label: 'การแจ้งเตือน',     roles: ['Owner','Manager','Staff'] },
-    { id: 'employees',  label: 'พนักงาน',           roles: ['Owner','Manager'] },
-    { id: 'reports',    label: 'รายงาน',            roles: ['Owner','Manager'] },
-    { id: 'settings',   label: 'ตั้งค่าระบบ',       roles: ['Owner'] },
-  ];
   nav.innerHTML = '';
-  items.forEach(i => {
-    if (!i.roles.includes(SESSION.role)) return;
+  NAV_ITEMS.forEach(i => {
+    if (!canAccessView(SESSION.role, i.id)) return;
     const b = document.createElement('button');
     b.textContent = i.label;
     b.dataset.id = i.id;
@@ -1045,6 +1070,9 @@ function onBranchChange() {
 }
 
 function navigate(view) {
+  if (SESSION && !canAccessView(SESSION.role, view)) {
+    view = canAccessView(SESSION.role, 'dashboard') ? 'dashboard' : (NAV_ITEMS.find(i => canAccessView(SESSION.role, i.id)) || {}).id || 'dashboard';
+  }
   CURRENT_VIEW = view;
   try { sessionStorage.setItem('fs24_view', view); } catch {}
   document.querySelectorAll('#nav button').forEach(b => {
@@ -2299,6 +2327,30 @@ function renderSettings(root) {
   `;
   root.appendChild(card2);
 
+  // Role permissions (menu access)
+  const cardRP = document.createElement('div');
+  cardRP.className = 'card';
+  const perms = getRolePermissions();
+  let rpHead = '<tr><th>เมนู</th>' + DELEGABLE_ROLES.map(r => `<th class="center">${r}</th>`).join('') + '</tr>';
+  let rpRows = '';
+  NAV_ITEMS.filter(i => i.id !== 'settings').forEach(i => {
+    let cells = `<td>${i.label} <small class="muted">(${i.id})</small></td>`;
+    DELEGABLE_ROLES.forEach(r => {
+      const checked = (perms[r] || []).includes(i.id) ? 'checked' : '';
+      cells += `<td class="center"><input type="checkbox" ${checked} onchange="toggleRolePerm('${r}','${i.id}',this.checked)"></td>`;
+    });
+    rpRows += `<tr>${cells}</tr>`;
+  });
+  cardRP.innerHTML = `
+    <h2>สิทธิ์การเข้าถึงเมนูตาม Role <small>Owner เข้าได้ทุกเมนูเสมอ · "ตั้งค่าระบบ" สงวนไว้เฉพาะ Owner</small></h2>
+    <table>
+      <thead>${rpHead}</thead>
+      <tbody>${rpRows}</tbody>
+    </table>
+    <div style="margin-top: 12px;"><button class="btn secondary" onclick="resetRolePermissions()">รีเซ็ตเป็นค่าเริ่มต้น</button></div>
+  `;
+  root.appendChild(cardRP);
+
   // Users
   const card3 = document.createElement('div');
   card3.className = 'card';
@@ -2342,6 +2394,41 @@ function renderSettings(root) {
 }
 
 function saveSettings() { saveData(); toast('บันทึกเรียบร้อย', 'ok'); navigate('settings'); }
+
+function rebuildNav() {
+  const nav = document.getElementById('nav');
+  if (!nav) return;
+  nav.innerHTML = '';
+  NAV_ITEMS.forEach(i => {
+    if (!canAccessView(SESSION.role, i.id)) return;
+    const b = document.createElement('button');
+    b.textContent = i.label;
+    b.dataset.id = i.id;
+    b.classList.toggle('active', i.id === CURRENT_VIEW);
+    b.onclick = () => navigate(i.id);
+    nav.appendChild(b);
+  });
+}
+
+function toggleRolePerm(role, viewId, on) {
+  if (!DELEGABLE_ROLES.includes(role)) return;
+  if (viewId === 'settings') return;
+  if (!DATA.settings.rolePermissions) DATA.settings.rolePermissions = defaultRolePermissions();
+  const cur = DATA.settings.rolePermissions[role] || [];
+  const set = new Set(cur);
+  if (on) set.add(viewId); else set.delete(viewId);
+  DATA.settings.rolePermissions[role] = Array.from(set);
+  saveData();
+  rebuildNav();
+}
+
+function resetRolePermissions() {
+  if (!confirm('รีเซ็ตสิทธิ์การเข้าถึงเมนูทุก role เป็นค่าเริ่มต้น?')) return;
+  DATA.settings.rolePermissions = defaultRolePermissions();
+  saveData();
+  rebuildNav();
+  navigate('settings');
+}
 function addBranch() {
   const code = prompt('รหัสสาขาใหม่ (เช่น BR04):');
   if (!code) return;
