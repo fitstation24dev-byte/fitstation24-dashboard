@@ -490,19 +490,12 @@
       <div class="name">FITSTATION 24</div>
       <div class="sub">Dashboard System</div>
     </div>
-    <label>อีเมล</label>
-    <input id="login-email" type="email" placeholder="your.email@example.com" autocomplete="username">
-    <label>รหัสผ่าน</label>
+    <label>Username</label>
+    <input id="login-email" type="text" placeholder="username" autocomplete="username">
+    <label>Password</label>
     <input id="login-pwd" type="password" placeholder="••••••••" autocomplete="current-password">
-    <div id="login-err" class="err">อีเมลหรือรหัสผ่านไม่ถูกต้อง</div>
+    <div id="login-err" class="err">Username หรือ Password ไม่ถูกต้อง</div>
     <button class="primary" onclick="doLogin()">เข้าสู่ระบบ</button>
-    <div class="demo">
-      <div style="margin-bottom: 6px;">บัญชีทดสอบ (คลิกเพื่อกรอกอัตโนมัติ):</div>
-      <div class="demo-row" onclick="fillLogin('owner@fitstation.com','admin123')"><span>owner@fitstation.com</span><span>Owner</span></div>
-      <div class="demo-row" onclick="fillLogin('manager.br1@fitstation.com','m1pass')"><span>manager.br1@fitstation.com</span><span>Manager BR01</span></div>
-      <div class="demo-row" onclick="fillLogin('staff.br1@fitstation.com','s1pass')"><span>staff.br1@fitstation.com</span><span>Staff BR01</span></div>
-      <div class="demo-row" onclick="fillLogin('trainer1@fitstation.com','t1pass')"><span>trainer1@fitstation.com</span><span>Trainer</span></div>
-    </div>
   </div>
 </div>
 
@@ -726,14 +719,8 @@ function defaultData() {
       { code: 'BR02', name: 'FITSTATION 24 - สาขา 2', lineToken: '', lineGroupId: '', managerPwd: 'mgr#5678' },
       { code: 'BR03', name: 'FITSTATION 24 - สาขา 3', lineToken: '', lineGroupId: '', managerPwd: 'mgr#9012' },
     ],
-    users: [
-      { email: 'owner@fitstation.com',         pwd: 'admin123', name: 'เจ้าของกิจการ',     role: 'Owner',   branch: '*'   },
-      { email: 'manager.br1@fitstation.com',   pwd: 'm1pass',   name: 'สมชาย ใจดี',         role: 'Manager', branch: 'BR01' },
-      { email: 'manager.br2@fitstation.com',   pwd: 'm2pass',   name: 'อนันต์ เอกชัย',     role: 'Manager', branch: 'BR02' },
-      { email: 'staff.br1@fitstation.com',     pwd: 's1pass',   name: 'สมหญิง สวยงาม',     role: 'Staff',   branch: 'BR01' },
-      { email: 'trainer1@fitstation.com',      pwd: 't1pass',   name: 'วิชัย แข็งแรง',     role: 'Trainer', branch: 'BR01' },
-      { email: 'trainer2@fitstation.com',      pwd: 't2pass',   name: 'พิมพ์ ฟิตเนส',       role: 'Trainer', branch: 'BR01' },
-    ],
+    // No demo users — admin must be created via Supabase SQL Editor on first setup
+    users: [],
     employees: [
       { id: 'E001', name: 'สมชาย',  surname: 'ใจดี',     position: 'ผู้จัดการสาขา', branch: 'BR01', status: 'Active' },
       { id: 'E002', name: 'สมหญิง', surname: 'สวยงาม',   position: 'เคาน์เตอร์',   branch: 'BR01', status: 'Active' },
@@ -1315,12 +1302,12 @@ function renderSalesEntry(root) {
           <input id="se-mname" type="text" placeholder="ชื่อ-นามสกุล">
         </div>
         <div class="field full">
-          <label>สลิป (อัปโหลดรูป หรือใส่ URL) <span id="se-slip-req" style="color: var(--bad);">*</span></label>
+          <label>สลิป (อัปโหลดรูป) <span id="se-slip-req" style="color: var(--bad);">*</span></label>
           <div class="slip-input">
             <div class="slip-preview" id="se-slip-preview" onclick="viewSlip()" title="คลิกเพื่อดูรูปขนาดเต็ม">📎</div>
             <div class="slip-controls">
               <input type="file" id="se-slip-file" accept="image/*" onchange="handleSaleSlip(event)">
-              <input id="se-slip" type="text" placeholder="หรือวาง URL: https://drive.google.com/..." oninput="updateSlipPreview(); updateLinePreview();">
+              <input id="se-slip" type="hidden">
               <button type="button" class="btn small secondary" onclick="clearSaleSlip()" style="align-self: flex-start;">ลบสลิป</button>
             </div>
           </div>
@@ -2173,7 +2160,7 @@ function renderSettings(root) {
   card3.innerHTML = `
     <h2>ผู้ใช้งานระบบ <small>Login + Role-based access</small></h2>
     <table>
-      <thead><tr><th>อีเมล</th><th>ชื่อ</th><th>Role</th><th>สาขา</th><th></th></tr></thead>
+      <thead><tr><th>Username</th><th>ชื่อ</th><th>Role</th><th>สาขา</th><th></th></tr></thead>
       <tbody>${uRows}</tbody>
     </table>
     <div style="margin-top: 12px;"><button class="btn" onclick="addUser()">+ เพิ่มผู้ใช้</button></div>
@@ -2212,8 +2199,9 @@ function deleteBranch(idx) {
   saveData(); navigate('settings');
 }
 function addUser() {
-  const email = prompt('อีเมลผู้ใช้ใหม่:');
+  const email = prompt('Username ผู้ใช้ใหม่:');
   if (!email) return;
+  if (DATA.users.some(u => u.email.toLowerCase() === email.toLowerCase())) { toast('Username นี้มีอยู่แล้ว', 'bad'); return; }
   const name = prompt('ชื่อ-นามสกุล:'); if (!name) return;
   const role = prompt('Role (Owner/Manager/Staff/Trainer):', 'Staff');
   if (!['Owner','Manager','Staff','Trainer'].includes(role)) { toast('Role ไม่ถูก', 'bad'); return; }
