@@ -535,6 +535,7 @@ let SESSION = null;
 let CURRENT_VIEW = 'dashboard';
 let CURRENT_BRANCH = '*';
 let CHARTS = {};
+let DASH_PERIOD = { type: 'today', from: null, to: null };
 
 function loadData() {
   try {
@@ -641,6 +642,63 @@ function todayStart() { const d = new Date(); d.setHours(0,0,0,0); return d; }
 function isSameDay(iso, refDate) {
   const d = new Date(iso);
   return d.getFullYear() === refDate.getFullYear() && d.getMonth() === refDate.getMonth() && d.getDate() === refDate.getDate();
+}
+function inRange(iso, range) {
+  const t = new Date(iso).getTime();
+  return t >= range.start.getTime() && t < range.end.getTime();
+}
+function getDashRange() {
+  const today = todayStart();
+  const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+  const dayMs = 1000 * 60 * 60 * 24;
+  switch (DASH_PERIOD.type) {
+    case 'today':
+      return { start: today, end: tomorrow, label: 'วันนี้', days: 1 };
+    case 'yesterday': {
+      const s = new Date(today); s.setDate(s.getDate() - 1);
+      return { start: s, end: today, label: 'เมื่อวาน', days: 1 };
+    }
+    case '7d': {
+      const s = new Date(today); s.setDate(s.getDate() - 6);
+      return { start: s, end: tomorrow, label: '7 วันล่าสุด', days: 7 };
+    }
+    case '30d': {
+      const s = new Date(today); s.setDate(s.getDate() - 29);
+      return { start: s, end: tomorrow, label: '30 วันล่าสุด', days: 30 };
+    }
+    case 'thisMonth': {
+      const s = new Date(today.getFullYear(), today.getMonth(), 1);
+      const e = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+      return { start: s, end: e, label: 'เดือนนี้', days: Math.round((e - s) / dayMs) };
+    }
+    case 'lastMonth': {
+      const s = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+      const e = new Date(today.getFullYear(), today.getMonth(), 1);
+      return { start: s, end: e, label: 'เดือนที่แล้ว', days: Math.round((e - s) / dayMs) };
+    }
+    case 'custom': {
+      const s = DASH_PERIOD.from ? new Date(DASH_PERIOD.from) : new Date(today);
+      s.setHours(0, 0, 0, 0);
+      const eRef = DASH_PERIOD.to ? new Date(DASH_PERIOD.to) : new Date(today);
+      eRef.setHours(0, 0, 0, 0);
+      const e = new Date(eRef); e.setDate(e.getDate() + 1);
+      const days = Math.max(1, Math.round((e - s) / dayMs));
+      return { start: s, end: e, label: 'กำหนดเอง', days };
+    }
+    default:
+      return { start: today, end: tomorrow, label: 'วันนี้', days: 1 };
+  }
+}
+function setDashPeriod(type, from, to) {
+  DASH_PERIOD = { type, from: from || null, to: to || null };
+  if (CURRENT_VIEW === 'dashboard') navigate('dashboard');
+}
+function applyDashCustomRange() {
+  const f = document.getElementById('dash-from').value;
+  const t = document.getElementById('dash-to').value;
+  if (!f || !t) { toast('กรุณาเลือกวันที่ให้ครบ', 'bad'); return; }
+  if (new Date(f) > new Date(t)) { toast('วันที่เริ่มต้นต้องไม่เกินวันสิ้นสุด', 'bad'); return; }
+  setDashPeriod('custom', f, t);
 }
 function daysBetween(iso1, ref) {
   const a = new Date(iso1); a.setHours(0,0,0,0);
@@ -783,44 +841,74 @@ function navigate(view) {
 
 // ============ DASHBOARD ============
 function renderDashboard(root) {
-  const ref = todayStart();
-  const tomorrow = new Date(ref); tomorrow.setDate(tomorrow.getDate() + 1);
+  const range = getDashRange();
+  const periodLabel = range.label;
+
+  // Period selector
+  const periodBar = document.createElement('div');
+  periodBar.className = 'card';
+  periodBar.style.padding = '12px 16px';
+  periodBar.style.marginBottom = '14px';
+  const opts = [
+    { id: 'today',     label: 'วันนี้' },
+    { id: 'yesterday', label: 'เมื่อวาน' },
+    { id: '7d',        label: '7 วัน' },
+    { id: '30d',       label: '30 วัน' },
+    { id: 'thisMonth', label: 'เดือนนี้' },
+    { id: 'lastMonth', label: 'เดือนที่แล้ว' },
+    { id: 'custom',    label: 'กำหนดเอง' },
+  ];
+  const fromVal = DASH_PERIOD.from || new Date().toISOString().slice(0, 10);
+  const toVal = DASH_PERIOD.to || new Date().toISOString().slice(0, 10);
+  periodBar.innerHTML = `
+    <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+      <span class="muted small" style="margin-right:6px;">ช่วงเวลา:</span>
+      ${opts.map(o => `<button class="btn small ${DASH_PERIOD.type === o.id ? '' : 'secondary'}" onclick="setDashPeriod('${o.id}')">${o.label}</button>`).join('')}
+      <span id="dash-custom-range" style="display:${DASH_PERIOD.type === 'custom' ? 'inline-flex' : 'none'}; gap:6px; align-items:center; margin-left:8px;">
+        <input type="date" id="dash-from" value="${fromVal}" style="padding:5px 8px; border:1px solid var(--border); border-radius:6px;">
+        <span class="muted small">ถึง</span>
+        <input type="date" id="dash-to" value="${toVal}" style="padding:5px 8px; border:1px solid var(--border); border-radius:6px;">
+        <button class="btn small" onclick="applyDashCustomRange()">ใช้</button>
+      </span>
+    </div>
+  `;
+  root.appendChild(periodBar);
 
   const sales = filterByBranch(DATA.sales);
   const trainings = filterByBranch(DATA.trainings);
 
-  const todaySales = sales.filter(s => isSameDay(s.ts, ref));
-  const todayMem = todaySales.filter(s => s.type === 'MEM').reduce((a,b) => a + b.amount, 0);
-  const todayPt  = todaySales.filter(s => s.type === 'PT').reduce((a,b) => a + b.amount, 0);
-  const todayPlan = todaySales.filter(s => s.type === 'Plan').reduce((a,b) => a + b.amount, 0);
-  const todayTotal = todayMem + todayPt + todayPlan;
-  const todayTrain = trainings.filter(t => t.verified && isSameDay(t.ts, ref)).length;
+  const periodSales = sales.filter(s => inRange(s.ts, range));
+  const periodMem = periodSales.filter(s => s.type === 'MEM').reduce((a,b) => a + b.amount, 0);
+  const periodPt  = periodSales.filter(s => s.type === 'PT').reduce((a,b) => a + b.amount, 0);
+  const periodPlan = periodSales.filter(s => s.type === 'Plan').reduce((a,b) => a + b.amount, 0);
+  const periodTotal = periodMem + periodPt + periodPlan;
+  const periodTrain = trainings.filter(t => t.verified && inRange(t.ts, range)).length;
 
-  const memCount = todaySales.filter(s => s.type === 'MEM').length;
-  const ptCount  = todaySales.filter(s => s.type === 'PT').length;
+  const memCount = periodSales.filter(s => s.type === 'MEM').length;
+  const ptCount  = periodSales.filter(s => s.type === 'PT').length;
 
   // KPI cards
   const kpi = document.createElement('div');
   kpi.className = 'kpi-grid';
   kpi.innerHTML = `
     <div class="kpi accent">
-      <div class="label">ยอดรวมวันนี้</div>
-      <div class="value">${thb(todayTotal)}</div>
-      <div class="sub">${todaySales.length} รายการ</div>
+      <div class="label">ยอดรวม${periodLabel}</div>
+      <div class="value">${thb(periodTotal)}</div>
+      <div class="sub">${periodSales.length} รายการ</div>
     </div>
     <div class="kpi">
-      <div class="label">MEM วันนี้</div>
+      <div class="label">MEM ${periodLabel}</div>
       <div class="value">${memCount}</div>
-      <div class="sub">${thb(todayMem)}</div>
+      <div class="sub">${thb(periodMem)}</div>
     </div>
     <div class="kpi">
-      <div class="label">PT วันนี้</div>
+      <div class="label">PT ${periodLabel}</div>
       <div class="value">${ptCount}</div>
-      <div class="sub">${thb(todayPt)}</div>
+      <div class="sub">${thb(periodPt)}</div>
     </div>
     <div class="kpi ok">
-      <div class="label">เทรนวันนี้</div>
-      <div class="value">${todayTrain}</div>
+      <div class="label">เทรน${periodLabel}</div>
+      <div class="value">${periodTrain}</div>
       <div class="sub">ครั้ง</div>
     </div>
   `;
@@ -832,15 +920,16 @@ function renderDashboard(root) {
   let rows = '';
   const showBranches = canSeeAllBranches() ? DATA.branches.map(b => b.code) : [SESSION.branch];
   let totals = { mem: 0, pt: 0, plan: 0, all: 0, train: 0, overdue: 0 };
+  const overdueRef = todayStart();
   showBranches.forEach(code => {
     const br = DATA.branches.find(x => x.code === code);
-    const bs = DATA.sales.filter(s => s.branch === code && isSameDay(s.ts, ref));
+    const bs = DATA.sales.filter(s => s.branch === code && inRange(s.ts, range));
     const mem = bs.filter(x => x.type === 'MEM').reduce((a,b) => a + b.amount, 0);
     const pt  = bs.filter(x => x.type === 'PT').reduce((a,b) => a + b.amount, 0);
     const pl  = bs.filter(x => x.type === 'Plan').reduce((a,b) => a + b.amount, 0);
     const tot = mem + pt + pl;
-    const tr  = DATA.trainings.filter(t => t.branch === code && t.verified && isSameDay(t.ts, ref)).length;
-    const overdue = DATA.members.filter(m => m.branch === code && m.status === 'Active' && new Date(m.endDate) < ref).length;
+    const tr  = DATA.trainings.filter(t => t.branch === code && t.verified && inRange(t.ts, range)).length;
+    const overdue = DATA.members.filter(m => m.branch === code && m.status === 'Active' && new Date(m.endDate) < overdueRef).length;
     totals.mem += mem; totals.pt += pt; totals.plan += pl; totals.all += tot; totals.train += tr; totals.overdue += overdue;
     rows += `
       <tr>
@@ -866,7 +955,7 @@ function renderDashboard(root) {
       </tr>`;
   }
   bb.innerHTML = `
-    <h2>ยอดวันนี้แยกตามสาขา</h2>
+    <h2>ยอด${periodLabel}แยกตามสาขา <small>${fmtDate(range.start.toISOString())}${range.days > 1 ? ' - ' + fmtDate(new Date(range.end.getTime() - 86400000).toISOString()) : ''}</small></h2>
     <table>
       <thead><tr>
         <th>สาขา</th><th class="right">MEM</th><th class="right">PT</th><th class="right">Plan</th>
@@ -883,7 +972,8 @@ function renderDashboard(root) {
 
   const left = document.createElement('div');
   left.className = 'card';
-  left.innerHTML = `<h2>ยอดขายรวมรายวัน <small>14 วันล่าสุด</small></h2><div class="chart-wrap"><canvas id="dashChartRev"></canvas></div>`;
+  const chartWindow = Math.max(range.days, 14);
+  left.innerHTML = `<h2>ยอดขายรวมรายวัน <small>${chartWindow} วันล่าสุด</small></h2><div class="chart-wrap"><canvas id="dashChartRev"></canvas></div>`;
   tc.appendChild(left);
 
   const right = document.createElement('div');
@@ -939,10 +1029,12 @@ function renderDashboard(root) {
   root.appendChild(rs);
 
   // Build chart
+  const refToday = todayStart();
+  const chartDaysCount = chartWindow;
   const days = [];
   const totals2 = [];
-  for (let i = 13; i >= 0; i--) {
-    const d = new Date(ref); d.setDate(d.getDate() - i);
+  for (let i = chartDaysCount - 1; i >= 0; i--) {
+    const d = new Date(refToday); d.setDate(d.getDate() - i);
     days.push(d.toLocaleDateString('th-TH', { day: '2-digit', month: 'short' }));
     const sum = DATA.sales.filter(s => isSameDay(s.ts, d) && (CURRENT_BRANCH === '*' || s.branch === CURRENT_BRANCH))
                           .reduce((a, b) => a + b.amount, 0);
