@@ -116,6 +116,56 @@ function linePushText_(token, to, text) {
   return ok;
 }
 
+function lineGetQuota_(token) {
+  if (!token) return null;
+  const headers = { 'Authorization': 'Bearer ' + token };
+  const opts = { method: 'get', headers: headers, muteHttpExceptions: true };
+  try {
+    const q = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/quota', opts);
+    const c = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/quota/consumption', opts);
+    if (q.getResponseCode() !== 200 || c.getResponseCode() !== 200) {
+      return { error: 'HTTP ' + q.getResponseCode() + '/' + c.getResponseCode(), body: q.getContentText() + ' | ' + c.getContentText() };
+    }
+    const quota = JSON.parse(q.getContentText());
+    const cons  = JSON.parse(c.getContentText());
+    return {
+      type: quota.type,
+      limit: quota.value || 0,
+      used: cons.totalUsage || 0,
+    };
+  } catch (err) {
+    return { error: String(err) };
+  }
+}
+
+function menuCheckLineQuota() {
+  const ui = SpreadsheetApp.getUi();
+  const cfg = getConfig_();
+  const codes = Object.keys(cfg.branches);
+  if (codes.length === 0) { ui.alert('ยังไม่ได้ตั้งสาขาใน Settings'); return; }
+  const lines = ['📊 สถานะโควต้า LINE ของแต่ละสาขา', ''];
+  codes.forEach(code => {
+    const b = cfg.branches[code];
+    if (!b.token) {
+      lines.push(`• ${code} — ${b.name}\n   ⚠️ ไม่มี token`);
+      return;
+    }
+    const r = lineGetQuota_(b.token);
+    if (!r) {
+      lines.push(`• ${code} — ${b.name}\n   ⚠️ ไม่มี token`);
+    } else if (r.error) {
+      lines.push(`• ${code} — ${b.name}\n   ❌ ${r.error}`);
+    } else {
+      const limit = r.type === 'limited' ? r.limit : 'ไม่จำกัด';
+      const remain = r.type === 'limited' ? Math.max(0, r.limit - r.used) : '-';
+      const pct = r.type === 'limited' && r.limit > 0 ? ` (${Math.round(r.used / r.limit * 100)}%)` : '';
+      lines.push(`• ${code} — ${b.name}\n   ใช้ไป: ${r.used}${pct} / เพดาน: ${limit} / เหลือ: ${remain}`);
+    }
+  });
+  lines.push('', '* นับเฉพาะ push messages ของเดือนปัจจุบัน');
+  ui.alert(lines.join('\n'));
+}
+
 function linePushFlex_(token, to, flexJson, altText) {
   if (!token || !to) return false;
   const url = 'https://api.line.me/v2/bot/message/push';
@@ -144,6 +194,7 @@ function handleOpen(e) {
     .createMenu('FITSTATION 24')
     .addItem('ติดตั้ง Triggers (ครั้งแรก)', 'installTriggers')
     .addItem('ทดสอบส่ง LINE (สาขาเลือก)', 'menuTestLine')
+    .addItem('เช็คโควต้า LINE ทุกสาขา', 'menuCheckLineQuota')
     .addItem('สรุปยอดวันนี้ → LINE Group', 'sendDailySummaryToGroups')
     .addItem('สแกนสมาชิกใกล้หมดอายุตอนนี้', 'runDailyAtMidnight')
     .addToUi();
