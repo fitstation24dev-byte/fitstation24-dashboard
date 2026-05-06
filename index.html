@@ -1056,7 +1056,7 @@ function getDashRange() {
 function setDashPeriod(type, from, to) {
   DASH_PERIOD = { type, from: from || null, to: to || null };
   DASHBOARD_DATE = '';
-  if (CURRENT_VIEW === 'dashboard') renderDashboard(document.getElementById('content'));
+  if (CURRENT_VIEW === 'dashboard') navigate('dashboard');
 }
 function applyDashCustomRange() {
   const f = document.getElementById('dash-from').value;
