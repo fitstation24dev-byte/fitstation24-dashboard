@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Sarabun', 'Segoe UI', Tahoma, sans-serif;
+      margin: 0;
+      padding: 18px 22px;
+      background: #f6f7fb;
+      color: #222;
+      font-size: 14px;
+    }
+    h2 {
+      margin: 0 0 4px 0;
+      color: #2b3a55;
+    }
+    .subtitle {
+      color: #6b7280;
+      margin-bottom: 14px;
+      font-size: 13px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    }
+    .card h3 {
+      margin: 0 0 10px 0;
+      font-size: 14px;
+      color: #2b3a55;
+      border-bottom: 1px solid #eef0f5;
+      padding-bottom: 6px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px 14px;
+    }
+    .grid .full { grid-column: 1 / -1; }
+    label {
+      display: block;
+      font-size: 12px;
+      color: #4b5563;
+      margin-bottom: 3px;
+    }
+    label .req { color: #dc2626; }
+    input[type="text"], input[type="number"], input[type="email"],
+    input[type="tel"], input[type="date"], select, textarea {
+      width: 100%;
+      padding: 7px 9px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 13px;
+      background: #fff;
+    }
+    textarea { resize: vertical; min-height: 50px; }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 2px rgba(37,99,235,0.15);
+    }
+    .actions {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+      margin-top: 6px;
+    }
+    button {
+      padding: 9px 18px;
+      border: none;
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 14px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .btn-primary {
+      background: #2563eb;
+      color: #fff;
+    }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
+    .btn-secondary {
+      background: #e5e7eb;
+      color: #374151;
+    }
+    .btn-secondary:hover { background: #d1d5db; }
+    .summary {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 13px;
+      color: #1e3a8a;
+      margin-top: 6px;
+    }
+    .result {
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+      border-radius: 6px;
+      padding: 14px 16px;
+      color: #065f46;
+    }
+    .result h3 { margin: 0 0 8px 0; color: #065f46; }
+    .result a {
+      color: #2563eb;
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .result a:hover { text-decoration: underline; }
+    .error {
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      color: #991b1b;
+      padding: 10px 12px;
+      border-radius: 6px;
+      margin-bottom: 10px;
+      display: none;
+    }
+    .loading {
+      text-align: center;
+      padding: 14px;
+      color: #6b7280;
+    }
+  </style>
+</head>
+<body>
+
+<h2>📝 สมัครสมาชิกใหม่</h2>
+<div class="subtitle">กรอกข้อมูลให้ครบถ้วน → กดบันทึก → ระบบจะสร้างเอกสารสัญญาให้ลูกค้าเซ็น</div>
+
+<div id="errorBox" class="error"></div>
+
+<div id="formArea">
+
+  <div class="card">
+    <h3>ข้อมูลส่วนตัว</h3>
+    <div class="grid">
+      <div>
+        <label>ชื่อ <span class="req">*</span></label>
+        <input type="text" id="firstName" required>
+      </div>
+      <div>
+        <label>นามสกุล <span class="req">*</span></label>
+        <input type="text" id="lastName" required>
+      </div>
+      <div>
+        <label>อายุ</label>
+        <input type="number" id="age" min="1" max="120">
+      </div>
+      <div>
+        <label>เพศ</label>
+        <select id="gender">
+          <option value="">- เลือก -</option>
+          <option value="ชาย">ชาย</option>
+          <option value="หญิง">หญิง</option>
+          <option value="อื่น ๆ">อื่น ๆ</option>
+        </select>
+      </div>
+      <div class="full">
+        <label>เลขบัตรประชาชน</label>
+        <input type="text" id="idCard" maxlength="13" placeholder="13 หลัก">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>การติดต่อ</h3>
+    <div class="grid">
+      <div>
+        <label>เบอร์โทร <span class="req">*</span></label>
+        <input type="tel" id="phone" required>
+      </div>
+      <div>
+        <label>อีเมล</label>
+        <input type="email" id="email">
+      </div>
+      <div class="full">
+        <label>LINE User ID (ถ้ามี — ใช้รับแจ้งเตือนหมดอายุ)</label>
+        <input type="text" id="lineId" placeholder="Uxxxxxxxxxxxxxxxxxx">
+      </div>
+      <div class="full">
+        <label>ที่อยู่</label>
+        <textarea id="address" rows="2"></textarea>
+      </div>
+      <div>
+        <label>ผู้ติดต่อฉุกเฉิน (ชื่อ)</label>
+        <input type="text" id="emergencyName">
+      </div>
+      <div>
+        <label>ผู้ติดต่อฉุกเฉิน (เบอร์)</label>
+        <input type="tel" id="emergencyPhone">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>แพ็กเกจสมาชิก</h3>
+    <div class="grid">
+      <div>
+        <label>สาขา <span class="req">*</span></label>
+        <select id="branch" required>
+          <option value="">- เลือกสาขา -</option>
+        </select>
+      </div>
+      <div>
+        <label>วันที่สมัคร</label>
+        <input type="date" id="startDate">
+      </div>
+      <div>
+        <label>แพ็กเกจสมาชิก <span class="req">*</span></label>
+        <select id="packageCode" required>
+          <option value="">- เลือกแพ็กเกจ -</option>
+        </select>
+      </div>
+      <div>
+        <label>PT เสริม (เลือกหรือไม่ก็ได้)</label>
+        <select id="ptCode">
+          <option value="">- ไม่ซื้อ PT -</option>
+        </select>
+      </div>
+      <div class="full">
+        <div class="summary" id="summary">เลือกแพ็กเกจเพื่อดูยอดรวม</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>ข้อมูลเพิ่มเติม</h3>
+    <div class="grid">
+      <div class="full">
+        <label>โรคประจำตัว / ข้อจำกัดสุขภาพ</label>
+        <textarea id="health" rows="2" placeholder="เช่น โรคหัวใจ ความดัน เบาหวาน บาดเจ็บ - ไม่มีให้เว้นว่าง"></textarea>
+      </div>
+      <div class="full">
+        <label>หมายเหตุ</label>
+        <textarea id="note" rows="2"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn-secondary" onclick="google.script.host.close()">ยกเลิก</button>
+    <button class="btn-primary" id="submitBtn" onclick="onSubmit()">💾 บันทึกและสร้างเอกสาร</button>
+  </div>
+</div>
+
+<div id="loadingArea" class="loading" style="display:none">
+  ⏳ กำลังบันทึกและสร้างเอกสาร โปรดรอสักครู่...
+</div>
+
+<div id="resultArea" style="display:none"></div>
+
+<script>
+  var CFG = null;
+
+  google.script.run.withSuccessHandler(function(data) {
+    CFG = data;
+    initForm(data);
+  }).withFailureHandler(function(err) {
+    showError('โหลดข้อมูลฟอร์มล้มเหลว: ' + (err.message || err));
+  }).getRegistrationFormData();
+
+  function initForm(d) {
+    var brSel = document.getElementById('branch');
+    d.branches.forEach(function(b) {
+      var o = document.createElement('option');
+      o.value = b.code;
+      o.textContent = b.code + ' — ' + b.name;
+      brSel.appendChild(o);
+    });
+
+    var pkgSel = document.getElementById('packageCode');
+    d.packages.forEach(function(p) {
+      var o = document.createElement('option');
+      o.value = p.code;
+      o.textContent = p.label + ' (' + p.days + ' วัน) — ' + d.currency + p.price.toLocaleString();
+      pkgSel.appendChild(o);
+    });
+
+    var ptSel = document.getElementById('ptCode');
+    d.ptPackages.forEach(function(p) {
+      var o = document.createElement('option');
+      o.value = p.code;
+      o.textContent = p.label + ' — ' + d.currency + p.price.toLocaleString();
+      ptSel.appendChild(o);
+    });
+
+    document.getElementById('startDate').value = d.today;
+
+    pkgSel.addEventListener('change', updateSummary);
+    ptSel.addEventListener('change', updateSummary);
+  }
+
+  function updateSummary() {
+    if (!CFG) return;
+    var pkgCode = document.getElementById('packageCode').value;
+    var ptCode = document.getElementById('ptCode').value;
+    var pkg = CFG.packages.find(function(p){ return p.code === pkgCode; });
+    var pt = CFG.ptPackages.find(function(p){ return p.code === ptCode; });
+
+    if (!pkg) {
+      document.getElementById('summary').textContent = 'เลือกแพ็กเกจเพื่อดูยอดรวม';
+      return;
+    }
+    var total = pkg.price + (pt ? pt.price : 0);
+    var hrs = (pkg.trainerHrs || 0) + (pt ? pt.hours : 0);
+    var text = 'แพ็กเกจ: ' + pkg.label + ' (' + pkg.days + ' วัน)';
+    if (pt) text += ' + ' + pt.label;
+    text += '  •  ชม.เทรน: ' + hrs + ' ครั้ง';
+    text += '  •  ยอดรวม: ' + CFG.currency + total.toLocaleString() + ' บาท';
+    document.getElementById('summary').textContent = text;
+  }
+
+  function val(id) { return (document.getElementById(id).value || '').trim(); }
+
+  function onSubmit() {
+    hideError();
+    if (!val('firstName')) return showError('กรุณากรอกชื่อ');
+    if (!val('lastName'))  return showError('กรุณากรอกนามสกุล');
+    if (!val('phone'))     return showError('กรุณากรอกเบอร์โทร');
+    if (!val('branch'))    return showError('กรุณาเลือกสาขา');
+    if (!val('packageCode')) return showError('กรุณาเลือกแพ็กเกจสมาชิก');
+
+    var data = {
+      firstName: val('firstName'),
+      lastName: val('lastName'),
+      age: val('age'),
+      gender: val('gender'),
+      idCard: val('idCard'),
+      phone: val('phone'),
+      email: val('email'),
+      lineId: val('lineId'),
+      address: val('address'),
+      emergencyName: val('emergencyName'),
+      emergencyPhone: val('emergencyPhone'),
+      branch: val('branch'),
+      startDate: val('startDate'),
+      packageCode: val('packageCode'),
+      ptCode: val('ptCode'),
+      health: val('health'),
+      note: val('note'),
+    };
+
+    document.getElementById('formArea').style.display = 'none';
+    document.getElementById('loadingArea').style.display = 'block';
+
+    google.script.run
+      .withSuccessHandler(onSubmitOk)
+      .withFailureHandler(onSubmitErr)
+      .submitMemberRegistration(data);
+  }
+
+  function onSubmitOk(res) {
+    document.getElementById('loadingArea').style.display = 'none';
+    var area = document.getElementById('resultArea');
+    area.style.display = 'block';
+    area.innerHTML =
+      '<div class="result">' +
+      '  <h3>✅ บันทึกสมาชิกใหม่สำเร็จ</h3>' +
+      '  <p><b>เลขที่สมาชิก:</b> ' + res.memberId + '<br>' +
+      '     <b>วันหมดอายุ:</b> ' + res.expiry + '<br>' +
+      '     <b>ยอดรวม:</b> ' + (CFG ? CFG.currency : '฿') + res.totalPrice.toLocaleString() + ' บาท</p>' +
+      '  <p>📄 <a href="' + res.docUrl + '" target="_blank" rel="noopener">เปิดเอกสารสัญญา (เพื่อปริ้นให้ลูกค้าเซ็น)</a></p>' +
+      '  <p style="color:#374151;font-size:12px">เปิดเอกสารแล้วกด <b>File → Print</b> หรือ <b>Ctrl+P</b> เพื่อปริ้น</p>' +
+      '  <div class="actions">' +
+      '    <button class="btn-secondary" onclick="google.script.host.close()">ปิด</button>' +
+      '    <button class="btn-primary" onclick="location.reload()">+ สมัครคนถัดไป</button>' +
+      '  </div>' +
+      '</div>';
+  }
+
+  function onSubmitErr(err) {
+    document.getElementById('loadingArea').style.display = 'none';
+    document.getElementById('formArea').style.display = 'block';
+    showError('บันทึกไม่สำเร็จ: ' + (err.message || err));
+  }
+
+  function showError(msg) {
+    var box = document.getElementById('errorBox');
+    box.textContent = msg;
+    box.style.display = 'block';
+    window.scrollTo(0, 0);
+  }
+  function hideError() {
+    document.getElementById('errorBox').style.display = 'none';
+  }
+</script>
+</body>
+</html>

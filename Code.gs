@@ -192,7 +192,10 @@ function handleOpen(e) {
   try { logLogin_('OPEN'); } catch (err) { console.error(err); }
   SpreadsheetApp.getUi()
     .createMenu('FITSTATION 24')
+    .addItem('📝 สมัครสมาชิกใหม่', 'menuOpenMemberRegistration')
+    .addSeparator()
     .addItem('ติดตั้ง Triggers (ครั้งแรก)', 'installTriggers')
+    .addItem('เตรียมคอลัมน์สมัครสมาชิก (ครั้งแรก)', 'setupMemberRegistration')
     .addItem('ทดสอบส่ง LINE (สาขาเลือก)', 'menuTestLine')
     .addItem('เช็คโควต้า LINE ทุกสาขา', 'menuCheckLineQuota')
     .addItem('สรุปยอดวันนี้ → LINE Group', 'sendDailySummaryToGroups')
@@ -427,4 +430,286 @@ function sendDailySummaryToGroups() {
 
     linePushText_(b.token, b.groupId, text);
   });
+}
+
+// ========== สมัครสมาชิกใหม่ — ฟอร์ม + บันทึก + สร้างเอกสารปริ้น ==========
+
+// แพ็กเกจสมาชิก: แก้ราคา/ระยะเวลาได้ที่นี่
+const MEMBERSHIP_PACKAGES = [
+  { code: 'DAY',  label: 'รายวัน',       days: 1,   price: 100,   trainerHrs: 0  },
+  { code: 'M1',   label: 'รายเดือน',     days: 30,  price: 1200,  trainerHrs: 0  },
+  { code: 'M3',   label: '3 เดือน',      days: 90,  price: 3300,  trainerHrs: 0  },
+  { code: 'M6',   label: '6 เดือน',      days: 180, price: 6000,  trainerHrs: 0  },
+  { code: 'M12',  label: '1 ปี',         days: 365, price: 10000, trainerHrs: 0  },
+];
+
+// แพ็กเกจ PT (ซื้อเสริม): เพิ่มชม.เทรน ไม่ขยายวันสมาชิก
+const PT_PACKAGES = [
+  { code: 'PT10', label: 'PT 10 ครั้ง',  hours: 10, price: 5000  },
+  { code: 'PT20', label: 'PT 20 ครั้ง',  hours: 20, price: 9500  },
+  { code: 'PT30', label: 'PT 30 ครั้ง',  hours: 30, price: 13500 },
+];
+
+const EXTRA_MEMBER_COLS = [
+  'เพศ', 'เลขบัตรประชาชน', 'เบอร์โทร', 'อีเมล', 'ที่อยู่',
+  'ฉุกเฉิน-ชื่อ', 'ฉุกเฉิน-เบอร์', 'แพ็กเกจ', 'ราคารวม',
+  'โรคประจำตัว/สุขภาพ', 'หมายเหตุ'
+];
+
+// เรียกครั้งเดียวจากเมนู: เพิ่มคอลัมน์ที่จำเป็นใน Members ถ้ายังไม่มี
+function setupMemberRegistration() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ms = ss.getSheetByName('Members');
+  if (!ms) { ui.alert('ไม่พบชีต Members'); return; }
+
+  // หัวคอลัมน์อยู่แถวที่ 2 (ตามโครงสร้างเดิม)
+  const headerRow = 2;
+  const lastCol = ms.getLastColumn();
+  const headers = ms.getRange(headerRow, 1, 1, Math.max(lastCol, 13)).getValues()[0];
+  const existing = headers.map(h => String(h || '').trim());
+
+  let nextCol = lastCol + 1;
+  let added = 0;
+  EXTRA_MEMBER_COLS.forEach(name => {
+    if (existing.indexOf(name) === -1) {
+      ms.getRange(headerRow, nextCol).setValue(name).setFontWeight('bold');
+      nextCol++;
+      added++;
+    }
+  });
+
+  ui.alert(added === 0
+    ? 'คอลัมน์ครบแล้ว ไม่ต้องเพิ่ม ✓'
+    : `เพิ่มคอลัมน์ใหม่ ${added} คอลัมน์ใน Members เรียบร้อย ✓`);
+}
+
+// เปิดฟอร์มสมัครสมาชิก
+function menuOpenMemberRegistration() {
+  const tpl = HtmlService.createTemplateFromFile('MembershipForm');
+  const html = tpl.evaluate().setWidth(720).setHeight(720).setTitle('สมัครสมาชิกใหม่');
+  SpreadsheetApp.getUi().showModalDialog(html, 'สมัครสมาชิกใหม่');
+}
+
+// ให้ฟอร์มเรียกใช้: ดึงรายการสาขา + แพ็กเกจ
+function getRegistrationFormData() {
+  const cfg = getConfig_();
+  const branches = Object.values(cfg.branches).map(b => ({ code: b.code, name: b.name }));
+  return {
+    branches,
+    packages: MEMBERSHIP_PACKAGES,
+    ptPackages: PT_PACKAGES,
+    currency: cfg.currency,
+    today: Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd'),
+  };
+}
+
+// ฟอร์มกด "บันทึก" → server-side handler
+function submitMemberRegistration(data) {
+  // data = {firstName, lastName, age, gender, idCard, phone, email, lineId,
+  //         address, emergencyName, emergencyPhone, branch, packageCode,
+  //         ptCode, startDate, health, note}
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ms = ss.getSheetByName('Members');
+  if (!ms) throw new Error('ไม่พบชีต Members');
+
+  // หาแพ็กเกจ
+  const pkg = MEMBERSHIP_PACKAGES.find(p => p.code === data.packageCode);
+  if (!pkg) throw new Error('ไม่พบแพ็กเกจสมาชิก');
+  const pt = data.ptCode ? PT_PACKAGES.find(p => p.code === data.ptCode) : null;
+
+  // คำนวณวันหมดอายุ + ราคารวม
+  const startDate = data.startDate ? new Date(data.startDate) : new Date();
+  startDate.setHours(0,0,0,0);
+  const expiry = new Date(startDate.getTime() + pkg.days * 24 * 3600 * 1000);
+  const totalPrice = pkg.price + (pt ? pt.price : 0);
+  const trainerHrs = (pkg.trainerHrs || 0) + (pt ? pt.hours : 0);
+
+  // gen MemberID ถัดไป (M0001, M0002, ...)
+  const memberId = generateNextMemberId_(ms);
+
+  // หา map คอลัมน์จากแถวหัว (row 2)
+  const headerRow = 2;
+  const headers = ms.getRange(headerRow, 1, 1, ms.getLastColumn()).getValues()[0]
+    .map(h => String(h || '').trim());
+  const colOf = (label) => headers.indexOf(label) + 1; // 1-based, 0 = not found
+
+  // เขียนแถวใหม่: ใช้ appendRow ด้วย array ตามลำดับคอลัมน์
+  const lastRow = ms.getLastRow();
+  const newRow = lastRow + 1;
+
+  const fullName = (data.firstName || '') + ' ' + (data.lastName || '');
+  const pkgLabel = pkg.label + (pt ? ' + ' + pt.label : '');
+
+  // โครงสร้างหลัก (B..M ตามที่ Code.gs เดิมใช้)
+  ms.getRange(newRow, 2).setValue(memberId);                              // B MemberID
+  ms.getRange(newRow, 3).setValue(data.firstName || '');                  // C ชื่อ
+  ms.getRange(newRow, 4).setValue(data.lastName || '');                   // D นามสกุล
+  ms.getRange(newRow, 5).setValue(Number(data.age) || '');                // E อายุ
+  ms.getRange(newRow, 6).setValue(data.branch || '');                     // F สาขา
+  ms.getRange(newRow, 7).setValue(startDate);                             // G วันสมัคร
+  ms.getRange(newRow, 8).setValue(expiry);                                // H วันหมดอายุ
+  // I วันคงเหลือ = สูตรเดิม (ถ้ามี) ปล่อยว่างไว้ให้สูตรคำนวณเอง
+  ms.getRange(newRow, 10).setValue(trainerHrs);                           // J ชม.เทรน
+  ms.getRange(newRow, 12).setValue(data.lineId || '');                    // L LINE UID
+  ms.getRange(newRow, 13).setValue('Active');                             // M สถานะ
+
+  ms.getRange(newRow, 7).setNumberFormat('dd mmm yyyy');
+  ms.getRange(newRow, 8).setNumberFormat('dd mmm yyyy');
+
+  // คอลัมน์เสริม (เขียนตามชื่อหัวคอลัมน์ ไม่ผูกตำแหน่งตายตัว)
+  const extras = {
+    'เพศ': data.gender || '',
+    'เลขบัตรประชาชน': data.idCard || '',
+    'เบอร์โทร': data.phone || '',
+    'อีเมล': data.email || '',
+    'ที่อยู่': data.address || '',
+    'ฉุกเฉิน-ชื่อ': data.emergencyName || '',
+    'ฉุกเฉิน-เบอร์': data.emergencyPhone || '',
+    'แพ็กเกจ': pkgLabel,
+    'ราคารวม': totalPrice,
+    'โรคประจำตัว/สุขภาพ': data.health || '',
+    'หมายเหตุ': data.note || '',
+  };
+  Object.keys(extras).forEach(label => {
+    const c = colOf(label);
+    if (c > 0) ms.getRange(newRow, c).setValue(extras[label]);
+  });
+
+  // สร้างเอกสารสัญญา (Google Doc) → คืน URL ให้เปิดปริ้น
+  const docUrl = generateMembershipContract_({
+    memberId, fullName, age: data.age, gender: data.gender,
+    idCard: data.idCard, phone: data.phone, email: data.email,
+    address: data.address, emergencyName: data.emergencyName,
+    emergencyPhone: data.emergencyPhone, branch: data.branch,
+    packageLabel: pkgLabel, totalPrice, trainerHrs,
+    startDate, expiry, health: data.health, note: data.note,
+  });
+
+  return { ok: true, memberId, docUrl, expiry: Utilities.formatDate(expiry, TZ, 'dd MMM yyyy'), totalPrice };
+}
+
+// gen MemberID ถัดไป: ดูแถวที่ใหญ่ที่สุดในคอลัมน์ B แล้ว +1
+function generateNextMemberId_(ms) {
+  const lastRow = ms.getLastRow();
+  if (lastRow < 3) return 'M0001';
+  const ids = ms.getRange(3, 2, lastRow - 2, 1).getValues().flat()
+    .map(v => String(v || '').trim())
+    .filter(v => /^M\d+$/.test(v));
+  if (ids.length === 0) return 'M0001';
+  const max = Math.max.apply(null, ids.map(v => Number(v.slice(1))));
+  return 'M' + String(max + 1).padStart(4, '0');
+}
+
+// สร้าง Google Doc สัญญาสมาชิก — return URL ของไฟล์
+function generateMembershipContract_(m) {
+  const cfg = getConfig_();
+  const branchName = (cfg.branches[m.branch] && cfg.branches[m.branch].name) || m.branch || '-';
+
+  const title = `สัญญาสมาชิก ${m.memberId} ${m.fullName} (${Utilities.formatDate(m.startDate, TZ, 'yyyy-MM-dd')})`;
+  const doc = DocumentApp.create(title);
+  const body = doc.getBody();
+  body.setMarginTop(36).setMarginBottom(36).setMarginLeft(54).setMarginRight(54);
+
+  // หัวเอกสาร
+  const head = body.appendParagraph('FITSTATION 24');
+  head.setHeading(DocumentApp.ParagraphHeading.HEADING1)
+      .setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+
+  const subhead = body.appendParagraph('สัญญาการเป็นสมาชิก / Membership Agreement');
+  subhead.setHeading(DocumentApp.ParagraphHeading.HEADING3)
+         .setAlignment(DocumentApp.HorizontalAlignment.CENTER);
+
+  body.appendParagraph(''); // เว้นบรรทัด
+
+  const meta = body.appendParagraph(
+    `เลขที่สมาชิก: ${m.memberId}    สาขา: ${branchName}    ` +
+    `วันที่ทำสัญญา: ${Utilities.formatDate(m.startDate, TZ, 'dd MMM yyyy')}`
+  );
+  meta.setBold(true);
+
+  body.appendHorizontalRule();
+
+  // ข้อมูลสมาชิก (ตาราง 2 คอลัมน์)
+  body.appendParagraph('ข้อมูลสมาชิก').setHeading(DocumentApp.ParagraphHeading.HEADING3);
+  const infoRows = [
+    ['ชื่อ-นามสกุล', m.fullName || '-'],
+    ['อายุ', m.age ? (m.age + ' ปี') : '-'],
+    ['เพศ', m.gender || '-'],
+    ['เลขบัตรประชาชน', m.idCard || '-'],
+    ['เบอร์โทร', m.phone || '-'],
+    ['อีเมล', m.email || '-'],
+    ['ที่อยู่', m.address || '-'],
+    ['ผู้ติดต่อฉุกเฉิน', (m.emergencyName || '-') + (m.emergencyPhone ? '  โทร ' + m.emergencyPhone : '')],
+    ['โรคประจำตัว / ข้อจำกัดสุขภาพ', m.health || '-'],
+  ];
+  const infoTable = body.appendTable(infoRows);
+  for (let i = 0; i < infoTable.getNumRows(); i++) {
+    infoTable.getRow(i).getCell(0).editAsText().setBold(true);
+    infoTable.getRow(i).getCell(0).setWidth(170);
+  }
+
+  body.appendParagraph('');
+
+  // รายละเอียดแพ็กเกจ
+  body.appendParagraph('รายละเอียดแพ็กเกจ').setHeading(DocumentApp.ParagraphHeading.HEADING3);
+  const pkgRows = [
+    ['แพ็กเกจ', m.packageLabel || '-'],
+    ['วันเริ่ม', Utilities.formatDate(m.startDate, TZ, 'dd MMM yyyy')],
+    ['วันหมดอายุ', Utilities.formatDate(m.expiry, TZ, 'dd MMM yyyy')],
+    ['ชั่วโมงเทรนเนอร์', String(m.trainerHrs || 0) + ' ครั้ง'],
+    ['ราคารวม', (cfg.currency || '฿') + Number(m.totalPrice || 0).toLocaleString() + ' บาท'],
+  ];
+  const pkgTable = body.appendTable(pkgRows);
+  for (let i = 0; i < pkgTable.getNumRows(); i++) {
+    pkgTable.getRow(i).getCell(0).editAsText().setBold(true);
+    pkgTable.getRow(i).getCell(0).setWidth(170);
+  }
+
+  body.appendParagraph('');
+
+  // ข้อตกลง
+  body.appendParagraph('ข้อตกลงและเงื่อนไข').setHeading(DocumentApp.ParagraphHeading.HEADING3);
+  const terms = [
+    '1. สมาชิกตกลงชำระค่าบริการเต็มจำนวนตามแพ็กเกจที่ระบุข้างต้น โดยค่าบริการที่ชำระแล้วถือเป็นที่สิ้นสุด ไม่สามารถขอคืนได้ทุกกรณี',
+    '2. สมาชิกต้องแสดงบัตรสมาชิกหรือยืนยันตัวตนทุกครั้งที่เข้าใช้บริการ และไม่สามารถโอนสิทธิ์ให้ผู้อื่นใช้แทนได้',
+    '3. สมาชิกรับทราบและยอมรับว่าการออกกำลังกายมีความเสี่ยงในตัวเอง สมาชิกได้แจ้งข้อจำกัดด้านสุขภาพตามจริงข้างต้น และจะรับผิดชอบต่อสุขภาพและความปลอดภัยของตนเอง',
+    '4. ทางฟิตเนสจะไม่รับผิดชอบต่อทรัพย์สินสูญหายภายในสถานที่ สมาชิกควรดูแลทรัพย์สินส่วนตัวของตนเอง',
+    '5. สมาชิกต้องปฏิบัติตามกฎระเบียบของสถานที่ การแต่งกาย และการใช้อุปกรณ์อย่างเคร่งครัด หากฝ่าฝืน ทางฟิตเนสขอสงวนสิทธิ์ในการยกเลิกสมาชิกโดยไม่คืนเงิน',
+    '6. ชั่วโมงเทรนเนอร์ส่วนตัว (PT) มีอายุการใช้งานเท่ากับวันหมดอายุของแพ็กเกจสมาชิก ครั้งที่ใช้ไม่หมดถือว่าสิ้นสุดสิทธิ์',
+    '7. สมาชิกยินยอมให้ทางฟิตเนสจัดเก็บและใช้ข้อมูลส่วนบุคคลเพื่อการให้บริการ การติดต่อสื่อสาร และการแจ้งเตือนเท่านั้น ตามพระราชบัญญัติคุ้มครองข้อมูลส่วนบุคคล (PDPA)',
+    '8. ทางฟิตเนสขอสงวนสิทธิ์ในการเปลี่ยนแปลงเงื่อนไขการให้บริการ เวลาทำการ และอัตราค่าบริการ โดยจะแจ้งให้สมาชิกทราบล่วงหน้า',
+  ];
+  terms.forEach(t => {
+    const p = body.appendParagraph(t);
+    p.setSpacingAfter(4);
+  });
+
+  body.appendParagraph('');
+  body.appendParagraph(
+    'ข้าพเจ้าได้อ่านและทำความเข้าใจข้อตกลงข้างต้นโดยตลอดแล้ว และยินยอมผูกพันตามเงื่อนไขทุกประการ'
+  ).setItalic(true);
+
+  body.appendParagraph('');
+  body.appendParagraph('');
+
+  // ช่องเซ็น (ตาราง 2 คอลัมน์)
+  const signTable = body.appendTable([
+    ['ลงชื่อ ........................................... สมาชิก', 'ลงชื่อ ........................................... ผู้ให้บริการ'],
+    ['(' + (m.fullName || '                                  ') + ')', '(                                                  )'],
+    ['วันที่ ......./......./.......', 'วันที่ ......./......./.......'],
+  ]);
+  signTable.setBorderWidth(0);
+  for (let i = 0; i < signTable.getNumRows(); i++) {
+    signTable.getRow(i).getCell(0).setPaddingTop(8);
+    signTable.getRow(i).getCell(1).setPaddingTop(8);
+  }
+
+  doc.saveAndClose();
+  return doc.getUrl();
+}
+
+// ใช้ใน HTML template: include() เพื่อแยก CSS/JS เป็นไฟล์ก็ได้ (ตอนนี้รวมอยู่ใน MembershipForm)
+function include(name) {
+  return HtmlService.createHtmlOutputFromFile(name).getContent();
 }
