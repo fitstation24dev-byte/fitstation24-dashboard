@@ -942,22 +942,23 @@ function migrateEmployeePositions() {
 }
 
 const NAV_ITEMS = [
-  { id: 'dashboard',  label: 'Dashboard' },
-  { id: 'sales',      label: 'บันทึกยอดขาย' },
-  { id: 'trainings',  label: 'บันทึกการเทรน' },
-  { id: 'members',    label: 'สมาชิก' },
-  { id: 'sales-log',  label: 'ประวัติการขาย' },
-  { id: 'alerts',     label: 'การแจ้งเตือน' },
-  { id: 'employees',  label: 'พนักงาน' },
-  { id: 'reports',    label: 'รายงาน' },
-  { id: 'settings',   label: 'ตั้งค่าระบบ' },
+  { id: 'dashboard',    label: 'Dashboard' },
+  { id: 'sales',        label: 'บันทึกยอดขาย' },
+  { id: 'trainings',    label: 'บันทึกการเทรน' },
+  { id: 'members',      label: 'สมาชิก' },
+  { id: 'registration', label: '📝 สมัครสมาชิก' },
+  { id: 'sales-log',    label: 'ประวัติการขาย' },
+  { id: 'alerts',       label: 'การแจ้งเตือน' },
+  { id: 'employees',    label: 'พนักงาน' },
+  { id: 'reports',      label: 'รายงาน' },
+  { id: 'settings',     label: 'ตั้งค่าระบบ' },
 ];
 const DELEGABLE_ROLES = ['Manager','Staff','Trainer'];
 
 function defaultRolePermissions() {
   return {
-    Manager: ['dashboard','sales','trainings','members','sales-log','alerts','employees','reports'],
-    Staff:   ['dashboard','sales','trainings','members','sales-log','alerts'],
+    Manager: ['dashboard','sales','trainings','members','registration','sales-log','alerts','employees','reports'],
+    Staff:   ['dashboard','sales','trainings','members','registration','sales-log','alerts'],
     Trainer: ['dashboard','trainings','members'],
   };
 }
@@ -1200,21 +1201,23 @@ function navigate(view) {
   CHARTS = {};
   const titles = {
     'dashboard': 'Dashboard', 'sales': 'บันทึกยอดขาย', 'trainings': 'บันทึกการเทรน',
-    'members': 'สมาชิก', 'sales-log': 'ประวัติการขาย', 'alerts': 'การแจ้งเตือน',
+    'members': 'สมาชิก', 'registration': '📝 สมัครสมาชิก',
+    'sales-log': 'ประวัติการขาย', 'alerts': 'การแจ้งเตือน',
     'employees': 'พนักงาน', 'reports': 'รายงาน', 'settings': 'ตั้งค่าระบบ',
   };
   document.getElementById('page-title').textContent = titles[view] || view;
   const c = document.getElementById('content');
   c.innerHTML = '';
-  if (view === 'dashboard')      renderDashboard(c);
-  else if (view === 'sales')     renderSalesEntry(c);
-  else if (view === 'trainings') renderTrainingsEntry(c);
-  else if (view === 'members')   renderMembers(c);
-  else if (view === 'sales-log') renderSalesLog(c);
-  else if (view === 'alerts')    renderAlerts(c);
-  else if (view === 'employees') renderEmployees(c);
-  else if (view === 'reports')   renderReports(c);
-  else if (view === 'settings')  renderSettings(c);
+  if (view === 'dashboard')           renderDashboard(c);
+  else if (view === 'sales')          renderSalesEntry(c);
+  else if (view === 'trainings')      renderTrainingsEntry(c);
+  else if (view === 'members')        renderMembers(c);
+  else if (view === 'registration')   renderRegistration(c);
+  else if (view === 'sales-log')      renderSalesLog(c);
+  else if (view === 'alerts')         renderAlerts(c);
+  else if (view === 'employees')      renderEmployees(c);
+  else if (view === 'reports')        renderReports(c);
+  else if (view === 'settings')       renderSettings(c);
 }
 
 // ============ DASHBOARD ============
@@ -2237,6 +2240,329 @@ function deleteMember(id) {
   closeModal();
   toast('ลบสมาชิกเรียบร้อย', 'ok');
   navigate('members');
+}
+
+// ============ REGISTRATION (สมัครสมาชิก) ============
+const MEMBERSHIP_PACKAGES = [
+  { code: 'DAY',  label: 'รายวัน',     days: 1,   price: 100,   trainerHrs: 0 },
+  { code: 'M1',   label: 'รายเดือน',   days: 30,  price: 1200,  trainerHrs: 0 },
+  { code: 'M3',   label: '3 เดือน',    days: 90,  price: 3300,  trainerHrs: 0 },
+  { code: 'M6',   label: '6 เดือน',    days: 180, price: 6000,  trainerHrs: 0 },
+  { code: 'M12',  label: '1 ปี',       days: 365, price: 10000, trainerHrs: 0 },
+];
+const PT_PACKAGES = [
+  { code: 'PT10', label: 'PT 10 ครั้ง', hours: 10, price: 5000  },
+  { code: 'PT20', label: 'PT 20 ครั้ง', hours: 20, price: 9500  },
+  { code: 'PT30', label: 'PT 30 ครั้ง', hours: 30, price: 13500 },
+];
+
+function nextMemberId() {
+  const nums = DATA.members
+    .map(m => String(m.id || ''))
+    .filter(s => /^M\d+$/.test(s))
+    .map(s => Number(s.slice(1)));
+  const max = nums.length ? Math.max.apply(null, nums) : 1000;
+  return 'M' + String(max + 1).padStart(4, '0');
+}
+
+function renderRegistration(root) {
+  const branches = DATA.branches.length
+    ? DATA.branches
+    : [{ code: 'BR01', name: 'FITSTATION 24 - สาขา 1' }];
+
+  const branchOptions = branches
+    .map(b => `<option value="${_h(b.code)}">${_h(b.code)} — ${_h(b.name)}</option>`)
+    .join('');
+
+  const pkgOptions = MEMBERSHIP_PACKAGES
+    .map(p => `<option value="${p.code}">${_h(p.label)} (${p.days} วัน) — ${thb(p.price)}</option>`)
+    .join('');
+
+  const ptOptions = PT_PACKAGES
+    .map(p => `<option value="${p.code}">${_h(p.label)} — ${thb(p.price)}</option>`)
+    .join('');
+
+  const today = new Date().toISOString().slice(0, 10);
+  const nextId = nextMemberId();
+
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `
+    <style>
+      .reg-form { display: flex; flex-direction: column; gap: 16px; }
+      .reg-section { background: #FAFAFA; border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+      .reg-section h3 { font-size: 14px; color: var(--brand); margin-bottom: 10px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+      .reg-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+      .reg-grid .full { grid-column: 1 / -1; }
+      .reg-grid label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+      .reg-grid label .req { color: var(--bad); }
+      .reg-grid input, .reg-grid select, .reg-grid textarea {
+        width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px;
+        font-size: 14px; background: white;
+      }
+      .reg-grid textarea { resize: vertical; min-height: 50px; }
+      .reg-summary { background: #FFF7ED; border: 1px solid #FED7AA; color: #9A3412; padding: 10px 14px; border-radius: 8px; font-size: 13px; }
+      .reg-actions { display: flex; gap: 10px; justify-content: flex-end; padding-top: 6px; }
+      .reg-id { display: inline-block; background: var(--accent); color: white; padding: 4px 12px; border-radius: 999px; font-weight: 600; font-size: 13px; }
+    </style>
+    <div style="margin-bottom: 12px;">
+      <h2 style="margin: 0;">📝 สมัครสมาชิกใหม่ <span class="reg-id" id="reg-id">${nextId}</span></h2>
+      <p class="muted" style="font-size: 13px; margin-top: 4px;">กรอกข้อมูลให้ครบ → กดบันทึก → ปริ้นเอกสารสัญญาให้ลูกค้าเซ็น</p>
+    </div>
+
+    <form id="reg-form" class="reg-form" onsubmit="saveRegistration(event)">
+
+      <div class="reg-section">
+        <h3>ข้อมูลส่วนตัว</h3>
+        <div class="reg-grid">
+          <div><label>ชื่อ <span class="req">*</span></label><input id="rg-firstName" required></div>
+          <div><label>นามสกุล <span class="req">*</span></label><input id="rg-lastName" required></div>
+          <div><label>อายุ</label><input id="rg-age" type="number" min="1" max="120"></div>
+          <div><label>เพศ</label>
+            <select id="rg-gender">
+              <option value="">- เลือก -</option>
+              <option value="ชาย">ชาย</option>
+              <option value="หญิง">หญิง</option>
+              <option value="อื่น ๆ">อื่น ๆ</option>
+            </select>
+          </div>
+          <div class="full"><label>เลขบัตรประชาชน</label><input id="rg-idCard" maxlength="13" placeholder="13 หลัก"></div>
+        </div>
+      </div>
+
+      <div class="reg-section">
+        <h3>การติดต่อ</h3>
+        <div class="reg-grid">
+          <div><label>เบอร์โทร <span class="req">*</span></label><input id="rg-phone" type="tel" required></div>
+          <div><label>อีเมล</label><input id="rg-email" type="email"></div>
+          <div class="full"><label>LINE User ID (ถ้ามี — ใช้รับแจ้งเตือน)</label><input id="rg-lineUid" placeholder="Uxxxxxxxxxxxxxxxxxx"></div>
+          <div class="full"><label>ที่อยู่</label><textarea id="rg-address" rows="2"></textarea></div>
+          <div><label>ผู้ติดต่อฉุกเฉิน (ชื่อ)</label><input id="rg-emergencyName"></div>
+          <div><label>ผู้ติดต่อฉุกเฉิน (เบอร์)</label><input id="rg-emergencyPhone" type="tel"></div>
+        </div>
+      </div>
+
+      <div class="reg-section">
+        <h3>แพ็กเกจสมาชิก</h3>
+        <div class="reg-grid">
+          <div><label>สาขา <span class="req">*</span></label>
+            <select id="rg-branch" required><option value="">- เลือกสาขา -</option>${branchOptions}</select>
+          </div>
+          <div><label>วันที่สมัคร</label><input id="rg-startDate" type="date" value="${today}"></div>
+          <div><label>แพ็กเกจสมาชิก <span class="req">*</span></label>
+            <select id="rg-package" required onchange="updateRegSummary()"><option value="">- เลือกแพ็กเกจ -</option>${pkgOptions}</select>
+          </div>
+          <div><label>PT เสริม (เลือกหรือไม่ก็ได้)</label>
+            <select id="rg-pt" onchange="updateRegSummary()"><option value="">- ไม่ซื้อ PT -</option>${ptOptions}</select>
+          </div>
+          <div class="full"><div class="reg-summary" id="reg-summary">เลือกแพ็กเกจเพื่อดูยอดรวม</div></div>
+        </div>
+      </div>
+
+      <div class="reg-section">
+        <h3>ข้อมูลเพิ่มเติม</h3>
+        <div class="reg-grid">
+          <div class="full"><label>โรคประจำตัว / ข้อจำกัดสุขภาพ</label><textarea id="rg-health" rows="2" placeholder="เช่น โรคหัวใจ ความดัน เบาหวาน บาดเจ็บ — ไม่มีให้เว้นว่าง"></textarea></div>
+          <div class="full"><label>หมายเหตุ</label><textarea id="rg-note" rows="2"></textarea></div>
+        </div>
+      </div>
+
+      <div class="reg-actions">
+        <button type="button" class="btn secondary" onclick="navigate('members')">ยกเลิก</button>
+        <button type="submit" class="btn">💾 บันทึก + ปริ้นสัญญา</button>
+      </div>
+    </form>
+  `;
+  root.appendChild(card);
+}
+
+function updateRegSummary() {
+  const pkgCode = document.getElementById('rg-package').value;
+  const ptCode = document.getElementById('rg-pt').value;
+  const pkg = MEMBERSHIP_PACKAGES.find(p => p.code === pkgCode);
+  const pt = PT_PACKAGES.find(p => p.code === ptCode);
+  const el = document.getElementById('reg-summary');
+  if (!pkg) { el.textContent = 'เลือกแพ็กเกจเพื่อดูยอดรวม'; return; }
+  const total = pkg.price + (pt ? pt.price : 0);
+  const hrs = (pkg.trainerHrs || 0) + (pt ? pt.hours : 0);
+  let txt = `แพ็กเกจ: ${pkg.label} (${pkg.days} วัน)`;
+  if (pt) txt += ' + ' + pt.label;
+  txt += `  •  ชม.เทรน: ${hrs} ครั้ง  •  ยอดรวม: ${thb(total)}`;
+  el.textContent = txt;
+}
+
+function saveRegistration(e) {
+  e.preventDefault();
+  const v = id => (document.getElementById(id).value || '').trim();
+  const pkgCode = v('rg-package');
+  const pkg = MEMBERSHIP_PACKAGES.find(p => p.code === pkgCode);
+  if (!pkg) { toast('กรุณาเลือกแพ็กเกจ', 'bad'); return; }
+  const ptCode = v('rg-pt');
+  const pt = ptCode ? PT_PACKAGES.find(p => p.code === ptCode) : null;
+
+  const startDate = v('rg-startDate') ? new Date(v('rg-startDate')) : new Date();
+  startDate.setHours(0, 0, 0, 0);
+  const endDate = new Date(startDate.getTime() + pkg.days * 24 * 3600 * 1000);
+  const totalPrice = pkg.price + (pt ? pt.price : 0);
+  const trainerHrs = (pkg.trainerHrs || 0) + (pt ? pt.hours : 0);
+  const memberId = nextMemberId();
+
+  const member = {
+    id: memberId,
+    name: v('rg-firstName'),
+    surname: v('rg-lastName'),
+    age: Number(v('rg-age')) || 0,
+    branch: v('rg-branch'),
+    startDate: startDate.toISOString(),
+    endDate: endDate.toISOString(),
+    hours: trainerHrs,
+    trainer: '',
+    lineUid: v('rg-lineUid'),
+    status: 'Active',
+    // ฟิลด์เสริม (เก็บใน DATA.members + localStorage — Supabase sync เฉพาะฟิลด์ที่ใน TABLE_SPEC)
+    gender: v('rg-gender'),
+    idCard: v('rg-idCard'),
+    phone: v('rg-phone'),
+    email: v('rg-email'),
+    address: v('rg-address'),
+    emergencyName: v('rg-emergencyName'),
+    emergencyPhone: v('rg-emergencyPhone'),
+    packageCode: pkgCode,
+    packageLabel: pkg.label + (pt ? ' + ' + pt.label : ''),
+    ptCode: ptCode,
+    totalPrice: totalPrice,
+    health: v('rg-health'),
+    note: v('rg-note'),
+  };
+
+  DATA.members.push(member);
+  saveData();
+  toast(`สมัครสมาชิก ${memberId} เรียบร้อย`, 'ok');
+
+  // เปิดเอกสารสัญญาในแท็บใหม่ (พร้อมปริ้น)
+  printContract(member);
+}
+
+function printContract(m) {
+  const cfg = DATA.branches.find(b => b.code === m.branch);
+  const branchName = cfg ? cfg.name : (m.branch || '-');
+  const fullName = ((m.name || '') + ' ' + (m.surname || '')).trim();
+  const fmt = (iso) => new Date(iso).toLocaleDateString('th-TH', { day: '2-digit', month: 'long', year: 'numeric' });
+  const today = fmt(m.startDate);
+
+  const html = `<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>สัญญาสมาชิก ${m.id} ${fullName}</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Sarabun', 'TH Sarabun New', 'Segoe UI', Tahoma, sans-serif; color: #1F2A44; font-size: 14px; line-height: 1.5; padding: 24px; max-width: 800px; margin: 0 auto; }
+  .header { text-align: center; margin-bottom: 16px; }
+  .header h1 { font-size: 24px; color: #0B132B; letter-spacing: 1px; }
+  .header .sub { color: #6B7280; margin-top: 4px; font-size: 14px; }
+  .meta { background: #F4F4F5; border: 1px solid #E5E7EB; padding: 10px 14px; border-radius: 6px; margin: 14px 0; font-weight: 600; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; }
+  h2 { font-size: 15px; color: #FF5C00; margin-top: 18px; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 2px solid #FF5C00; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
+  table td { padding: 6px 8px; border-bottom: 1px solid #F1F1F1; vertical-align: top; }
+  table td.k { width: 180px; font-weight: 600; color: #4B5563; background: #FAFAFA; }
+  .terms { padding-left: 20px; }
+  .terms li { margin-bottom: 6px; text-align: justify; }
+  .consent { font-style: italic; margin: 14px 0 30px; text-align: center; color: #374151; }
+  .signs { display: flex; justify-content: space-between; gap: 40px; margin-top: 40px; }
+  .signs .col { flex: 1; text-align: center; padding-top: 50px; border-top: 1px dashed #9CA3AF; }
+  .signs .col .role { font-weight: 600; margin-bottom: 4px; }
+  .signs .col .name { color: #6B7280; font-size: 13px; }
+  .signs .col .date { margin-top: 14px; color: #6B7280; font-size: 13px; }
+  .actions { text-align: center; margin: 20px 0; }
+  .actions button { padding: 10px 24px; font-size: 14px; font-weight: 600; border: none; border-radius: 6px; cursor: pointer; margin: 0 6px; }
+  .btn-print { background: #FF5C00; color: white; }
+  .btn-close { background: #E5E7EB; color: #374151; }
+  @media print { .actions { display: none; } body { padding: 0; } }
+</style>
+</head>
+<body>
+  <div class="actions">
+    <button class="btn-print" onclick="window.print()">🖨️ ปริ้น</button>
+    <button class="btn-close" onclick="window.close()">ปิด</button>
+  </div>
+
+  <div class="header">
+    <h1>FITSTATION 24</h1>
+    <div class="sub">สัญญาการเป็นสมาชิก / Membership Agreement</div>
+  </div>
+
+  <div class="meta">
+    <span>เลขที่สมาชิก: <strong>${esc(m.id)}</strong></span>
+    <span>สาขา: <strong>${esc(branchName)}</strong></span>
+    <span>วันที่ทำสัญญา: <strong>${esc(today)}</strong></span>
+  </div>
+
+  <h2>ข้อมูลสมาชิก</h2>
+  <table>
+    <tr><td class="k">ชื่อ-นามสกุล</td><td>${esc(fullName) || '-'}</td></tr>
+    <tr><td class="k">อายุ</td><td>${m.age ? esc(String(m.age)) + ' ปี' : '-'}</td></tr>
+    <tr><td class="k">เพศ</td><td>${esc(m.gender) || '-'}</td></tr>
+    <tr><td class="k">เลขบัตรประชาชน</td><td>${esc(m.idCard) || '-'}</td></tr>
+    <tr><td class="k">เบอร์โทร</td><td>${esc(m.phone) || '-'}</td></tr>
+    <tr><td class="k">อีเมล</td><td>${esc(m.email) || '-'}</td></tr>
+    <tr><td class="k">ที่อยู่</td><td>${esc(m.address) || '-'}</td></tr>
+    <tr><td class="k">ผู้ติดต่อฉุกเฉิน</td><td>${esc(m.emergencyName) || '-'}${m.emergencyPhone ? '  โทร ' + esc(m.emergencyPhone) : ''}</td></tr>
+    <tr><td class="k">โรคประจำตัว / สุขภาพ</td><td>${esc(m.health) || '-'}</td></tr>
+  </table>
+
+  <h2>รายละเอียดแพ็กเกจ</h2>
+  <table>
+    <tr><td class="k">แพ็กเกจ</td><td>${esc(m.packageLabel) || '-'}</td></tr>
+    <tr><td class="k">วันเริ่ม</td><td>${esc(fmt(m.startDate))}</td></tr>
+    <tr><td class="k">วันหมดอายุ</td><td>${esc(fmt(m.endDate))}</td></tr>
+    <tr><td class="k">ชั่วโมงเทรนเนอร์</td><td>${m.hours || 0} ครั้ง</td></tr>
+    <tr><td class="k">ราคารวม</td><td><strong>${esc(thb(m.totalPrice || 0))}</strong></td></tr>
+  </table>
+
+  <h2>ข้อตกลงและเงื่อนไข</h2>
+  <ol class="terms">
+    <li>สมาชิกตกลงชำระค่าบริการเต็มจำนวนตามแพ็กเกจที่ระบุข้างต้น โดยค่าบริการที่ชำระแล้วถือเป็นที่สิ้นสุด ไม่สามารถขอคืนได้ทุกกรณี</li>
+    <li>สมาชิกต้องแสดงบัตรสมาชิกหรือยืนยันตัวตนทุกครั้งที่เข้าใช้บริการ และไม่สามารถโอนสิทธิ์ให้ผู้อื่นใช้แทนได้</li>
+    <li>สมาชิกรับทราบและยอมรับว่าการออกกำลังกายมีความเสี่ยงในตัวเอง สมาชิกได้แจ้งข้อจำกัดด้านสุขภาพตามจริงข้างต้น และจะรับผิดชอบต่อสุขภาพและความปลอดภัยของตนเอง</li>
+    <li>ทางฟิตเนสจะไม่รับผิดชอบต่อทรัพย์สินสูญหายภายในสถานที่ สมาชิกควรดูแลทรัพย์สินส่วนตัวของตนเอง</li>
+    <li>สมาชิกต้องปฏิบัติตามกฎระเบียบของสถานที่ การแต่งกาย และการใช้อุปกรณ์อย่างเคร่งครัด หากฝ่าฝืน ทางฟิตเนสขอสงวนสิทธิ์ในการยกเลิกสมาชิกโดยไม่คืนเงิน</li>
+    <li>ชั่วโมงเทรนเนอร์ส่วนตัว (PT) มีอายุการใช้งานเท่ากับวันหมดอายุของแพ็กเกจสมาชิก ครั้งที่ใช้ไม่หมดถือว่าสิ้นสุดสิทธิ์</li>
+    <li>สมาชิกยินยอมให้ทางฟิตเนสจัดเก็บและใช้ข้อมูลส่วนบุคคลเพื่อการให้บริการ การติดต่อสื่อสาร และการแจ้งเตือนเท่านั้น ตามพระราชบัญญัติคุ้มครองข้อมูลส่วนบุคคล (PDPA)</li>
+    <li>ทางฟิตเนสขอสงวนสิทธิ์ในการเปลี่ยนแปลงเงื่อนไขการให้บริการ เวลาทำการ และอัตราค่าบริการ โดยจะแจ้งให้สมาชิกทราบล่วงหน้า</li>
+  </ol>
+
+  <p class="consent">ข้าพเจ้าได้อ่านและทำความเข้าใจข้อตกลงข้างต้นโดยตลอดแล้ว และยินยอมผูกพันตามเงื่อนไขทุกประการ</p>
+
+  <div class="signs">
+    <div class="col">
+      <div class="role">ลงชื่อ ........................... สมาชิก</div>
+      <div class="name">(${esc(fullName) || '_________________________'})</div>
+      <div class="date">วันที่ ......./......./.......</div>
+    </div>
+    <div class="col">
+      <div class="role">ลงชื่อ ........................... ผู้ให้บริการ</div>
+      <div class="name">(_________________________)</div>
+      <div class="date">วันที่ ......./......./.......</div>
+    </div>
+  </div>
+
+
+</body>
+</html>`;
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  const w = window.open('', '_blank');
+  if (!w) { toast('เบราว์เซอร์บล็อก popup — โปรดอนุญาต popup แล้วลองอีกครั้ง', 'bad'); return; }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
 }
 
 // ============ SALES LOG ============
