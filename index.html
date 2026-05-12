@@ -2349,13 +2349,28 @@ function renderRegistration(root) {
             <select id="rg-branch" required><option value="">- เลือกสาขา -</option>${branchOptions}</select>
           </div>
           <div><label>วันที่สมัคร</label><input id="rg-startDate" type="date" value="${today}"></div>
-          <div><label>แพ็กเกจสมาชิก <span class="req">*</span></label>
-            <select id="rg-package" required onchange="updateRegSummary()"><option value="">- เลือกแพ็กเกจ -</option>${pkgOptions}</select>
+
+          <div class="full"><label>แพ็กเกจสมาชิก <span class="req">*</span> <small style="color:#6B7280">— เลือก preset หรือ "กำหนดเอง" เพื่อกรอกวัน/ราคาเอง (แก้ค่าได้เสมอ)</small></label>
+            <select id="rg-package" required onchange="onPickPackage()">
+              <option value="">- เลือกแพ็กเกจ -</option>
+              ${pkgOptions}
+              <option value="CUSTOM">⚙️ กำหนดเอง</option>
+            </select>
           </div>
-          <div><label>PT เสริม (เลือกหรือไม่ก็ได้)</label>
-            <select id="rg-pt" onchange="updateRegSummary()"><option value="">- ไม่ซื้อ PT -</option>${ptOptions}</select>
+          <div><label>จำนวนวัน <span class="req">*</span></label><input id="rg-days" type="number" min="1" required oninput="updateRegSummary()" placeholder="เช่น 30"></div>
+          <div><label>ราคาสมาชิก (บาท) <span class="req">*</span></label><input id="rg-price" type="number" min="0" required oninput="updateRegSummary()" placeholder="เช่น 1200"></div>
+
+          <div class="full"><label>PT เสริม (เลือกหรือไม่ก็ได้) <small style="color:#6B7280">— เลือก preset หรือ "กำหนดเอง" / "ไม่ซื้อ"</small></label>
+            <select id="rg-pt" onchange="onPickPT()">
+              <option value="">- ไม่ซื้อ PT -</option>
+              ${ptOptions}
+              <option value="CUSTOM">⚙️ กำหนดเอง</option>
+            </select>
           </div>
-          <div class="full"><div class="reg-summary" id="reg-summary">เลือกแพ็กเกจเพื่อดูยอดรวม</div></div>
+          <div><label>ชั่วโมง PT (ครั้ง)</label><input id="rg-ptHours" type="number" min="0" value="0" oninput="updateRegSummary()"></div>
+          <div><label>ราคา PT (บาท)</label><input id="rg-ptPrice" type="number" min="0" value="0" oninput="updateRegSummary()"></div>
+
+          <div class="full"><div class="reg-summary" id="reg-summary">กรอกจำนวนวันและราคาเพื่อดูยอดรวม</div></div>
         </div>
       </div>
 
@@ -2376,18 +2391,55 @@ function renderRegistration(root) {
   root.appendChild(card);
 }
 
+function onPickPackage() {
+  const code = document.getElementById('rg-package').value;
+  if (code && code !== 'CUSTOM') {
+    const pkg = MEMBERSHIP_PACKAGES.find(p => p.code === code);
+    if (pkg) {
+      document.getElementById('rg-days').value = pkg.days;
+      document.getElementById('rg-price').value = pkg.price;
+    }
+  }
+  // ถ้าเลือก CUSTOM หรือล้างค่า ให้ผู้ใช้กรอกเอง
+  updateRegSummary();
+}
+
+function onPickPT() {
+  const code = document.getElementById('rg-pt').value;
+  if (code && code !== 'CUSTOM') {
+    const pt = PT_PACKAGES.find(p => p.code === code);
+    if (pt) {
+      document.getElementById('rg-ptHours').value = pt.hours;
+      document.getElementById('rg-ptPrice').value = pt.price;
+    }
+  } else if (code === '') {
+    document.getElementById('rg-ptHours').value = 0;
+    document.getElementById('rg-ptPrice').value = 0;
+  }
+  updateRegSummary();
+}
+
 function updateRegSummary() {
   const pkgCode = document.getElementById('rg-package').value;
   const ptCode = document.getElementById('rg-pt').value;
-  const pkg = MEMBERSHIP_PACKAGES.find(p => p.code === pkgCode);
-  const pt = PT_PACKAGES.find(p => p.code === ptCode);
+  const days = Number(document.getElementById('rg-days').value || 0);
+  const price = Number(document.getElementById('rg-price').value || 0);
+  const ptHours = Number(document.getElementById('rg-ptHours').value || 0);
+  const ptPrice = Number(document.getElementById('rg-ptPrice').value || 0);
+
   const el = document.getElementById('reg-summary');
-  if (!pkg) { el.textContent = 'เลือกแพ็กเกจเพื่อดูยอดรวม'; return; }
-  const total = pkg.price + (pt ? pt.price : 0);
-  const hrs = (pkg.trainerHrs || 0) + (pt ? pt.hours : 0);
-  let txt = `แพ็กเกจ: ${pkg.label} (${pkg.days} วัน)`;
-  if (pt) txt += ' + ' + pt.label;
-  txt += `  •  ชม.เทรน: ${hrs} ครั้ง  •  ยอดรวม: ${thb(total)}`;
+  if (!days || !price) { el.textContent = 'กรอกจำนวนวันและราคาเพื่อดูยอดรวม'; return; }
+
+  const pkgPreset = MEMBERSHIP_PACKAGES.find(p => p.code === pkgCode);
+  const ptPreset = PT_PACKAGES.find(p => p.code === ptCode);
+
+  let pkgLabel = pkgPreset ? pkgPreset.label : (pkgCode === 'CUSTOM' ? 'กำหนดเอง' : 'แพ็กเกจ');
+  let ptLabel = ptPreset ? ptPreset.label : (ptCode === 'CUSTOM' ? 'PT กำหนดเอง' : '');
+
+  const total = price + ptPrice;
+  let txt = `${pkgLabel} (${days} วัน, ${thb(price)})`;
+  if (ptHours > 0 || ptPrice > 0) txt += ` + ${ptLabel} (${ptHours} ครั้ง, ${thb(ptPrice)})`;
+  txt += `  •  ยอดรวม: ${thb(total)}`;
   el.textContent = txt;
 }
 
@@ -2395,16 +2447,26 @@ function saveRegistration(e) {
   e.preventDefault();
   const v = id => (document.getElementById(id).value || '').trim();
   const pkgCode = v('rg-package');
-  const pkg = MEMBERSHIP_PACKAGES.find(p => p.code === pkgCode);
-  if (!pkg) { toast('กรุณาเลือกแพ็กเกจ', 'bad'); return; }
+  if (!pkgCode) { toast('กรุณาเลือกแพ็กเกจ', 'bad'); return; }
+  const days = Number(v('rg-days'));
+  const price = Number(v('rg-price'));
+  if (!days || days < 1) { toast('กรุณากรอกจำนวนวัน', 'bad'); return; }
+  if (price < 0 || isNaN(price)) { toast('กรุณากรอกราคา', 'bad'); return; }
+
   const ptCode = v('rg-pt');
-  const pt = ptCode ? PT_PACKAGES.find(p => p.code === ptCode) : null;
+  const ptHours = Number(v('rg-ptHours')) || 0;
+  const ptPrice = Number(v('rg-ptPrice')) || 0;
+
+  const pkgPreset = MEMBERSHIP_PACKAGES.find(p => p.code === pkgCode);
+  const ptPreset = PT_PACKAGES.find(p => p.code === ptCode);
+  const pkgLabel = pkgPreset ? pkgPreset.label : 'กำหนดเอง';
+  const ptLabel = ptPreset ? ptPreset.label : (ptHours > 0 || ptPrice > 0 ? `PT ${ptHours} ครั้ง` : '');
 
   const startDate = v('rg-startDate') ? new Date(v('rg-startDate')) : new Date();
   startDate.setHours(0, 0, 0, 0);
-  const endDate = new Date(startDate.getTime() + pkg.days * 24 * 3600 * 1000);
-  const totalPrice = pkg.price + (pt ? pt.price : 0);
-  const trainerHrs = (pkg.trainerHrs || 0) + (pt ? pt.hours : 0);
+  const endDate = new Date(startDate.getTime() + days * 24 * 3600 * 1000);
+  const totalPrice = price + ptPrice;
+  const trainerHrs = ptHours;
   const memberId = nextMemberId();
 
   const member = {
@@ -2428,8 +2490,12 @@ function saveRegistration(e) {
     emergencyName: v('rg-emergencyName'),
     emergencyPhone: v('rg-emergencyPhone'),
     packageCode: pkgCode,
-    packageLabel: pkg.label + (pt ? ' + ' + pt.label : ''),
+    packageLabel: pkgLabel + (ptLabel ? ' + ' + ptLabel : ''),
+    packageDays: days,
+    packagePrice: price,
     ptCode: ptCode,
+    ptHours: ptHours,
+    ptPrice: ptPrice,
     totalPrice: totalPrice,
     health: v('rg-health'),
     note: v('rg-note'),
