@@ -567,7 +567,7 @@ const LINE_FUNCTION_URL = SUPABASE_URL + '/functions/v1/swift-handler';
 const SLIP_BUCKET = 'slips';
 
 const TABLE_SPEC = {
-  branches:  { table: 'app_branches',  pk: 'code',  fields: [['code','code'],['name','name'],['lineToken','line_token'],['lineGroupId','line_group_id'],['managerEmail','manager_email'],['managerPwd','manager_pwd']] },
+  branches:  { table: 'app_branches',  pk: 'code',  fields: [['code','code'],['name','name'],['lineToken','line_token'],['lineGroupId','line_group_id'],['managerEmail','manager_email'],['managerPwd','manager_pwd'],['logoUrl','logo_url']] },
   users:     { table: 'app_users',     pk: 'email', fields: [['email','email'],['pwd','pwd'],['name','name'],['role','role'],['branch','branch']] },
   employees: { table: 'app_employees', pk: 'id',    fields: [['id','id'],['name','name'],['surname','surname'],['position','position'],['branch','branch'],['status','status'],['photo','photo']] },
   members:   { table: 'app_members',   pk: 'id',    fields: [['id','id'],['name','name'],['surname','surname'],['age','age'],['branch','branch'],['startDate','start_date'],['endDate','end_date'],['hours','hours'],['trainer','trainer'],['lineUid','line_uid'],['status','status'],['address','address']] },
@@ -3294,10 +3294,15 @@ function buildInvoicePrintHTML(inv) {
     return html;
   };
 
+  const branch = DATA.branches.find(b => b.code === inv.branch);
+  const logoCell = (branch && branch.logoUrl)
+    ? `<div class="logo-img"><img src="${_h(branch.logoUrl)}" alt="logo"></div>`
+    : `<div class="logo">${_h(COMPANY_INFO.logoText)}</div>`;
+
   const copyHTML = (label) => `
     <div class="copy">
       <div class="hdr">
-        <div class="logo">${_h(COMPANY_INFO.logoText)}</div>
+        ${logoCell}
         <div class="biz">
           <div class="bizname"><b>${_h(COMPANY_INFO.name)}</b> ${_h(COMPANY_INFO.branchLabel)}</div>
           <div>${_h(COMPANY_INFO.address)}</div>
@@ -3362,6 +3367,8 @@ function buildInvoicePrintHTML(inv) {
   .copy { border: 1px solid #000; padding: 8px 10px; position: relative; min-height: 95vh; }
   .hdr { display: grid; grid-template-columns: 90px 1fr 100px; gap: 8px; align-items: start; padding-bottom: 4px; border-bottom: 0; }
   .logo { background: #000; color: #fff; text-align: center; font-weight: bold; padding: 18px 4px; font-size: 12px; letter-spacing: 1px; }
+  .logo-img { width: 90px; height: 90px; display: flex; align-items: center; justify-content: center; }
+  .logo-img img { max-width: 100%; max-height: 100%; object-fit: contain; }
   .biz { font-size: 12px; line-height: 1.35; }
   .bizname { font-size: 13px; }
   .copy-label { text-align: right; font-weight: bold; font-size: 13px; }
@@ -3738,13 +3745,19 @@ function renderSettings(root) {
       <td><input type="password" value="${_h(b.managerPwd)}" onchange="DATA.branches[${i}].managerPwd=this.value" style="width: 130px;" placeholder="••••"></td>
       <td><input value="${_h(b.lineToken)}" onchange="DATA.branches[${i}].lineToken=this.value" style="width: 100%;" placeholder="Channel Access Token"></td>
       <td><input value="${_h(b.lineGroupId)}" onchange="DATA.branches[${i}].lineGroupId=this.value" style="width: 100%;" placeholder="LINE Group ID"></td>
+      <td>
+        <div style="display: flex; gap: 6px; align-items: center;">
+          ${b.logoUrl ? `<img src="${_h(b.logoUrl)}" style="width: 32px; height: 32px; object-fit: contain; border: 1px solid var(--border); border-radius: 4px; background: #fff;">` : ''}
+          <input value="${_h(b.logoUrl || '')}" onchange="DATA.branches[${i}].logoUrl=this.value" style="flex: 1;" placeholder="/logo.png หรือ https://...">
+        </div>
+      </td>
       <td class="row-actions"><button class="btn small danger" onclick="deleteBranch(${i})">ลบ</button></td>
     </tr>`;
   });
   card1.innerHTML = `
-    <h2>สาขา + LINE OA <small>คลิก "บันทึก" หลังแก้</small></h2>
+    <h2>สาขา + LINE OA + โลโก้ <small>คลิก "บันทึก" หลังแก้</small></h2>
     <table>
-      <thead><tr><th>รหัส</th><th>ชื่อ</th><th>รหัสเมเนเจอร์</th><th>LINE Token</th><th>Group ID</th><th></th></tr></thead>
+      <thead><tr><th>รหัส</th><th>ชื่อ</th><th>รหัสเมเนเจอร์</th><th>LINE Token</th><th>Group ID</th><th>โลโก้ใบเสร็จ (URL)</th><th></th></tr></thead>
       <tbody>${brRows}</tbody>
     </table>
     <div style="margin-top: 12px; display: flex; gap: 8px;">
