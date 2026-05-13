@@ -1301,6 +1301,26 @@ function renderDashboard(root) {
   `;
   root.appendChild(kpi);
 
+  // Channel breakdown (Walk-In / Online / Br / Renew)
+  const channelSales = todaySales.filter(s => s.type !== 'Train');
+  const channels = ['Walk-In', 'Online', 'Br', 'Renew'];
+  const chCards = channels.map(ch => {
+    const items = channelSales.filter(s => s.channel === ch);
+    const total = items.reduce((a, b) => a + Number(b.amount || 0), 0);
+    return `
+      <div class="kpi">
+        <div class="label">${ch} ${dateLabel}</div>
+        <div class="value">${items.length}</div>
+        <div class="sub">${thb(total)}</div>
+      </div>`;
+  }).join('');
+  const chWrap = document.createElement('div');
+  chWrap.innerHTML = `
+    <h3 style="margin: 18px 0 8px 0; color: var(--text); font-size: 14px;">ยอดขายตามช่องทาง</h3>
+    <div class="kpi-grid">${chCards}</div>
+  `;
+  root.appendChild(chWrap);
+
   // Branch breakdown card
   const bb = document.createElement('div');
   bb.className = 'card';
@@ -1513,6 +1533,7 @@ function renderSalesEntry(root) {
             <option value="">เลือก...</option>
             <option value="Walk-In">Walk-In</option>
             <option value="Online">Online</option>
+            <option value="Br">Br</option>
             <option value="Renew" disabled>Renew (เฉพาะสมาชิกเก่า)</option>
             <option value="Boot">Boot</option>
           </select>
