@@ -570,7 +570,7 @@ const TABLE_SPEC = {
   branches:  { table: 'app_branches',  pk: 'code',  fields: [['code','code'],['name','name'],['lineToken','line_token'],['lineGroupId','line_group_id'],['managerEmail','manager_email'],['managerPwd','manager_pwd']] },
   users:     { table: 'app_users',     pk: 'email', fields: [['email','email'],['pwd','pwd'],['name','name'],['role','role'],['branch','branch']] },
   employees: { table: 'app_employees', pk: 'id',    fields: [['id','id'],['name','name'],['surname','surname'],['position','position'],['branch','branch'],['status','status'],['photo','photo']] },
-  members:   { table: 'app_members',   pk: 'id',    fields: [['id','id'],['name','name'],['surname','surname'],['age','age'],['branch','branch'],['startDate','start_date'],['endDate','end_date'],['hours','hours'],['trainer','trainer'],['lineUid','line_uid'],['status','status']] },
+  members:   { table: 'app_members',   pk: 'id',    fields: [['id','id'],['name','name'],['surname','surname'],['age','age'],['branch','branch'],['startDate','start_date'],['endDate','end_date'],['hours','hours'],['trainer','trainer'],['lineUid','line_uid'],['status','status'],['address','address']] },
   sales:     { table: 'app_sales',     pk: 'id',    fields: [['id','id'],['ts','ts'],['branch','branch'],['empId','emp_id'],['type','type'],['memberId','member_id'],['memberName','member_name'],['amount','amount'],['channel','channel'],['slip','slip'],['note','note'],['notify','notify']] },
   trainings: { table: 'app_trainings', pk: 'id',    fields: [['id','id'],['ts','ts'],['branch','branch'],['memberId','member_id'],['memberName','member_name'],['trainerId','trainer_id'],['trainerName','trainer_name'],['verified','verified'],['hoursBefore','hours_before'],['hoursAfter','hours_after']] },
   alerts:    { table: 'app_alerts',    pk: 'id',    fields: [['id','id'],['ts','ts'],['kind','kind'],['message','message'],['branch','branch'],['read','read']] },
@@ -2340,6 +2340,7 @@ function openMemberModal(id) {
         <div class="field"><label>เทรนเนอร์ประจำ</label><input id="mm-trainer" value="${m ? _h(m.trainer) : ''}"></div>
         <div class="field"><label>LINE User ID</label><input id="mm-line" value="${m ? _h(m.lineUid) : ''}" placeholder="Uxxxxxxxxxxxxxx"></div>
         <div class="field"><label>สถานะ</label><select id="mm-status">${statuses}</select></div>
+        <div class="field full"><label>ที่อยู่ <small class="muted">(ใช้สำหรับออกใบกำกับภาษี)</small></label><input id="mm-address" value="${m ? _h(m.address || '') : ''}" placeholder="234/138 หมู่ที่ 4 ต.บลเทพารักษ์ อ.เมืองสมุทรปราการ จ.สมุทรปราการ 10270"></div>
       </div>
       <div class="actions">
         ${!isNew && isManagerOrAbove() ? `<button type="button" class="btn danger" onclick="deleteMember('${_h(m.id)}')">ลบ</button>` : ''}
@@ -2365,6 +2366,7 @@ function saveMember(e, idOrNull) {
     trainer: document.getElementById('mm-trainer').value,
     lineUid: document.getElementById('mm-line').value,
     status: document.getElementById('mm-status').value,
+    address: document.getElementById('mm-address').value.trim(),
   };
   if (isNew) {
     if (DATA.members.some(m => m.id === obj.id)) {
@@ -3184,6 +3186,7 @@ function onPickInvoiceMember() {
   if (!m) return;
   document.getElementById('iv-cname').value = m.name + ' ' + m.surname;
   document.getElementById('iv-cmid').value = m.id;
+  if (m.address) document.getElementById('iv-caddr').value = m.address;
   const br = DATA.branches.find(b => b.code === m.branch);
   if (br) document.getElementById('iv-branch').value = m.branch;
 }
