@@ -2147,12 +2147,13 @@ function renderMembers(root) {
       <td class="center ${hrCls}">${m.hours}</td>
       <td>${m.trainer ? _h(m.trainer) : '<span class="muted">—</span>'}</td>
       <td class="center">${statusBadge(m.status)}</td>
-      ${editable ? `<td class="row-actions">
-        <button class="btn small secondary" onclick="openMemberModal('${_h(m.id)}')">แก้</button>
-      </td>` : ''}
+      <td class="row-actions">
+        <button class="btn small secondary" onclick="openMemberHistoryModal('${_h(m.id)}')">📜 ประวัติ</button>
+        ${editable ? `<button class="btn small secondary" onclick="openMemberModal('${_h(m.id)}')">แก้</button>` : ''}
+      </td>
     </tr>`;
   });
-  if (rows === '') rows = `<tr><td colspan="${editable?10:9}" class="muted center" style="padding: 20px;">ไม่พบข้อมูลสมาชิก</td></tr>`;
+  if (rows === '') rows = `<tr><td colspan="10" class="muted center" style="padding: 20px;">ไม่พบข้อมูลสมาชิก</td></tr>`;
 
   card.innerHTML = `
     <table>
@@ -2160,7 +2161,7 @@ function renderMembers(root) {
         <th>ID</th><th>ชื่อ-นามสกุล</th><th class="center">อายุ</th>
         <th class="center">สาขา</th><th class="center">วันหมดอายุ</th><th class="center">วันคงเหลือ</th>
         <th class="center">ชม.เทรน</th><th>เทรนเนอร์</th><th class="center">สถานะ</th>
-        ${editable ? '<th></th>' : ''}
+        <th></th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
@@ -2174,6 +2175,89 @@ function statusBadge(s) {
   if (s === 'Expired')  return '<span class="badge bad">Expired</span>';
   if (s === 'Cancelled')return '<span class="badge gray">Cancelled</span>';
   return '<span class="badge gray">' + s + '</span>';
+}
+
+function openMemberHistoryModal(id) {
+  const m = DATA.members.find(x => x.id === id);
+  if (!m) { toast('ไม่พบสมาชิก', 'bad'); return; }
+
+  const sales = DATA.sales
+    .filter(s => s.memberId === id && s.type !== 'Train')
+    .slice()
+    .sort((a, b) => new Date(b.ts) - new Date(a.ts));
+  const trainings = DATA.trainings
+    .filter(t => t.memberId === id)
+    .slice()
+    .sort((a, b) => new Date(b.ts) - new Date(a.ts));
+
+  const totalAmount = sales.reduce((sum, s) => sum + Number(s.amount || 0), 0);
+  const cur = DATA.settings.currency || '฿';
+
+  const typeLabel = { MEM: 'สมาชิก', PT: 'PT', Plan: 'รายวัน', Other: 'อื่นๆ' };
+
+  let salesRows = '';
+  sales.forEach(s => {
+    const emp = DATA.employees.find(e => e.id === s.empId);
+    const empName = emp ? emp.name + ' ' + emp.surname : s.empId;
+    const slipCell = s.slip ? `<a href="${_h(s.slip)}" target="_blank" rel="noopener">ดู</a>` : '<span class="muted">—</span>';
+    salesRows += `<tr>
+      <td>${fmtDate(s.ts)} ${fmtTimeShort(s.ts)}</td>
+      <td>${_h(typeLabel[s.type] || s.type)}</td>
+      <td>${_h(s.channel || '-')}</td>
+      <td>${_h(empName)}</td>
+      <td class="right"><strong>${cur}${Number(s.amount).toLocaleString()}</strong></td>
+      <td class="center">${slipCell}</td>
+      <td>${_h(s.note || '')}</td>
+    </tr>`;
+  });
+  if (salesRows === '') salesRows = `<tr><td colspan="7" class="muted center" style="padding: 16px;">ยังไม่มีประวัติการซื้อ</td></tr>`;
+
+  let trainRows = '';
+  trainings.forEach(t => {
+    trainRows += `<tr>
+      <td>${fmtDate(t.ts)} ${fmtTimeShort(t.ts)}</td>
+      <td>${_h(t.trainerName || t.trainerId || '-')}</td>
+      <td class="center">${t.hoursBefore} → ${t.hoursAfter}</td>
+      <td class="center">${t.verified ? '<span class="badge ok">ยืนยันแล้ว</span>' : '<span class="badge gray">รอยืนยัน</span>'}</td>
+    </tr>`;
+  });
+  if (trainRows === '') trainRows = `<tr><td colspan="4" class="muted center" style="padding: 16px;">ยังไม่มีประวัติการเทรน</td></tr>`;
+
+  showModal(`
+    <h3>📜 ประวัติของ ${_h(m.name)} ${_h(m.surname)} <small class="muted">(${_h(m.id)} · สาขา ${_h(m.branch)})</small></h3>
+
+    <div style="margin: 12px 0; padding: 10px; background: var(--bg-soft, #f8fafc); border-radius: 8px; display: flex; gap: 24px; flex-wrap: wrap;">
+      <div><span class="muted small">รวมการซื้อ:</span> <strong>${sales.length}</strong> รายการ</div>
+      <div><span class="muted small">ยอดรวม:</span> <strong>${cur}${totalAmount.toLocaleString()}</strong></div>
+      <div><span class="muted small">การเทรน:</span> <strong>${trainings.length}</strong> ครั้ง</div>
+      <div><span class="muted small">ชม.คงเหลือ:</span> <strong>${m.hours}</strong> ครั้ง</div>
+    </div>
+
+    <h4 style="margin-top: 16px; margin-bottom: 8px;">💰 ประวัติการซื้อ</h4>
+    <div style="max-height: 280px; overflow: auto;">
+      <table>
+        <thead><tr>
+          <th>วันที่</th><th>ประเภท</th><th>ช่องทาง</th><th>พนักงาน</th>
+          <th class="right">ยอด</th><th class="center">สลิป</th><th>หมายเหตุ</th>
+        </tr></thead>
+        <tbody>${salesRows}</tbody>
+      </table>
+    </div>
+
+    <h4 style="margin-top: 16px; margin-bottom: 8px;">🏋️ ประวัติการเทรน</h4>
+    <div style="max-height: 240px; overflow: auto;">
+      <table>
+        <thead><tr>
+          <th>วันที่</th><th>เทรนเนอร์</th><th class="center">ชม.ก่อน → หลัง</th><th class="center">สถานะ</th>
+        </tr></thead>
+        <tbody>${trainRows}</tbody>
+      </table>
+    </div>
+
+    <div class="actions">
+      <button type="button" class="btn" onclick="closeModal()">ปิด</button>
+    </div>
+  `);
 }
 
 function openMemberModal(id) {
