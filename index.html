@@ -1958,7 +1958,7 @@ function renderTrainingsEntry(root) {
     .map(e => `<option value="${_h(e.id)}">${_h(e.id)} — ${_h(e.name)} ${_h(e.surname)}</option>`).join('');
 
   card.innerHTML = `
-    <h2>บันทึกการเทรน <small>หักชั่วโมง 1 ครั้งเมื่อรหัสเมเนเจอร์ถูกต้อง</small></h2>
+    <h2>บันทึกการเทรน <small>หักชั่วโมง 1 ครั้งต่อการเทรน 1 รายการ</small></h2>
     <form id="train-form" autocomplete="off" onsubmit="onSubmitTrain(event)">
       <div class="form-grid">
         <div class="field">
@@ -1978,10 +1978,6 @@ function renderTrainingsEntry(root) {
           <select id="te-trainer" required>
             <option value="">เลือก...</option>${trainerOptions}
           </select>
-        </div>
-        <div class="field">
-          <label>รหัสเมเนเจอร์สาขา *</label>
-          <input id="te-pwd" type="password" required placeholder="••••••••" autocomplete="new-password">
         </div>
         <div class="field full">
           <label>หมายเหตุ</label>
@@ -2074,7 +2070,6 @@ function onSubmitTrain(e) {
   const branch = document.getElementById('te-branch').value;
   const memberId = document.getElementById('te-member').value;
   const trainerId = document.getElementById('te-trainer').value;
-  const pwd = document.getElementById('te-pwd').value.trim();
   const note = document.getElementById('te-note').value;
 
   if (!memberId) { toast('กรุณาเลือกสมาชิกจากรายการ (พิมพ์แล้วเลือกตัวเลือกที่ขึ้น)', 'bad'); return; }
@@ -2087,19 +2082,6 @@ function onSubmitTrain(e) {
   }
   if (member.hours <= 0) {
     toast('สมาชิกนี้ไม่เหลือชั่วโมงเทรน', 'bad'); return;
-  }
-  const verified = (pwd === br.managerPwd);
-  if (!verified) {
-    DATA.trainings.unshift({
-      id: nid(), ts: new Date().toISOString(), branch, memberId,
-      memberName: member.name + ' ' + member.surname,
-      trainerId, trainerName: trainer.name,
-      verified: false, hoursBefore: member.hours, hoursAfter: member.hours,
-    });
-    saveData();
-    toast('รหัสเมเนเจอร์ไม่ถูกต้อง — ไม่หักชั่วโมง', 'bad');
-    document.getElementById('te-pwd').value = '';
-    return;
   }
   // Deduct
   const hoursBefore = member.hours;
