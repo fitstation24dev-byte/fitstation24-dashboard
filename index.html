@@ -1729,11 +1729,22 @@ async function uploadSlipToStorage(dataUrl, saleId) {
   return data.publicUrl;
 }
 
-async function sendLineMessage(text, slipUrl) {
+async function sendLineMessage(text, slipUrl, branchCode) {
+  const branch = branchCode ? DATA.branches.find(b => b.code === branchCode) : null;
+  if (!branch) throw new Error('ไม่พบสาขา: ' + branchCode);
+  if (!branch.lineToken || !branch.lineGroupId) {
+    throw new Error(`สาขา ${branch.code} ยังไม่ได้ตั้งค่า LINE Token / Group ID`);
+  }
   const res = await fetch(LINE_FUNCTION_URL, {
     method: 'POST',
     headers: { 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: text, slipUrl: slipUrl || undefined }),
+    body: JSON.stringify({
+      message: text,
+      slipUrl: slipUrl || undefined,
+      branchCode: branch.code,
+      lineToken: branch.lineToken,
+      lineGroupId: branch.lineGroupId,
+    }),
   });
   const result = await res.json().catch(() => ({}));
   if (!res.ok || !result.ok) throw new Error(result.error || ('HTTP ' + res.status));
@@ -1749,7 +1760,7 @@ async function sendSaleToLine(sale, slipUrl) {
 พนักงาน: ${emp ? emp.name + ' ' + emp.surname : sale.empId}
 ยอด: ${DATA.settings.currency}${Number(sale.amount).toLocaleString()}${sale.note ? '\nหมายเหตุ: ' + sale.note : ''}
 เวลา: ${new Date(sale.ts).toLocaleString('th-TH')}`;
-  await sendLineMessage(text, slipUrl);
+  await sendLineMessage(text, slipUrl, sale.branch);
 }
 
 async function sendDailyHoursLowAlertsToGroup() {
@@ -1782,7 +1793,7 @@ async function sendDailyHoursLowAlertsToGroup() {
 ${lines}
 รวม ${items.length} คน · เหลือ ≤ ${threshold} ครั้ง`;
     try {
-      await sendLineMessage(text);
+      await sendLineMessage(text, null, code);
       items.forEach(m => { notified[m.id] = true; });
       saveData();
     } catch (err) {
@@ -1816,7 +1827,7 @@ async function sendDailyExpiryAlertsToGroup() {
 ${lines}
 รวม ${items.length} คน · ส่งภายใน ${DATA.settings.expiryWarnDays} วัน`;
     try {
-      await sendLineMessage(text);
+      await sendLineMessage(text, null, code);
       items.forEach(({ m }) => { notified[m.id] = m.endDate; });
       saveData();
     } catch (err) {
