@@ -801,6 +801,7 @@ let SALES_LOG_DATE_FROM = '';
 let SALES_LOG_DATE_TO = '';
 let TRAININGS_DATE_FROM = '';
 let TRAININGS_DATE_TO = '';
+let TRAIN_GATE_VERIFIED = false;   // reset on every navigate()
 
 async function loadData() {
   // 1. Try Supabase first
@@ -1191,6 +1192,7 @@ function navigate(view) {
   if (SESSION && !canAccessView(SESSION.role, view)) {
     view = canAccessView(SESSION.role, 'dashboard') ? 'dashboard' : (NAV_ITEMS.find(i => canAccessView(SESSION.role, i.id)) || {}).id || 'dashboard';
   }
+  TRAIN_GATE_VERIFIED = false;
   CURRENT_VIEW = view;
   try { sessionStorage.setItem('fs24_view', view); } catch {}
   document.querySelectorAll('#nav button').forEach(b => {
@@ -1895,7 +1897,52 @@ async function onSubmitSale(e) {
 }
 
 // ============ TRAININGS ENTRY ============
+function renderTrainingsGate(root) {
+  const branch = DATA.branches.find(b => b.code === SESSION.branch);
+  const branchLabel = branch ? `${branch.code} · ${branch.name}` : SESSION.branch;
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.style.maxWidth = '480px';
+  card.style.margin = '40px auto';
+  card.innerHTML = `
+    <h2 style="margin-top: 0;">🔒 ยืนยันสิทธิ์เข้าใช้งาน</h2>
+    <p class="muted" style="margin-bottom: 16px;">
+      กรุณากรอก <strong>รหัสเมเนเจอร์สาขา ${_h(branchLabel)}</strong> เพื่อเข้าหน้าบันทึกการเทรน
+    </p>
+    <form id="train-gate-form" onsubmit="onTrainGateSubmit(event)" autocomplete="off">
+      <div class="field">
+        <label>รหัสเมเนเจอร์ *</label>
+        <input id="tg-pwd" type="password" required placeholder="••••••••" autocomplete="new-password">
+      </div>
+      <button type="submit" class="btn" style="width: 100%; margin-top: 8px;">ยืนยัน</button>
+    </form>
+  `;
+  root.appendChild(card);
+  setTimeout(() => { const i = document.getElementById('tg-pwd'); if (i) i.focus(); }, 50);
+}
+
+function onTrainGateSubmit(e) {
+  e.preventDefault();
+  const pwd = document.getElementById('tg-pwd').value.trim();
+  const branch = DATA.branches.find(b => b.code === SESSION.branch);
+  if (!branch) { toast('ไม่พบสาขาของผู้ใช้', 'bad'); return; }
+  if (pwd !== branch.managerPwd) {
+    toast('รหัสเมเนเจอร์ไม่ถูกต้อง', 'bad');
+    const i = document.getElementById('tg-pwd');
+    if (i) { i.value = ''; i.focus(); }
+    return;
+  }
+  TRAIN_GATE_VERIFIED = true;
+  const c = document.getElementById('content');
+  c.innerHTML = '';
+  renderTrainingsEntry(c);
+}
+
 function renderTrainingsEntry(root) {
+  if (!isOwner() && !TRAIN_GATE_VERIFIED) {
+    renderTrainingsGate(root);
+    return;
+  }
   const card = document.createElement('div');
   card.className = 'card';
   const branches = canSeeAllBranches()
