@@ -806,6 +806,13 @@ let TRAININGS_DATE_TO = '';
 let TRAIN_GATE_VERIFIED = false;   // reset on every navigate()
 
 async function loadData() {
+  // อ่าน localStorage ก่อน — สำหรับฟิลด์ที่ไม่ได้ sync ผ่าน Supabase (เช่น invoices)
+  let localData = null;
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) localData = JSON.parse(raw);
+  } catch {}
+
   // 1. Try Supabase first
   if (db.enabled) {
     const remote = await db.loadAll();
@@ -813,12 +820,7 @@ async function loadData() {
       const empty = (remote.branches || []).length === 0;
       if (empty) {
         // First-run: seed Supabase with localStorage data if available, else defaults
-        let seedSrc = null;
-        try {
-          const raw = localStorage.getItem(LS_KEY);
-          if (raw) seedSrc = JSON.parse(raw);
-        } catch {}
-        DATA = seedSrc || defaultData();
+        DATA = localData || defaultData();
         await db.pushAll(DATA);
       } else {
         const seed = defaultData();
@@ -833,6 +835,8 @@ async function loadData() {
           alerts:        remote.alerts,
           loginLog:      remote.loginLog,
           lastDailyRun:  remote.lastDailyRun,
+          // ฟิลด์เฉพาะเครื่อง (ไม่ได้ sync ผ่าน Supabase) — preserve จาก localStorage
+          invoices:      (localData && Array.isArray(localData.invoices)) ? localData.invoices : [],
         };
       }
       localStorage.setItem(LS_KEY, JSON.stringify(DATA));
