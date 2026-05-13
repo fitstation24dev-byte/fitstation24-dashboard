@@ -782,6 +782,7 @@ function defaultData() {
       { id: nid(), ts: daysAgo(1), branch: 'BR01', memberId: 'M0002', memberName: 'นภัสกร ใจกล้า', trainerId: 'E004', trainerName: 'พิมพ์', verified: true, hoursBefore: 3, hoursAfter: 2 },
     ],
     alerts: [],
+    invoices: [],
     loginLog: [],
     lastDailyRun: '',
   };
@@ -948,6 +949,7 @@ const NAV_ITEMS = [
   { id: 'trainings',    label: 'บันทึกการเทรน' },
   { id: 'members',      label: 'สมาชิก' },
   { id: 'sales-log',    label: 'ประวัติการขาย' },
+  { id: 'invoices',     label: 'ใบกำกับภาษี' },
   { id: 'alerts',       label: 'การแจ้งเตือน' },
   { id: 'employees',    label: 'พนักงาน' },
   { id: 'reports',      label: 'รายงาน' },
@@ -957,8 +959,8 @@ const DELEGABLE_ROLES = ['Manager','Staff','Trainer'];
 
 function defaultRolePermissions() {
   return {
-    Manager: ['dashboard','sales','trainings','members','registration','sales-log','alerts','employees','reports'],
-    Staff:   ['dashboard','sales','trainings','members','registration','sales-log','alerts'],
+    Manager: ['dashboard','sales','trainings','members','registration','sales-log','invoices','alerts','employees','reports'],
+    Staff:   ['dashboard','sales','trainings','members','registration','sales-log','invoices','alerts'],
     Trainer: ['dashboard','trainings','members'],
   };
 }
@@ -1203,7 +1205,8 @@ function navigate(view) {
   const titles = {
     'dashboard': 'Dashboard', 'sales': 'บันทึกยอดขาย', 'trainings': 'บันทึกการเทรน',
     'members': 'สมาชิก', 'registration': '📝 สมัครสมาชิก',
-    'sales-log': 'ประวัติการขาย', 'alerts': 'การแจ้งเตือน',
+    'sales-log': 'ประวัติการขาย', 'invoices': 'ใบกำกับภาษี',
+    'alerts': 'การแจ้งเตือน',
     'employees': 'พนักงาน', 'reports': 'รายงาน', 'settings': 'ตั้งค่าระบบ',
   };
   document.getElementById('page-title').textContent = titles[view] || view;
@@ -1215,6 +1218,7 @@ function navigate(view) {
   else if (view === 'members')        renderMembers(c);
   else if (view === 'registration')   renderRegistration(c);
   else if (view === 'sales-log')      renderSalesLog(c);
+  else if (view === 'invoices')       renderInvoices(c);
   else if (view === 'alerts')         renderAlerts(c);
   else if (view === 'employees')      renderEmployees(c);
   else if (view === 'reports')        renderReports(c);
@@ -2860,6 +2864,501 @@ function renderSalesLog(root) {
     </table>
   `;
   root.appendChild(card);
+}
+
+// ============ INVOICES / TAX RECEIPT ============
+const COMPANY_INFO = {
+  name: 'บริษัท ทเวนตี้โฟร์โกลบอลเฮลท์ จำกัด',
+  branchLabel: '(สำนักงานใหญ่)',
+  address: 'เลขที่ 9 หมู่ 6 ต.บางเมืองใหม่ อ.เมืองสมุทรปราการ จ.สมุทรปราการ 10270',
+  phone: '095-194-2424, 02-019-2424',
+  branchNote: '(สำนักงานสาขา 00002)',
+  taxId: '0205562020643',
+  logoText: 'STATION 4 FITNESS',
+};
+
+function thaiBahtText(num) {
+  num = Number(num) || 0;
+  const sign = num < 0 ? 'ลบ' : '';
+  num = Math.abs(num);
+  const digits = ['', 'หนึ่ง', 'สอง', 'สาม', 'สี่', 'ห้า', 'หก', 'เจ็ด', 'แปด', 'เก้า'];
+  const positions = ['', 'สิบ', 'ร้อย', 'พัน', 'หมื่น', 'แสน'];
+  function chunkText(n) {
+    if (n === 0) return '';
+    const arr = String(n).split('').reverse();
+    let out = '';
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const d = Number(arr[i]);
+      if (d === 0) continue;
+      let dt = digits[d];
+      const pt = positions[i];
+      if (i === 1 && d === 1) dt = '';
+      else if (i === 1 && d === 2) dt = 'ยี่';
+      if (i === 0 && d === 1 && arr.length > 1) dt = 'เอ็ด';
+      out += dt + pt;
+    }
+    return out;
+  }
+  function intToThai(n) {
+    if (n === 0) return 'ศูนย์';
+    let out = '';
+    while (n >= 1000000) {
+      const part = n % 1000000;
+      n = Math.floor(n / 1000000);
+      out = chunkText(part) + 'ล้าน' + out;
+      if (n < 1000000) {
+        if (n > 0) out = chunkText(n) + 'ล้าน' + out.replace(/^ล้าน/, '');
+      }
+    }
+    if (n > 0 && out === '') return chunkText(n);
+    if (n > 0) return chunkText(n) + out;
+    return out;
+  }
+  const intPart = Math.floor(num);
+  const cents = Math.round((num - intPart) * 100);
+  let text = sign + intToThai(intPart) + 'บาท';
+  text += (cents === 0) ? 'ถ้วน' : intToThai(cents) + 'สตางค์';
+  return text;
+}
+
+function fmtMoney(n) {
+  return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function fmtThaiDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return `${d.getDate()}/${d.getMonth() + 1}/${d.getFullYear() + 543}`;
+}
+
+function fmtThaiDateTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${fmtThaiDate(iso)} ${hh}:${mm}:${ss}`;
+}
+
+function nextReceiptNo() {
+  const used = (DATA.invoices || []).map(inv => parseInt(inv.receiptNo, 10) || 0);
+  const max = used.length ? Math.max(...used) : 0;
+  return String(max + 1).padStart(6, '0');
+}
+
+function renderInvoices(root) {
+  if (!Array.isArray(DATA.invoices)) DATA.invoices = [];
+
+  const toolbar = document.createElement('div');
+  toolbar.className = 'toolbar';
+  toolbar.innerHTML = `
+    <h2 style="margin: 0;">ใบกำกับภาษี / ใบเสร็จรับเงิน</h2>
+    <button class="btn" onclick="openInvoiceModal()">+ สร้างใบเสร็จใหม่</button>
+  `;
+  root.appendChild(toolbar);
+
+  const card = document.createElement('div');
+  card.className = 'card';
+
+  const list = DATA.invoices
+    .filter(inv => canSeeAllBranches() || inv.branch === SESSION.branch)
+    .slice()
+    .sort((a, b) => new Date(b.ts) - new Date(a.ts));
+
+  let rows = '';
+  list.forEach(inv => {
+    const total = (inv.items || []).reduce((s, it) => s + Number(it.unitPrice) * Number(it.qty), 0);
+    rows += `<tr>
+      <td><strong>${_h(inv.receiptNo)}</strong></td>
+      <td>${fmtThaiDate(inv.ts)}</td>
+      <td>${_h(inv.branch)}</td>
+      <td>${_h(inv.customerName)} ${inv.customerMemberId ? '<small class="muted">(' + _h(inv.customerMemberId) + ')</small>' : ''}</td>
+      <td>${(inv.items || []).length} รายการ</td>
+      <td class="right"><strong>${fmtMoney(total)}</strong></td>
+      <td class="right">${_h(inv.paymentMethod || '-')}</td>
+      <td class="row-actions">
+        <button class="btn small" onclick="printInvoice('${_h(inv.id)}')">🖨️ พิมพ์</button>
+        <button class="btn small secondary" onclick="openInvoiceModal('${_h(inv.id)}')">แก้</button>
+        ${isOwner() || isManagerOrAbove() ? `<button class="btn small danger" onclick="deleteInvoice('${_h(inv.id)}')">ลบ</button>` : ''}
+      </td>
+    </tr>`;
+  });
+  if (rows === '') rows = `<tr><td colspan="8" class="muted center" style="padding: 24px;">ยังไม่มีใบเสร็จ — กด "+ สร้างใบเสร็จใหม่" ด้านบน</td></tr>`;
+
+  card.innerHTML = `
+    <table>
+      <thead><tr>
+        <th>เลขที่</th><th>วันที่</th><th>สาขา</th><th>ในนาม</th>
+        <th class="center">รายการ</th><th class="right">ยอดรวม</th><th class="right">ชำระ</th><th></th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+  root.appendChild(card);
+}
+
+function openInvoiceModal(id) {
+  if (!Array.isArray(DATA.invoices)) DATA.invoices = [];
+  const isNew = !id;
+  const inv = isNew ? {
+    id: nid(),
+    receiptNo: nextReceiptNo(),
+    ts: new Date().toISOString(),
+    branch: canSeeAllBranches() ? (CURRENT_BRANCH === '*' ? DATA.branches[0]?.code : CURRENT_BRANCH) : SESSION.branch,
+    customerName: '',
+    customerMemberId: '',
+    customerAddress: '',
+    items: [{ description: '', unitPrice: 0, qty: 1 }],
+    paymentMethod: 'เงินสด',
+    paymentDetails: '',
+    branchNo: '',
+    receiptNote: '',
+  } : DATA.invoices.find(x => x.id === id);
+  if (!inv) { toast('ไม่พบใบเสร็จ', 'bad'); return; }
+
+  const dateStr = inv.ts.slice(0, 10);
+  const branches = DATA.branches
+    .filter(b => canSeeAllBranches() || b.code === SESSION.branch)
+    .map(b => `<option value="${_h(b.code)}" ${b.code === inv.branch ? 'selected' : ''}>${_h(b.code)} · ${_h(b.name)}</option>`).join('');
+  const memberOptions = DATA.members
+    .filter(m => canSeeAllBranches() || m.branch === SESSION.branch)
+    .map(m => `<option value="${_h(m.id)}" data-name="${_h(m.name)} ${_h(m.surname)}">${_h(m.id)} — ${_h(m.name)} ${_h(m.surname)}</option>`).join('');
+
+  let itemRows = '';
+  (inv.items || []).forEach((it, i) => {
+    itemRows += renderInvoiceItemRow(i, it);
+  });
+
+  showModal(`
+    <h3 style="margin-top: 0;">${isNew ? 'สร้างใบเสร็จใหม่' : 'แก้ไขใบเสร็จ ' + _h(inv.receiptNo)}</h3>
+    <form id="invoice-form" onsubmit="saveInvoice(event, '${_h(inv.id)}', ${isNew})">
+      <div class="form-grid">
+        <div class="field"><label>เลขที่ใบเสร็จ *</label><input id="iv-no" required value="${_h(inv.receiptNo)}"></div>
+        <div class="field"><label>วันที่ *</label><input id="iv-date" type="date" required value="${dateStr}"></div>
+        <div class="field"><label>สาขา *</label><select id="iv-branch" required>${branches}</select></div>
+        <div class="field"><label>เลขสาขาในใบเสร็จ</label><input id="iv-branchno" value="${_h(inv.branchNo || '')}" placeholder="เช่น 00002"></div>
+        <div class="field"><label>เลือกสมาชิก (ถ้ามี)</label>
+          <select id="iv-member-pick" onchange="onPickInvoiceMember()">
+            <option value="">— ระบุเอง —</option>${memberOptions}
+          </select>
+        </div>
+        <div class="field"><label>ในนาม (ชื่อลูกค้า) *</label><input id="iv-cname" required value="${_h(inv.customerName)}"></div>
+        <div class="field"><label>รหัสสมาชิก/อ้างอิง</label><input id="iv-cmid" value="${_h(inv.customerMemberId)}" placeholder="เช่น ST-03395"></div>
+        <div class="field full"><label>ที่อยู่ลูกค้า</label><input id="iv-caddr" value="${_h(inv.customerAddress)}"></div>
+      </div>
+
+      <h4 style="margin: 16px 0 8px 0;">รายการ</h4>
+      <table>
+        <thead><tr>
+          <th style="width: 40px;">#</th><th>รายละเอียด</th>
+          <th class="right" style="width: 120px;">ราคาหน่วย</th>
+          <th class="center" style="width: 80px;">จำนวน</th>
+          <th class="right" style="width: 120px;">รวม</th>
+          <th style="width: 50px;"></th>
+        </tr></thead>
+        <tbody id="iv-items">${itemRows}</tbody>
+      </table>
+      <button type="button" class="btn small secondary" onclick="addInvoiceItem()" style="margin-top: 8px;">+ เพิ่มรายการ</button>
+
+      <div class="form-grid" style="margin-top: 16px;">
+        <div class="field"><label>วิธีชำระ *</label>
+          <select id="iv-paymethod" required>
+            <option value="เงินสด" ${inv.paymentMethod === 'เงินสด' ? 'selected' : ''}>เงินสด</option>
+            <option value="บัตรเครดิต" ${inv.paymentMethod === 'บัตรเครดิต' ? 'selected' : ''}>บัตรเครดิต</option>
+            <option value="เช็คธนาคาร" ${inv.paymentMethod === 'เช็คธนาคาร' ? 'selected' : ''}>เช็คธนาคาร</option>
+            <option value="โอนเงิน" ${inv.paymentMethod === 'โอนเงิน' ? 'selected' : ''}>โอนเงิน</option>
+          </select>
+        </div>
+        <div class="field"><label>รายละเอียดการชำระ</label><input id="iv-paydetail" value="${_h(inv.paymentDetails || '')}" placeholder="เลขที่บัตร/เช็ค ฯลฯ"></div>
+        <div class="field full"><label>หมายเหตุท้ายใบเสร็จ</label><input id="iv-note" value="${_h(inv.receiptNote || '')}"></div>
+      </div>
+
+      <div id="iv-summary" style="margin-top: 14px; padding: 12px; background: var(--bg-soft, #f8fafc); border-radius: 8px;"></div>
+
+      <div class="actions">
+        ${!isNew ? `<button type="button" class="btn danger" onclick="deleteInvoice('${_h(inv.id)}')">ลบ</button>` : ''}
+        <button type="button" class="btn secondary" onclick="closeModal()">ยกเลิก</button>
+        <button type="submit" class="btn">บันทึก</button>
+        <button type="button" class="btn" onclick="saveAndPrintInvoice('${_h(inv.id)}', ${isNew})">บันทึก + พิมพ์</button>
+      </div>
+    </form>
+  `);
+  recalcInvoice();
+}
+
+function renderInvoiceItemRow(i, it) {
+  it = it || { description: '', unitPrice: 0, qty: 1 };
+  return `<tr data-idx="${i}">
+    <td class="center">${i + 1}</td>
+    <td><input class="iv-it-desc" value="${_h(it.description || '')}" oninput="recalcInvoice()" placeholder="ค่าสมาชิก 3 เดือน ฯลฯ"></td>
+    <td><input class="iv-it-price" type="number" min="0" step="0.01" value="${Number(it.unitPrice || 0)}" oninput="recalcInvoice()" style="text-align: right;"></td>
+    <td><input class="iv-it-qty" type="number" min="0" step="1" value="${Number(it.qty || 1)}" oninput="recalcInvoice()" style="text-align: center;"></td>
+    <td class="right iv-it-sum">0.00</td>
+    <td class="center"><button type="button" class="btn small danger" onclick="removeInvoiceItem(${i})">×</button></td>
+  </tr>`;
+}
+
+function addInvoiceItem() {
+  const tbody = document.getElementById('iv-items');
+  const i = tbody.querySelectorAll('tr').length;
+  tbody.insertAdjacentHTML('beforeend', renderInvoiceItemRow(i, null));
+  recalcInvoice();
+}
+
+function removeInvoiceItem(i) {
+  const tbody = document.getElementById('iv-items');
+  const rows = tbody.querySelectorAll('tr');
+  if (rows[i]) rows[i].remove();
+  Array.from(tbody.querySelectorAll('tr')).forEach((r, idx) => {
+    r.dataset.idx = idx;
+    r.querySelector('td:first-child').textContent = idx + 1;
+    const delBtn = r.querySelector('button.danger');
+    if (delBtn) delBtn.setAttribute('onclick', `removeInvoiceItem(${idx})`);
+  });
+  recalcInvoice();
+}
+
+function collectInvoiceItems() {
+  const out = [];
+  document.querySelectorAll('#iv-items tr').forEach(r => {
+    const description = r.querySelector('.iv-it-desc').value.trim();
+    const unitPrice = Number(r.querySelector('.iv-it-price').value) || 0;
+    const qty = Number(r.querySelector('.iv-it-qty').value) || 0;
+    if (description || unitPrice || qty) out.push({ description, unitPrice, qty });
+  });
+  return out;
+}
+
+function recalcInvoice() {
+  const items = collectInvoiceItems();
+  let totalIncVat = 0;
+  document.querySelectorAll('#iv-items tr').forEach(r => {
+    const price = Number(r.querySelector('.iv-it-price').value) || 0;
+    const qty = Number(r.querySelector('.iv-it-qty').value) || 0;
+    const sum = price * qty;
+    r.querySelector('.iv-it-sum').textContent = fmtMoney(sum);
+    totalIncVat += sum;
+  });
+  const vatRate = 0.07;
+  const beforeVat = totalIncVat / (1 + vatRate);
+  const vat = totalIncVat - beforeVat;
+  const sum = document.getElementById('iv-summary');
+  if (sum) {
+    sum.innerHTML = `
+      <div style="display: flex; justify-content: space-between;"><span>จำนวนเงิน (ก่อน VAT):</span><strong>${fmtMoney(beforeVat)}</strong></div>
+      <div style="display: flex; justify-content: space-between;"><span>ภาษีมูลค่าเพิ่ม 7%:</span><strong>${fmtMoney(vat)}</strong></div>
+      <div style="display: flex; justify-content: space-between; border-top: 1px solid var(--border); padding-top: 6px; margin-top: 6px;"><span>ราคารวมทั้งสิ้น:</span><strong style="font-size: 16px;">${fmtMoney(totalIncVat)}</strong></div>
+      <div class="muted small" style="margin-top: 6px;"># ${thaiBahtText(totalIncVat)} #</div>
+    `;
+  }
+}
+
+function onPickInvoiceMember() {
+  const sel = document.getElementById('iv-member-pick');
+  const id = sel.value;
+  if (!id) return;
+  const m = DATA.members.find(x => x.id === id);
+  if (!m) return;
+  document.getElementById('iv-cname').value = m.name + ' ' + m.surname;
+  document.getElementById('iv-cmid').value = m.id;
+  const br = DATA.branches.find(b => b.code === m.branch);
+  if (br) document.getElementById('iv-branch').value = m.branch;
+}
+
+function saveInvoice(e, id, isNew) {
+  if (e) e.preventDefault();
+  if (!Array.isArray(DATA.invoices)) DATA.invoices = [];
+  const items = collectInvoiceItems();
+  if (items.length === 0) { toast('กรุณาเพิ่มรายการอย่างน้อย 1 รายการ', 'bad'); return null; }
+
+  const dateStr = document.getElementById('iv-date').value;
+  const obj = {
+    id,
+    receiptNo: document.getElementById('iv-no').value.trim(),
+    ts: new Date(dateStr + 'T' + new Date().toTimeString().slice(0, 8)).toISOString(),
+    branch: document.getElementById('iv-branch').value,
+    branchNo: document.getElementById('iv-branchno').value.trim(),
+    customerName: document.getElementById('iv-cname').value.trim(),
+    customerMemberId: document.getElementById('iv-cmid').value.trim(),
+    customerAddress: document.getElementById('iv-caddr').value.trim(),
+    items,
+    paymentMethod: document.getElementById('iv-paymethod').value,
+    paymentDetails: document.getElementById('iv-paydetail').value.trim(),
+    receiptNote: document.getElementById('iv-note').value.trim(),
+    createdBy: SESSION ? SESSION.email : '',
+  };
+
+  if (isNew) {
+    DATA.invoices.unshift(obj);
+  } else {
+    const idx = DATA.invoices.findIndex(x => x.id === id);
+    if (idx >= 0) DATA.invoices[idx] = obj;
+    else DATA.invoices.unshift(obj);
+  }
+  saveData();
+  toast(isNew ? 'บันทึกใบเสร็จใหม่เรียบร้อย' : 'อัปเดตใบเสร็จเรียบร้อย', 'ok');
+  closeModal();
+  if (CURRENT_VIEW === 'invoices') {
+    const c = document.getElementById('content'); c.innerHTML = ''; renderInvoices(c);
+  }
+  return obj;
+}
+
+function saveAndPrintInvoice(id, isNew) {
+  const saved = saveInvoice(null, id, isNew);
+  if (saved) printInvoice(saved.id);
+}
+
+function deleteInvoice(id) {
+  if (!confirm('ลบใบเสร็จนี้ใช่หรือไม่?')) return;
+  DATA.invoices = (DATA.invoices || []).filter(x => x.id !== id);
+  saveData();
+  toast('ลบแล้ว', 'ok');
+  closeModal();
+  if (CURRENT_VIEW === 'invoices') {
+    const c = document.getElementById('content'); c.innerHTML = ''; renderInvoices(c);
+  }
+}
+
+function printInvoice(id) {
+  const inv = (DATA.invoices || []).find(x => x.id === id);
+  if (!inv) { toast('ไม่พบใบเสร็จ', 'bad'); return; }
+  const html = buildInvoicePrintHTML(inv);
+  const w = window.open('', '_blank', 'width=1200,height=700');
+  if (!w) { toast('โปรดอนุญาต popup เพื่อพิมพ์', 'bad'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+  inv.printCount = (inv.printCount || 0) + 1;
+  inv.lastPrintedAt = new Date().toISOString();
+  saveData();
+}
+
+function buildInvoicePrintHTML(inv) {
+  const items = inv.items || [];
+  const totalIncVat = items.reduce((s, it) => s + Number(it.unitPrice) * Number(it.qty), 0);
+  const beforeVat = totalIncVat / 1.07;
+  const vat = totalIncVat - beforeVat;
+  const baht = thaiBahtText(totalIncVat);
+  const dateStr = fmtThaiDate(inv.ts);
+  const printedAt = fmtThaiDateTime(new Date().toISOString());
+
+  const itemRowsHTML = (label) => {
+    let html = '';
+    items.forEach((it, i) => {
+      html += `<tr>
+        <td class="c">${i + 1}</td>
+        <td>${_h(it.description)}</td>
+        <td class="r">${fmtMoney(it.unitPrice)}</td>
+        <td class="c">${it.qty}</td>
+        <td class="r">${fmtMoney(it.unitPrice * it.qty)}</td>
+      </tr>`;
+    });
+    const blank = Math.max(0, 5 - items.length);
+    for (let i = 0; i < blank; i++) html += `<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td></tr>`;
+    return html;
+  };
+
+  const copyHTML = (label) => `
+    <div class="copy">
+      <div class="hdr">
+        <div class="logo">${_h(COMPANY_INFO.logoText)}</div>
+        <div class="biz">
+          <div class="bizname"><b>${_h(COMPANY_INFO.name)}</b> ${_h(COMPANY_INFO.branchLabel)}</div>
+          <div>${_h(COMPANY_INFO.address)}</div>
+          <div>โทรศัพท์ ${_h(COMPANY_INFO.phone)} ${inv.branchNo ? '(สำนักงานสาขา ' + _h(inv.branchNo) + ')' : _h(COMPANY_INFO.branchNote)} เลขประจำตัวผู้เสียภาษี ${_h(COMPANY_INFO.taxId)}</div>
+        </div>
+        <div class="copy-label">(${label})</div>
+      </div>
+
+      <div class="title">
+        <div><b>ใบเสร็จรับเงิน/ใบกำกับภาษี</b></div>
+        <div class="rcpt-info">ใบเสร็จเลขที่ <b>${_h(inv.receiptNo)}</b><br>วันที่ : ${dateStr}</div>
+      </div>
+      <div style="font-weight: bold; text-align: center; margin: -6px 0 4px 0;">RECEIPT/TAX INVOICE</div>
+
+      <div class="cust">
+        <div>ในนาม: ${_h(inv.customerName)} ${inv.customerMemberId ? '(' + _h(inv.customerMemberId) + ')' : ''}</div>
+        <div>ที่อยู่: ${_h(inv.customerAddress || '')}</div>
+      </div>
+
+      <table class="items">
+        <thead>
+          <tr><th style="width: 38px;">ลำดับ</th><th>รายละเอียด</th><th style="width: 90px;">ราคาหน่วย</th><th style="width: 50px;">จำนวน</th><th style="width: 90px;">จำนวนเงิน</th></tr>
+        </thead>
+        <tbody>${itemRowsHTML(label)}</tbody>
+      </table>
+
+      <div class="totals">
+        <div class="words">
+          <div>ตัวอักษร: # ${_h(baht)} #</div>
+          <div style="margin-top: 8px;">ชำระโดย:
+            <span class="pm"><input type="checkbox" ${inv.paymentMethod === 'เงินสด' ? 'checked' : ''} disabled> เงินสด ${inv.paymentMethod === 'เงินสด' ? fmtMoney(totalIncVat) + '฿' : '0฿'}</span>
+            <span class="pm"><input type="checkbox" ${inv.paymentMethod === 'บัตรเครดิต' ? 'checked' : ''} disabled> บัตรเครดิต ${inv.paymentMethod === 'บัตรเครดิต' ? fmtMoney(totalIncVat) + '฿' : '0฿'}</span>
+            <span class="pm"><input type="checkbox" ${inv.paymentMethod === 'เช็คธนาคาร' ? 'checked' : ''} disabled> เช็คธนาคาร ${inv.paymentMethod === 'เช็คธนาคาร' ? fmtMoney(totalIncVat) + '฿' : ''}</span>
+          </div>
+          ${inv.paymentDetails ? `<div class="small">${_h(inv.paymentDetails)}</div>` : ''}
+        </div>
+        <div class="amt">
+          <div><span>จำนวนเงิน</span><b>${fmtMoney(beforeVat)}</b></div>
+          <div><span>ภาษีมูลค่าเพิ่ม 7%</span><b>${fmtMoney(vat)}</b></div>
+          <div class="grand"><span>ราคารวมทั้งสิ้น</span><b>${fmtMoney(totalIncVat)}</b></div>
+        </div>
+      </div>
+
+      <div class="sigs">
+        <div>ผู้รับเงิน : .....................................</div>
+        <div>ผู้จัดการ : .....................................</div>
+      </div>
+      <div class="foot">
+        ${inv.paymentMethod === 'เช็คธนาคาร' ? '*ใบกำกับภาษี/ใบเสร็จรับเงินนี้จะสมบูรณ์ต่อเมื่อเรียกเก็บเงินตามเช็คได้แล้ว (กรณีชำระด้วยเช็ค)' : ''}
+        <div class="repeat">Repeat : ${printedAt}<br>Emp : ${_h((SESSION && SESSION.email) || '990000')}</div>
+      </div>
+    </div>
+  `;
+
+  return `<!DOCTYPE html><html lang="th"><head><meta charset="utf-8">
+<title>ใบเสร็จ ${_h(inv.receiptNo)}</title>
+<style>
+  @page { size: A4 landscape; margin: 10mm; }
+  * { box-sizing: border-box; }
+  body { font-family: "TH Sarabun New", "Sarabun", Arial, sans-serif; font-size: 13px; margin: 0; padding: 0; color: #000; }
+  .sheet { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .copy { border: 1px solid #000; padding: 8px 10px; position: relative; min-height: 95vh; }
+  .hdr { display: grid; grid-template-columns: 90px 1fr 100px; gap: 8px; align-items: start; padding-bottom: 4px; border-bottom: 0; }
+  .logo { background: #000; color: #fff; text-align: center; font-weight: bold; padding: 18px 4px; font-size: 12px; letter-spacing: 1px; }
+  .biz { font-size: 12px; line-height: 1.35; }
+  .bizname { font-size: 13px; }
+  .copy-label { text-align: right; font-weight: bold; font-size: 13px; }
+  .title { display: flex; justify-content: space-between; align-items: flex-start; margin-top: 6px; padding: 0 4px; }
+  .title b { font-size: 14px; }
+  .rcpt-info { font-size: 12px; text-align: right; line-height: 1.5; }
+  .cust { margin: 4px 0; padding: 0 4px; line-height: 1.6; }
+  table.items { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  table.items th, table.items td { border: 1px solid #000; padding: 4px 6px; font-size: 12px; }
+  table.items th { background: #f0f0f0; text-align: center; font-weight: 600; }
+  .c { text-align: center; } .r { text-align: right; }
+  .totals { display: grid; grid-template-columns: 1.4fr 1fr; gap: 8px; margin-top: 4px; padding: 4px; }
+  .totals .words { font-size: 12px; line-height: 1.6; }
+  .totals .pm { display: inline-block; margin-right: 10px; }
+  .totals .amt { border: 0; }
+  .totals .amt div { display: flex; justify-content: space-between; padding: 2px 6px; border-bottom: 1px solid #ccc; }
+  .totals .amt .grand { border-top: 2px solid #000; border-bottom: 2px solid #000; font-size: 13px; }
+  .sigs { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 22px; padding: 0 4px; font-size: 12px; }
+  .foot { padding: 6px 4px 0 4px; font-size: 10px; color: #555; position: relative; }
+  .foot .repeat { position: absolute; right: 4px; bottom: -18px; text-align: right; }
+  .small { font-size: 11px; color: #555; }
+  @media print { .no-print { display: none; } body { font-size: 12px; } }
+  .no-print { position: fixed; top: 8px; right: 8px; z-index: 1000; }
+  .no-print button { padding: 8px 14px; font-size: 13px; border: 1px solid #333; background: #fff; cursor: pointer; border-radius: 4px; }
+</style>
+</head>
+<body>
+  <div class="no-print"><button onclick="window.print()">🖨️ พิมพ์</button> <button onclick="window.close()">ปิด</button></div>
+  <div class="sheet">
+    ${copyHTML('ต้นฉบับ')}
+    ${copyHTML('สำเนา')}
+  </div>
+  <script>setTimeout(() => window.print(), 400);</script>
+</body></html>`;
 }
 
 // ============ ALERTS ============
