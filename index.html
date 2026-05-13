@@ -456,6 +456,7 @@
     max-height: 90vh;
     overflow-y: auto;
   }
+  .modal.modal-lg { max-width: 1100px; }
   .modal h3 { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
   .modal .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
 
@@ -3082,7 +3083,7 @@ function openInvoiceModal(id) {
         <button type="button" class="btn" onclick="saveAndPrintInvoice('${_h(inv.id)}', ${isNew})">บันทึก + พิมพ์</button>
       </div>
     </form>
-  `);
+  `, { size: 'large' });
   recalcInvoice();
 }
 
@@ -4090,9 +4091,10 @@ function exportCSV(kind) {
 }
 
 // ============ MODAL ============
-function showModal(html) {
+function showModal(html, opts) {
   const host = document.getElementById('modal-host');
-  host.innerHTML = `<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal">${html}</div></div>`;
+  const sizeClass = opts && opts.size === 'large' ? ' modal-lg' : '';
+  host.innerHTML = `<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal${sizeClass}">${html}</div></div>`;
 }
 function closeModal() {
   document.getElementById('modal-host').innerHTML = '';
