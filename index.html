@@ -3048,7 +3048,16 @@ function openInvoiceModal(id) {
         <div class="field full"><label>ที่อยู่ลูกค้า</label><input id="iv-caddr" value="${_h(inv.customerAddress)}"></div>
       </div>
 
-      <h4 style="margin: 16px 0 8px 0;">รายการ</h4>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin: 16px 0 8px 0;">
+        <h4 style="margin: 0;">รายการ</h4>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <label class="muted small" style="margin: 0;">โหมดราคาหน่วย:</label>
+          <select id="iv-vatmode" onchange="recalcInvoice()" style="padding: 4px 8px;">
+            <option value="inclusive" ${(inv.vatMode || 'inclusive') === 'inclusive' ? 'selected' : ''}>ราคารวม VAT แล้ว</option>
+            <option value="exclusive" ${inv.vatMode === 'exclusive' ? 'selected' : ''}>ยังไม่รวม VAT (เพิ่ม 7% ทีหลัง)</option>
+          </select>
+        </div>
+      </div>
       <table>
         <thead><tr>
           <th style="width: 40px;">#</th><th>รายละเอียด</th>
@@ -3088,13 +3097,15 @@ function openInvoiceModal(id) {
 }
 
 function renderInvoiceItemRow(i, it) {
-  it = it || { description: '', unitPrice: 0, qty: 1 };
+  it = it || { description: '', unitPrice: '', qty: 1 };
+  const priceVal = (it.unitPrice === '' || it.unitPrice == null) ? '' : Number(it.unitPrice);
+  const qtyVal = (it.qty === '' || it.qty == null) ? 1 : Number(it.qty);
   return `<tr data-idx="${i}">
     <td class="center">${i + 1}</td>
     <td><input class="iv-it-desc" value="${_h(it.description || '')}" oninput="recalcInvoice()" placeholder="ค่าสมาชิก 3 เดือน ฯลฯ"></td>
-    <td><input class="iv-it-price" type="number" min="0" step="0.01" value="${Number(it.unitPrice || 0)}" oninput="recalcInvoice()" style="text-align: right;"></td>
-    <td><input class="iv-it-qty" type="number" min="0" step="1" value="${Number(it.qty || 1)}" oninput="recalcInvoice()" style="text-align: center;"></td>
-    <td class="right iv-it-sum">0.00</td>
+    <td><input class="iv-it-price" type="number" min="0" step="0.01" value="${priceVal}" oninput="recalcInvoice()" onchange="recalcInvoice()" placeholder="0.00" style="text-align: right; font-weight: 600;"></td>
+    <td><input class="iv-it-qty" type="number" min="1" step="1" value="${qtyVal}" oninput="recalcInvoice()" onchange="recalcInvoice()" placeholder="1" style="text-align: center;"></td>
+    <td class="right iv-it-sum"><strong>0.00</strong></td>
     <td class="center"><button type="button" class="btn small danger" onclick="removeInvoiceItem(${i})">×</button></td>
   </tr>`;
 }
@@ -3131,21 +3142,32 @@ function collectInvoiceItems() {
 }
 
 function recalcInvoice() {
-  const items = collectInvoiceItems();
-  let totalIncVat = 0;
+  const vatRate = 0.07;
+  const modeEl = document.getElementById('iv-vatmode');
+  const mode = (modeEl && modeEl.value) || 'inclusive';
+  let lineTotal = 0;
   document.querySelectorAll('#iv-items tr').forEach(r => {
     const price = Number(r.querySelector('.iv-it-price').value) || 0;
     const qty = Number(r.querySelector('.iv-it-qty').value) || 0;
     const sum = price * qty;
-    r.querySelector('.iv-it-sum').textContent = fmtMoney(sum);
-    totalIncVat += sum;
+    r.querySelector('.iv-it-sum').innerHTML = '<strong>' + fmtMoney(sum) + '</strong>';
+    lineTotal += sum;
   });
-  const vatRate = 0.07;
-  const beforeVat = totalIncVat / (1 + vatRate);
-  const vat = totalIncVat - beforeVat;
+  let beforeVat, vat, totalIncVat;
+  if (mode === 'exclusive') {
+    beforeVat = lineTotal;
+    vat = beforeVat * vatRate;
+    totalIncVat = beforeVat + vat;
+  } else {
+    totalIncVat = lineTotal;
+    beforeVat = totalIncVat / (1 + vatRate);
+    vat = totalIncVat - beforeVat;
+  }
   const sum = document.getElementById('iv-summary');
   if (sum) {
+    const modeText = mode === 'exclusive' ? '(ราคาหน่วยยังไม่รวม VAT)' : '(ราคาหน่วยรวม VAT แล้ว)';
     sum.innerHTML = `
+      <div class="muted small" style="margin-bottom: 6px;">${modeText}</div>
       <div style="display: flex; justify-content: space-between;"><span>จำนวนเงิน (ก่อน VAT):</span><strong>${fmtMoney(beforeVat)}</strong></div>
       <div style="display: flex; justify-content: space-between;"><span>ภาษีมูลค่าเพิ่ม 7%:</span><strong>${fmtMoney(vat)}</strong></div>
       <div style="display: flex; justify-content: space-between; border-top: 1px solid var(--border); padding-top: 6px; margin-top: 6px;"><span>ราคารวมทั้งสิ้น:</span><strong style="font-size: 16px;">${fmtMoney(totalIncVat)}</strong></div>
@@ -3173,6 +3195,7 @@ function saveInvoice(e, id, isNew) {
   if (items.length === 0) { toast('กรุณาเพิ่มรายการอย่างน้อย 1 รายการ', 'bad'); return null; }
 
   const dateStr = document.getElementById('iv-date').value;
+  const vatModeEl = document.getElementById('iv-vatmode');
   const obj = {
     id,
     receiptNo: document.getElementById('iv-no').value.trim(),
@@ -3183,6 +3206,7 @@ function saveInvoice(e, id, isNew) {
     customerMemberId: document.getElementById('iv-cmid').value.trim(),
     customerAddress: document.getElementById('iv-caddr').value.trim(),
     items,
+    vatMode: (vatModeEl && vatModeEl.value) || 'inclusive',
     paymentMethod: document.getElementById('iv-paymethod').value,
     paymentDetails: document.getElementById('iv-paydetail').value.trim(),
     receiptNote: document.getElementById('iv-note').value.trim(),
@@ -3235,9 +3259,18 @@ function printInvoice(id) {
 
 function buildInvoicePrintHTML(inv) {
   const items = inv.items || [];
-  const totalIncVat = items.reduce((s, it) => s + Number(it.unitPrice) * Number(it.qty), 0);
-  const beforeVat = totalIncVat / 1.07;
-  const vat = totalIncVat - beforeVat;
+  const lineTotal = items.reduce((s, it) => s + Number(it.unitPrice) * Number(it.qty), 0);
+  const mode = inv.vatMode || 'inclusive';
+  let beforeVat, vat, totalIncVat;
+  if (mode === 'exclusive') {
+    beforeVat = lineTotal;
+    vat = beforeVat * 0.07;
+    totalIncVat = beforeVat + vat;
+  } else {
+    totalIncVat = lineTotal;
+    beforeVat = totalIncVat / 1.07;
+    vat = totalIncVat - beforeVat;
+  }
   const baht = thaiBahtText(totalIncVat);
   const dateStr = fmtThaiDate(inv.ts);
   const printedAt = fmtThaiDateTime(new Date().toISOString());
