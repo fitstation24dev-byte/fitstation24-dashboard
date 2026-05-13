@@ -1473,9 +1473,11 @@ function renderSalesEntry(root) {
     ? DATA.branches.map(b => `<option value="${_h(b.code)}">${_h(b.code)} · ${_h(b.name)}</option>`).join('')
     : `<option value="${_h(SESSION.branch)}">${_h(SESSION.branch)}</option>`;
   const employees = DATA.employees
-    .filter(e => SESSION.branch === '*' || e.branch === SESSION.branch || true)
+    .filter(e => canSeeAllBranches() || e.branch === SESSION.branch)
     .map(e => `<option value="${_h(e.id)}">${_h(e.id)} — ${_h(e.name)} ${_h(e.surname)}</option>`).join('');
-  const memberOptions = DATA.members.map(m => `<option value="${_h(m.name)} ${_h(m.surname)}" data-id="${_h(m.id)}">${_h(m.id)} · สาขา ${_h(m.branch)}</option>`).join('');
+  const memberOptions = DATA.members
+    .filter(m => canSeeAllBranches() || m.branch === SESSION.branch)
+    .map(m => `<option value="${_h(m.name)} ${_h(m.surname)}" data-id="${_h(m.id)}">${_h(m.id)} · สาขา ${_h(m.branch)}</option>`).join('');
 
   card.innerHTML = `
     <h2>บันทึกยอดขายใหม่ <small>MEM/PT จะส่ง LINE Group เมื่อแนบสลิป</small></h2>
@@ -1901,9 +1903,11 @@ function renderTrainingsEntry(root) {
     : `<option value="${_h(SESSION.branch)}">${_h(SESSION.branch)}</option>`;
   const memberOptions = DATA.members
     .filter(m => m.status === 'Active' && m.hours > 0)
+    .filter(m => canSeeAllBranches() || m.branch === SESSION.branch)
     .map(m => `<option value="${_h(m.id)} — ${_h(m.name)} ${_h(m.surname)}" data-id="${_h(m.id)}" data-branch="${_h(m.branch)}" data-hours="${m.hours}">เหลือ ${m.hours} ครั้ง · สาขา ${_h(m.branch)}</option>`).join('');
   const trainerOptions = DATA.employees
     .filter(e => normalizePosition(e.position) === 'Trainer' && e.status === 'Active')
+    .filter(e => canSeeAllBranches() || e.branch === SESSION.branch)
     .map(e => `<option value="${_h(e.id)}">${_h(e.id)} — ${_h(e.name)} ${_h(e.surname)}</option>`).join('');
 
   card.innerHTML = `
