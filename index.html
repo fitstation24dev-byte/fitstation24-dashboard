@@ -3465,7 +3465,7 @@ function openInvoiceModal(id) {
       </div>
       <table>
         <thead><tr>
-          <th style="width: 40px;">#</th><th>รายละเอียด</th>
+          <th style="width: 40px;">#</th><th>รายละเอียด <small class="muted">(เลือกแพ็กเกจหรือพิมพ์เอง)</small></th>
           <th class="right" style="width: 120px;">ราคาหน่วย</th>
           <th class="center" style="width: 80px;">จำนวน</th>
           <th class="right" style="width: 120px;">รวม</th>
@@ -3473,6 +3473,12 @@ function openInvoiceModal(id) {
         </tr></thead>
         <tbody id="iv-items">${itemRows}</tbody>
       </table>
+      <datalist id="iv-pkg-list">
+        ${(DATA.packages || []).map(p => {
+          const label = (p.code ? p.code + ' · ' : '') + p.name;
+          return `<option value="${_h(label)}" data-price="${Number(p.price) || 0}"></option>`;
+        }).join('')}
+      </datalist>
       <button type="button" class="btn small secondary" onclick="addInvoiceItem()" style="margin-top: 8px;">+ เพิ่มรายการ</button>
 
       <div class="form-grid" style="margin-top: 16px;">
@@ -3507,7 +3513,7 @@ function renderInvoiceItemRow(i, it) {
   const qtyVal = (it.qty === '' || it.qty == null) ? 1 : Number(it.qty);
   return `<tr data-idx="${i}">
     <td class="center">${i + 1}</td>
-    <td><input class="iv-it-desc" value="${_h(it.description || '')}" oninput="recalcInvoice()" placeholder="ค่าสมาชิก 3 เดือน ฯลฯ"></td>
+    <td><input class="iv-it-desc" list="iv-pkg-list" value="${_h(it.description || '')}" oninput="onPickInvoicePackage(this); recalcInvoice()" onchange="onPickInvoicePackage(this); recalcInvoice()" placeholder="พิมพ์ค้นหาหรือเลือกแพ็กเกจ" autocomplete="off"></td>
     <td><input class="iv-it-price" type="number" min="0" step="0.01" value="${priceVal}" oninput="recalcInvoice()" onchange="recalcInvoice()" placeholder="0.00" style="text-align: right; font-weight: 600;"></td>
     <td><input class="iv-it-qty" type="number" min="1" step="1" value="${qtyVal}" oninput="recalcInvoice()" onchange="recalcInvoice()" placeholder="1" style="text-align: center;"></td>
     <td class="right iv-it-sum"><strong>0.00</strong></td>
@@ -3520,6 +3526,21 @@ function addInvoiceItem() {
   const i = tbody.querySelectorAll('tr').length;
   tbody.insertAdjacentHTML('beforeend', renderInvoiceItemRow(i, null));
   recalcInvoice();
+}
+
+function onPickInvoicePackage(input) {
+  if (!input) return;
+  const list = document.getElementById('iv-pkg-list');
+  if (!list) return;
+  const opt = Array.from(list.options).find(o => o.value === input.value);
+  if (!opt) return; // typed custom text — don't override
+  const row = input.closest('tr');
+  if (!row) return;
+  const priceInput = row.querySelector('.iv-it-price');
+  if (priceInput && (!priceInput.value || Number(priceInput.value) === 0)) {
+    const price = Number(opt.dataset.price) || 0;
+    if (price > 0) priceInput.value = price;
+  }
 }
 
 function removeInvoiceItem(i) {
