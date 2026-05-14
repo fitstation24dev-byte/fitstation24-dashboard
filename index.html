@@ -1130,6 +1130,8 @@ function runDailyMaintenance() {
   // Fire-and-forget: notify branch LINE group about expiring members
   sendDailyExpiryAlertsToGroup().catch(err => console.error('[daily] expiry alert push failed', err));
   sendDailyHoursLowAlertsToGroup().catch(err => console.error('[daily] hours-low alert push failed', err));
+  // Fire-and-forget: per-branch daily sales summary (yesterday)
+  sendDailySalesSummaryToGroup().catch(err => console.error('[daily] sales summary push failed', err));
   // Fire-and-forget: snapshot DATA into Supabase (rolling 7-day backup)
   createDailyBackup().catch(err => console.error('[daily] backup failed', err));
 }
@@ -1868,6 +1870,103 @@ ${lines}
     } catch (err) {
       console.error('[expiry-alert] send failed for branch', code, err);
     }
+  }
+}
+
+async function sendDailySalesSummaryToGroup() {
+  const now = new Date();
+  const yest = new Date(now); yest.setDate(yest.getDate() - 1); yest.setHours(0,0,0,0);
+  const yestEnd = new Date(yest); yestEnd.setDate(yestEnd.getDate() + 1);
+  const yestKey = yest.toISOString().slice(0,10);
+
+  if (!DATA.settings.dailySummarySent) DATA.settings.dailySummarySent = {};
+  const sent = DATA.settings.dailySummarySent;
+
+  const inYesterday = (ts) => { const d = new Date(ts); return d >= yest && d < yestEnd; };
+  const salesY = DATA.sales.filter(s => inYesterday(s.ts));
+  const trainsY = DATA.trainings.filter(t => inYesterday(t.ts));
+
+  const branchCodes = [...new Set([
+    ...salesY.map(s => s.branch),
+    ...trainsY.map(t => t.branch),
+  ])];
+
+  const cur = DATA.settings.currency || '฿';
+  const fmt = n => Number(n||0).toLocaleString();
+
+  for (const code of branchCodes) {
+    const sentKey = yestKey + '|' + code;
+    if (sent[sentKey]) continue;
+    const br = DATA.branches.find(b => b.code === code);
+    if (!br || !br.lineToken || !br.lineGroupId) continue;
+
+    const brSales = salesY.filter(s => s.branch === code);
+    const brTrains = trainsY.filter(t => t.branch === code);
+
+    const empMap = {};
+    brSales.forEach(s => {
+      if (!s.empId) return;
+      const e = empMap[s.empId] = empMap[s.empId] || { mem:0, pt:0, plan:0, other:0, train:0 };
+      const amt = Number(s.amount) || 0;
+      if (s.type === 'MEM') e.mem += amt;
+      else if (s.type === 'PT') e.pt += amt;
+      else if (s.type === 'Plan') e.plan += amt;
+      else e.other += amt;
+    });
+    brTrains.forEach(t => {
+      if (!t.trainerId) return;
+      const e = empMap[t.trainerId] = empMap[t.trainerId] || { mem:0, pt:0, plan:0, other:0, train:0 };
+      e.train += 1;
+    });
+
+    const empIds = Object.keys(empMap);
+    if (empIds.length === 0) continue;
+
+    empIds.sort((a, b) => {
+      const ta = empMap[a].mem + empMap[a].pt + empMap[a].plan + empMap[a].other;
+      const tb = empMap[b].mem + empMap[b].pt + empMap[b].plan + empMap[b].other;
+      return tb - ta;
+    });
+
+    const lines = empIds.map((id, i) => {
+      const emp = DATA.employees.find(e => e.id === id);
+      const nm = emp ? (emp.name + ' ' + emp.surname).trim() : id;
+      const e = empMap[id];
+      return `${i+1}. ${nm} — MEM ${fmt(e.mem)} / PT ${fmt(e.pt)} / เทรน ${e.train}`;
+    }).join('\n');
+
+    const totalMem = brSales.filter(s => s.type === 'MEM').reduce((a,b) => a + (Number(b.amount)||0), 0);
+    const totalPt  = brSales.filter(s => s.type === 'PT').reduce((a,b) => a + (Number(b.amount)||0), 0);
+    const totalAll = brSales.reduce((a,b) => a + (Number(b.amount)||0), 0);
+    const dateStr  = yest.toLocaleDateString('th-TH', { day:'2-digit', month:'2-digit', year:'numeric' });
+
+    const text = `📊 สรุปผลรายวัน — ${br.name}
+วันที่ ${dateStr}
+
+${lines}
+
+──────────
+ยอดรวม: ${cur}${fmt(totalAll)}
+MEM: ${cur}${fmt(totalMem)} · PT: ${cur}${fmt(totalPt)}
+เทรนทั้งหมด: ${brTrains.length} ครั้ง`;
+
+    try {
+      await sendLineMessage(text, null, code);
+      sent[sentKey] = true;
+      saveData();
+    } catch (err) {
+      console.error('[daily-summary] send failed for branch', code, err);
+    }
+  }
+
+  const sentKeys = Object.keys(sent);
+  if (sentKeys.length > 200) {
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
+    sentKeys.forEach(k => {
+      const dp = k.split('|')[0];
+      if (new Date(dp) < cutoff) delete sent[k];
+    });
+    saveData();
   }
 }
 
