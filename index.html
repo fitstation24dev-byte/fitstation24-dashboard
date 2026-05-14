@@ -3642,8 +3642,8 @@ function onPickInvoiceMember() {
   const company = (m.companyAddress || '').trim();
   const personal = (m.address || '').trim();
   const taxId = (m.taxId || '').trim();
-  document.getElementById('iv-cmid').value = m.id;
   const cnameField = document.getElementById('iv-cname');
+  const cmidField = document.getElementById('iv-cmid');
   const taxField = document.getElementById('iv-taxid');
   const addrField = document.getElementById('iv-caddr');
   const toggle = document.getElementById('iv-caddr-toggle');
@@ -3653,14 +3653,17 @@ function onPickInvoiceMember() {
     toggle.dataset.personname = personName;
     toggle.dataset.companyname = companyName;
     toggle.dataset.taxid = taxId;
+    toggle.dataset.memberid = m.id;
     toggle.value = (company || companyName) ? 'company' : (personal || personName ? 'personal' : 'custom');
   }
   if (toggle && toggle.value === 'company') {
     if (cnameField) cnameField.value = companyName || personName;
+    if (cmidField) cmidField.value = '';
     if (addrField) addrField.value = company || personal || '';
     if (taxField) taxField.value = taxId;
   } else {
     if (cnameField) cnameField.value = personName;
+    if (cmidField) cmidField.value = m.id;
     if (addrField) addrField.value = personal || company || '';
     if (taxField) taxField.value = '';
   }
@@ -3672,15 +3675,18 @@ function onToggleInvoiceAddress() {
   const toggle = document.getElementById('iv-caddr-toggle');
   const addrField = document.getElementById('iv-caddr');
   const cnameField = document.getElementById('iv-cname');
+  const cmidField = document.getElementById('iv-cmid');
   const taxField = document.getElementById('iv-taxid');
   if (!toggle || !addrField) return;
   if (toggle.value === 'personal') {
     addrField.value = toggle.dataset.personal || '';
     if (cnameField && toggle.dataset.personname) cnameField.value = toggle.dataset.personname;
+    if (cmidField) cmidField.value = toggle.dataset.memberid || '';
     if (taxField) taxField.value = '';
   } else if (toggle.value === 'company') {
     addrField.value = toggle.dataset.company || '';
     if (cnameField && toggle.dataset.companyname) cnameField.value = toggle.dataset.companyname;
+    if (cmidField) cmidField.value = '';
     if (taxField) taxField.value = toggle.dataset.taxid || '';
   }
 }
