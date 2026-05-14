@@ -3268,9 +3268,14 @@ function openInvoiceModal(id) {
   const branches = DATA.branches
     .filter(b => canSeeAllBranches() || b.code === SESSION.branch)
     .map(b => `<option value="${_h(b.code)}" ${b.code === inv.branch ? 'selected' : ''}>${_h(b.code)} · ${_h(b.name)}</option>`).join('');
-  const memberOptions = DATA.members
-    .filter(m => canSeeAllBranches() || m.branch === SESSION.branch)
-    .map(m => `<option value="${_h(m.id)}" data-name="${_h(m.name)} ${_h(m.surname)}">${_h(m.id)} — ${_h(m.name)} ${_h(m.surname)}</option>`).join('');
+  const memberList = DATA.members
+    .filter(m => canSeeAllBranches() || m.branch === SESSION.branch);
+  const memberOptions = memberList
+    .map(m => {
+      const nick = m.nickname ? ` (${m.nickname})` : '';
+      const label = `${m.id} — ${m.name} ${m.surname}${nick}`;
+      return `<option value="${_h(label)}" data-id="${_h(m.id)}"></option>`;
+    }).join('');
 
   let itemRows = '';
   (inv.items || []).forEach((it, i) => {
@@ -3285,19 +3290,19 @@ function openInvoiceModal(id) {
         <div class="field"><label>วันที่ *</label><input id="iv-date" type="date" required value="${dateStr}"></div>
         <div class="field"><label>สาขา *</label><select id="iv-branch" required>${branches}</select></div>
         <div class="field"><label>เลขสาขาในใบเสร็จ</label><input id="iv-branchno" value="${_h(inv.branchNo || '')}" placeholder="เช่น 00002"></div>
-        <div class="field"><label>เลือกสมาชิก (ถ้ามี)</label>
-          <select id="iv-member-pick" onchange="onPickInvoiceMember()">
-            <option value="">— ระบุเอง —</option>${memberOptions}
-          </select>
+        <div class="field"><label>เลือกสมาชิก (พิมพ์ค้นหา ชื่อ/รหัส/ชื่อเล่น)</label>
+          <input id="iv-member-pick" list="iv-member-list" placeholder="— ระบุเอง หรือพิมพ์ค้นหา —" onchange="onPickInvoiceMember()" oninput="onPickInvoiceMember()" autocomplete="off">
+          <datalist id="iv-member-list">${memberOptions}</datalist>
         </div>
         <div class="field"><label>ในนาม (ชื่อลูกค้า) *</label><input id="iv-cname" required value="${_h(inv.customerName)}"></div>
         <div class="field"><label>รหัสสมาชิก/อ้างอิง</label><input id="iv-cmid" value="${_h(inv.customerMemberId)}" placeholder="เช่น ST-03395"></div>
         <div class="field full">
           <label style="display: flex; justify-content: space-between; align-items: center;">
             <span>ที่อยู่ลูกค้า</span>
-            <select id="iv-caddr-toggle" onchange="onToggleInvoiceAddress()" style="display: none; padding: 2px 6px; font-size: 12px;">
-              <option value="company">ที่อยู่บริษัท</option>
+            <select id="iv-caddr-toggle" onchange="onToggleInvoiceAddress()" style="padding: 2px 6px; font-size: 12px;">
+              <option value="custom">— ระบุเอง —</option>
               <option value="personal">ที่อยู่ส่วนตัว</option>
+              <option value="company">ที่อยู่บริษัท</option>
             </select>
           </label>
           <input id="iv-caddr" value="${_h(inv.customerAddress)}">
@@ -3434,29 +3439,34 @@ function recalcInvoice() {
 
 function onPickInvoiceMember() {
   const sel = document.getElementById('iv-member-pick');
-  const id = sel.value;
-  if (!id) return;
-  const m = DATA.members.find(x => x.id === id);
+  const raw = (sel.value || '').trim();
+  if (!raw) return;
+  const list = document.getElementById('iv-member-list');
+  let id = '';
+  if (list) {
+    const opt = Array.from(list.options).find(o => o.value === raw);
+    if (opt) id = opt.dataset.id || '';
+  }
+  if (!id) {
+    const m1 = raw.match(/^(\S+)\s/);
+    const guess = m1 ? m1[1] : raw;
+    const found = DATA.members.find(x => x.id.toLowerCase() === guess.toLowerCase());
+    if (found) id = found.id;
+  }
+  const m = id ? DATA.members.find(x => x.id === id) : null;
   if (!m) return;
   document.getElementById('iv-cname').value = m.name + ' ' + m.surname;
   document.getElementById('iv-cmid').value = m.id;
   const addrField = document.getElementById('iv-caddr');
-  if (addrField) {
-    const company = (m.companyAddress || '').trim();
-    const personal = (m.address || '').trim();
-    addrField.value = company || personal || '';
-    const toggle = document.getElementById('iv-caddr-toggle');
-    if (toggle) {
-      if (company && personal) {
-        toggle.style.display = '';
-        toggle.dataset.company = company;
-        toggle.dataset.personal = personal;
-        toggle.value = 'company';
-      } else {
-        toggle.style.display = 'none';
-      }
-    }
+  const toggle = document.getElementById('iv-caddr-toggle');
+  const company = (m.companyAddress || '').trim();
+  const personal = (m.address || '').trim();
+  if (toggle) {
+    toggle.dataset.company = company;
+    toggle.dataset.personal = personal;
+    toggle.value = company ? 'company' : (personal ? 'personal' : 'custom');
   }
+  if (addrField) addrField.value = company || personal || '';
   const br = DATA.branches.find(b => b.code === m.branch);
   if (br) document.getElementById('iv-branch').value = m.branch;
 }
@@ -3465,9 +3475,11 @@ function onToggleInvoiceAddress() {
   const toggle = document.getElementById('iv-caddr-toggle');
   const addrField = document.getElementById('iv-caddr');
   if (!toggle || !addrField) return;
-  addrField.value = toggle.value === 'personal'
-    ? (toggle.dataset.personal || '')
-    : (toggle.dataset.company || '');
+  if (toggle.value === 'personal') {
+    addrField.value = toggle.dataset.personal || '';
+  } else if (toggle.value === 'company') {
+    addrField.value = toggle.dataset.company || '';
+  }
 }
 
 function saveInvoice(e, id, isNew) {
