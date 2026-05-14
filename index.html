@@ -4483,6 +4483,7 @@ function closeModal() {
       const remote = await db.loadAll();
       if (remote) {
         const seed = defaultData();
+        const preservedInvoices = Array.isArray(DATA.invoices) ? DATA.invoices : [];
         DATA = {
           settings:     remote.settings  || seed.settings,
           branches:     remote.branches.length ? remote.branches : DATA.branches,
@@ -4494,6 +4495,7 @@ function closeModal() {
           alerts:       remote.alerts,
           loginLog:     remote.loginLog,
           lastDailyRun: remote.lastDailyRun,
+          invoices:     preservedInvoices,
         };
         localStorage.setItem(LS_KEY, JSON.stringify(DATA));
         if (CURRENT_VIEW) navigate(CURRENT_VIEW);
