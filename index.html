@@ -4636,7 +4636,9 @@ function exportCSV(kind) {
 function showModal(html, opts) {
   const host = document.getElementById('modal-host');
   const sizeClass = opts && opts.size === 'large' ? ' modal-lg' : '';
-  host.innerHTML = `<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal${sizeClass}">${html}</div></div>`;
+  // mousedown ต้องเริ่มที่ backdrop และ mouseup ต้องจบที่ backdrop เท่ากัน
+  // ป้องกัน modal ปิดเมื่อผู้ใช้ลากเลือกข้อความในฟอร์มแล้วปล่อยเมาส์นอก modal
+  host.innerHTML = `<div class="modal-bg" onmousedown="if(event.target===this)this.dataset.bgDown='1'" onmouseup="if(event.target===this&&this.dataset.bgDown==='1')closeModal(); delete this.dataset.bgDown"><div class="modal${sizeClass}">${html}</div></div>`;
 }
 function closeModal() {
   document.getElementById('modal-host').innerHTML = '';
