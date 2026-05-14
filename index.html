@@ -2441,6 +2441,7 @@ function openMemberModal(id) {
         <div class="field"><label>สาขา *</label><select id="mm-branch" required>${branches}</select></div>
         <div class="field"><label>ชื่อ *</label><input id="mm-name" required value="${m ? _h(m.name) : ''}"></div>
         <div class="field"><label>นามสกุล *</label><input id="mm-surname" required value="${m ? _h(m.surname) : ''}"></div>
+        <div class="field"><label>ชื่อเล่น</label><input id="mm-nickname" value="${m ? _h(m.nickname || '') : ''}" placeholder="เช่น ก้อง, โอ๋"></div>
         <div class="field"><label>อายุ</label><input id="mm-age" type="number" min="0" value="${m ? m.age : ''}"></div>
         <div class="field"><label>วันสมัคร</label><input id="mm-start" type="date" value="${m ? m.startDate.slice(0,10) : today}"></div>
         <div class="field"><label>วันหมดอายุ</label><input id="mm-end" type="date" value="${m ? m.endDate.slice(0,10) : oneYearLater.toISOString().slice(0,10)}"></div>
@@ -2468,6 +2469,7 @@ function saveMember(e, idOrNull) {
     branch: document.getElementById('mm-branch').value,
     name: document.getElementById('mm-name').value,
     surname: document.getElementById('mm-surname').value,
+    nickname: document.getElementById('mm-nickname').value.trim(),
     age: Number(document.getElementById('mm-age').value || 0),
     startDate: new Date(document.getElementById('mm-start').value).toISOString(),
     endDate: new Date(document.getElementById('mm-end').value).toISOString(),
@@ -2528,6 +2530,7 @@ async function importMembers(e) {
       id:        ['id','memberid','member_id','รหัส','รหัสสมาชิก'],
       name:      ['name','firstname','first_name','ชื่อ'],
       surname:   ['surname','lastname','last_name','นามสกุล'],
+      nickname:  ['nickname','nick','ชื่อเล่น'],
       age:       ['age','อายุ'],
       branch:    ['branch','สาขา'],
       startDate: ['startdate','start','start_date','วันสมัคร','วันเริ่ม'],
@@ -2591,6 +2594,7 @@ async function importMembers(e) {
 
         DATA.members.push({
           id, name, surname,
+          nickname: String(get('nickname')||'').trim(),
           age: Number(get('age')) || 0,
           branch,
           startDate, endDate,
