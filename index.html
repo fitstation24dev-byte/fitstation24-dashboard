@@ -2502,7 +2502,9 @@ function openMemberModal(id) {
         <div class="field"><label>LINE User ID</label><input id="mm-line" value="${m ? _h(m.lineUid) : ''}" placeholder="Uxxxxxxxxxxxxxx"></div>
         <div class="field"><label>สถานะ</label><select id="mm-status">${statuses}</select></div>
         <div class="field full"><label>ที่อยู่ <small class="muted">(ที่อยู่ส่วนตัว)</small></label><input id="mm-address" value="${m ? _h(m.address || '') : ''}" placeholder="234/138 หมู่ที่ 4 ต.เทพารักษ์ อ.เมืองสมุทรปราการ จ.สมุทรปราการ 10270"></div>
-        <div class="field full"><label>ที่อยู่บริษัท <small class="muted">(สำหรับออกใบกำกับภาษี — เลขผู้เสียภาษีใส่ในวงเล็บได้)</small></label><input id="mm-company-address" value="${m ? _h(m.companyAddress || '') : ''}" placeholder="บริษัท ABC จำกัด เลขที่ 1/2 ถ.สุขุมวิท แขวง... เขต... กรุงเทพฯ 10110 (เลขผู้เสียภาษี 0105500000000)"></div>
+        <div class="field full"><label>ชื่อบริษัท <small class="muted">(สำหรับออกใบกำกับภาษีในนามบริษัท)</small></label><input id="mm-company-name" value="${m ? _h(m.companyName || '') : ''}" placeholder="เช่น บริษัท แมวขาวก้าวเดิน จำกัด"></div>
+        <div class="field full"><label>ที่อยู่บริษัท</label><input id="mm-company-address" value="${m ? _h(m.companyAddress || '') : ''}" placeholder="234/14 หมู่ที่ 6 ต.บางเมือง อ.เมือง จ.สมุทรปราการ"></div>
+        <div class="field"><label>เลขประจำตัวผู้เสียภาษี</label><input id="mm-tax-id" value="${m ? _h(m.taxId || '') : ''}" placeholder="0115567017609" maxlength="13"></div>
       </div>
       <div class="actions">
         ${!isNew && isManagerOrAbove() ? `<button type="button" class="btn danger" onclick="deleteMember('${_h(m.id)}')">ลบ</button>` : ''}
@@ -2530,7 +2532,9 @@ function saveMember(e, idOrNull) {
     lineUid: document.getElementById('mm-line').value,
     status: document.getElementById('mm-status').value,
     address: document.getElementById('mm-address').value.trim(),
+    companyName: document.getElementById('mm-company-name').value.trim(),
     companyAddress: document.getElementById('mm-company-address').value.trim(),
+    taxId: document.getElementById('mm-tax-id').value.trim(),
   };
   if (isNew) {
     if (DATA.members.some(m => m.id === obj.id)) {
@@ -3452,6 +3456,7 @@ function openInvoiceModal(id) {
         </div>
         <div class="field"><label>ในนาม (ชื่อลูกค้า) *</label><input id="iv-cname" required value="${_h(inv.customerName)}"></div>
         <div class="field"><label>รหัสสมาชิก/อ้างอิง</label><input id="iv-cmid" value="${_h(inv.customerMemberId)}" placeholder="เช่น ST-03395"></div>
+        <div class="field"><label>เลขประจำตัวผู้เสียภาษี <small class="muted">(กรณีออกในนามบริษัท)</small></label><input id="iv-taxid" value="${_h(inv.customerTaxId || '')}" placeholder="0115567017609" maxlength="13"></div>
         <div class="field full">
           <label style="display: flex; justify-content: space-between; align-items: center;">
             <span>ที่อยู่ลูกค้า</span>
@@ -3632,18 +3637,33 @@ function onPickInvoiceMember() {
   }
   const m = id ? DATA.members.find(x => x.id === id) : null;
   if (!m) return;
-  document.getElementById('iv-cname').value = m.name + ' ' + m.surname;
-  document.getElementById('iv-cmid').value = m.id;
-  const addrField = document.getElementById('iv-caddr');
-  const toggle = document.getElementById('iv-caddr-toggle');
+  const personName = (m.name + ' ' + m.surname).trim();
+  const companyName = (m.companyName || '').trim();
   const company = (m.companyAddress || '').trim();
   const personal = (m.address || '').trim();
+  const taxId = (m.taxId || '').trim();
+  document.getElementById('iv-cmid').value = m.id;
+  const cnameField = document.getElementById('iv-cname');
+  const taxField = document.getElementById('iv-taxid');
+  const addrField = document.getElementById('iv-caddr');
+  const toggle = document.getElementById('iv-caddr-toggle');
   if (toggle) {
     toggle.dataset.company = company;
     toggle.dataset.personal = personal;
-    toggle.value = company ? 'company' : (personal ? 'personal' : 'custom');
+    toggle.dataset.personname = personName;
+    toggle.dataset.companyname = companyName;
+    toggle.dataset.taxid = taxId;
+    toggle.value = (company || companyName) ? 'company' : (personal || personName ? 'personal' : 'custom');
   }
-  if (addrField) addrField.value = company || personal || '';
+  if (toggle && toggle.value === 'company') {
+    if (cnameField) cnameField.value = companyName || personName;
+    if (addrField) addrField.value = company || personal || '';
+    if (taxField) taxField.value = taxId;
+  } else {
+    if (cnameField) cnameField.value = personName;
+    if (addrField) addrField.value = personal || company || '';
+    if (taxField) taxField.value = '';
+  }
   const br = DATA.branches.find(b => b.code === m.branch);
   if (br) document.getElementById('iv-branch').value = m.branch;
 }
@@ -3651,11 +3671,17 @@ function onPickInvoiceMember() {
 function onToggleInvoiceAddress() {
   const toggle = document.getElementById('iv-caddr-toggle');
   const addrField = document.getElementById('iv-caddr');
+  const cnameField = document.getElementById('iv-cname');
+  const taxField = document.getElementById('iv-taxid');
   if (!toggle || !addrField) return;
   if (toggle.value === 'personal') {
     addrField.value = toggle.dataset.personal || '';
+    if (cnameField && toggle.dataset.personname) cnameField.value = toggle.dataset.personname;
+    if (taxField) taxField.value = '';
   } else if (toggle.value === 'company') {
     addrField.value = toggle.dataset.company || '';
+    if (cnameField && toggle.dataset.companyname) cnameField.value = toggle.dataset.companyname;
+    if (taxField) taxField.value = toggle.dataset.taxid || '';
   }
 }
 
@@ -3675,6 +3701,7 @@ function saveInvoice(e, id, isNew) {
     branchNo: document.getElementById('iv-branchno').value.trim(),
     customerName: document.getElementById('iv-cname').value.trim(),
     customerMemberId: document.getElementById('iv-cmid').value.trim(),
+    customerTaxId: document.getElementById('iv-taxid').value.trim(),
     customerAddress: document.getElementById('iv-caddr').value.trim(),
     items,
     vatMode: (vatModeEl && vatModeEl.value) || 'inclusive',
@@ -3782,13 +3809,19 @@ function buildInvoicePrintHTML(inv) {
 
       <div class="title">
         <div><b>ใบเสร็จรับเงิน/ใบกำกับภาษี</b></div>
-        <div class="rcpt-info">ใบเสร็จเลขที่ <b>${_h(inv.receiptNo)}</b><br>วันที่ : ${dateStr}</div>
+        <div class="rcpt-info">ใบเสร็จเลขที่ <b>${_h(inv.receiptNo)}</b></div>
       </div>
       <div style="font-weight: bold; text-align: center; margin: -6px 0 4px 0;">RECEIPT/TAX INVOICE</div>
 
       <div class="cust">
-        <div>ในนาม: ${_h(inv.customerName)} ${inv.customerMemberId ? '(' + _h(inv.customerMemberId) + ')' : ''}</div>
-        <div>ที่อยู่: ${_h(inv.customerAddress || '')}</div>
+        <div style="display: flex; justify-content: space-between; gap: 16px;">
+          <div style="flex: 1;">ในนาม: ${_h(inv.customerName)} ${inv.customerMemberId ? '(' + _h(inv.customerMemberId) + ')' : ''}</div>
+          <div style="white-space: nowrap;">วันที่ : ${dateStr}</div>
+        </div>
+        <div style="display: flex; justify-content: space-between; gap: 16px;">
+          <div style="flex: 1;">ที่อยู่: ${_h(inv.customerAddress || '')}</div>
+          ${inv.customerTaxId ? `<div style="white-space: nowrap;">เลขประจำตัวผู้เสียภาษี: ${_h(inv.customerTaxId)}</div>` : ''}
+        </div>
       </div>
 
       <table class="items">
