@@ -785,6 +785,15 @@ function defaultData() {
     ],
     alerts: [],
     invoices: [],
+    packages: [
+      { id: nid(), code: 'MEM-1M',  name: 'สมาชิกรายเดือน',    type: 'MEM', price: 1200,  hours: 0,  note: '1 เดือน' },
+      { id: nid(), code: 'MEM-3M',  name: 'สมาชิก 3 เดือน',     type: 'MEM', price: 3300,  hours: 0,  note: '3 เดือน' },
+      { id: nid(), code: 'MEM-6M',  name: 'สมาชิก 6 เดือน',     type: 'MEM', price: 6000,  hours: 0,  note: '6 เดือน' },
+      { id: nid(), code: 'MEM-12M', name: 'สมาชิก 1 ปี',        type: 'MEM', price: 10000, hours: 0,  note: '12 เดือน' },
+      { id: nid(), code: 'PT-10',   name: 'PT 10 ครั้ง',         type: 'PT',  price: 5000,  hours: 10, note: '' },
+      { id: nid(), code: 'PT-20',   name: 'PT 20 ครั้ง',         type: 'PT',  price: 9500,  hours: 20, note: '' },
+      { id: nid(), code: 'DAY',     name: 'รายวัน',              type: 'Plan',price: 100,   hours: 0,  note: '' },
+    ],
     loginLog: [],
     lastDailyRun: '',
   };
@@ -838,6 +847,7 @@ async function loadData() {
           lastDailyRun:  remote.lastDailyRun,
           // ฟิลด์เฉพาะเครื่อง (ไม่ได้ sync ผ่าน Supabase) — preserve จาก localStorage
           invoices:      (localData && Array.isArray(localData.invoices)) ? localData.invoices : [],
+          packages:      (localData && Array.isArray(localData.packages) && localData.packages.length) ? localData.packages : seed.packages,
         };
       }
       localStorage.setItem(LS_KEY, JSON.stringify(DATA));
@@ -954,6 +964,7 @@ const NAV_ITEMS = [
   { id: 'sales',        label: 'บันทึกยอดขาย' },
   { id: 'trainings',    label: 'บันทึกการเทรน' },
   { id: 'members',      label: 'สมาชิก' },
+  { id: 'packages',     label: 'แพ็กเกจ' },
   { id: 'sales-log',    label: 'ประวัติการขาย' },
   { id: 'invoices',     label: 'ใบกำกับภาษี' },
   { id: 'alerts',       label: 'การแจ้งเตือน' },
@@ -965,8 +976,8 @@ const DELEGABLE_ROLES = ['Manager','Staff','Trainer'];
 
 function defaultRolePermissions() {
   return {
-    Manager: ['dashboard','sales','trainings','members','registration','sales-log','invoices','alerts','employees','reports'],
-    Staff:   ['dashboard','sales','trainings','members','registration','sales-log','invoices','alerts'],
+    Manager: ['dashboard','sales','trainings','members','packages','registration','sales-log','invoices','alerts','employees','reports'],
+    Staff:   ['dashboard','sales','trainings','members','packages','registration','sales-log','invoices','alerts'],
     Trainer: ['dashboard','trainings','members'],
   };
 }
@@ -1212,7 +1223,7 @@ function navigate(view) {
   CHARTS = {};
   const titles = {
     'dashboard': 'Dashboard', 'sales': 'บันทึกยอดขาย', 'trainings': 'บันทึกการเทรน',
-    'members': 'สมาชิก', 'registration': '📝 สมัครสมาชิก',
+    'members': 'สมาชิก', 'packages': 'แพ็กเกจ', 'registration': '📝 สมัครสมาชิก',
     'sales-log': 'ประวัติการขาย', 'invoices': 'ใบกำกับภาษี',
     'alerts': 'การแจ้งเตือน',
     'employees': 'พนักงาน', 'reports': 'รายงาน', 'settings': 'ตั้งค่าระบบ',
@@ -1224,6 +1235,7 @@ function navigate(view) {
   else if (view === 'sales')          renderSalesEntry(c);
   else if (view === 'trainings')      renderTrainingsEntry(c);
   else if (view === 'members')        renderMembers(c);
+  else if (view === 'packages')       renderPackages(c);
   else if (view === 'registration')   renderRegistration(c);
   else if (view === 'sales-log')      renderSalesLog(c);
   else if (view === 'invoices')       renderInvoices(c);
@@ -1536,6 +1548,13 @@ function renderSalesEntry(root) {
           </select>
         </div>
         <div class="field">
+          <label>แพ็กเกจ <small class="muted">(เลือกเพื่อกรอกอัตโนมัติ)</small></label>
+          <select id="se-package" onchange="onPickSalePackage()">
+            <option value="">— ไม่ระบุ —</option>
+            ${(DATA.packages || []).map(p => `<option value="${_h(p.id)}">${_h(p.code ? p.code + ' · ' : '')}${_h(p.name)} — ${thb(p.price)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field">
           <label>จำนวนเงิน *</label>
           <input id="se-amount" type="number" min="0" step="1" required placeholder="0">
         </div>
@@ -1608,6 +1627,27 @@ function updateSaleSlipReq() {
   const req = document.getElementById('se-slip-req');
   if (t === 'MEM' || t === 'PT') req.style.display = '';
   else req.style.display = 'none';
+  updateLinePreview();
+}
+
+function onPickSalePackage() {
+  const sel = document.getElementById('se-package');
+  if (!sel || !sel.value) return;
+  const p = (DATA.packages || []).find(x => x.id === sel.value);
+  if (!p) return;
+  const typeSel = document.getElementById('se-type');
+  if (typeSel && p.type) {
+    const opt = Array.from(typeSel.options).find(o => o.value === p.type);
+    if (opt) typeSel.value = p.type;
+  }
+  const amt = document.getElementById('se-amount');
+  if (amt) amt.value = p.price || 0;
+  const note = document.getElementById('se-note');
+  if (note) {
+    const tag = p.code ? p.code + ' — ' + p.name : p.name;
+    note.value = p.note ? tag + ' (' + p.note + ')' : tag;
+  }
+  updateSaleSlipReq();
   updateLinePreview();
 }
 
@@ -3194,6 +3234,110 @@ function nextReceiptNo() {
   return String(max + 1).padStart(6, '0');
 }
 
+// ============ PACKAGES ============
+function renderPackages(root) {
+  if (!Array.isArray(DATA.packages)) DATA.packages = [];
+  const card = document.createElement('div');
+  card.className = 'card';
+  const canEdit = isManagerOrAbove();
+
+  const rows = DATA.packages.map(p => `
+    <tr>
+      <td>${_h(p.code || '-')}</td>
+      <td>${_h(p.name)}</td>
+      <td><span class="badge ${p.type === 'MEM' ? 'ok' : p.type === 'PT' ? 'warn' : 'gray'}">${_h(p.type)}</span></td>
+      <td class="right">${thb(p.price)}</td>
+      <td class="center">${p.hours || 0}</td>
+      <td>${_h(p.note || '')}</td>
+      <td class="center">
+        ${canEdit ? `<button class="btn small secondary" onclick="openPackageModal('${_h(p.id)}')">แก้</button>` : ''}
+      </td>
+    </tr>
+  `).join('');
+
+  card.innerHTML = `
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <h2>แพ็กเกจ <small class="muted">(${DATA.packages.length} รายการ)</small></h2>
+      ${canEdit ? '<button class="btn" onclick="openPackageModal()">+ เพิ่มแพ็กเกจ</button>' : ''}
+    </div>
+    <div style="margin-top: 12px; overflow: auto;">
+      <table>
+        <thead><tr>
+          <th>รหัส</th><th>ชื่อแพ็กเกจ</th><th>ประเภท</th>
+          <th class="right">ราคา</th><th class="center">ชม./ครั้ง</th><th>หมายเหตุ</th><th></th>
+        </tr></thead>
+        <tbody>${rows || '<tr><td colspan="7" class="muted center" style="padding: 16px;">ยังไม่มีแพ็กเกจ</td></tr>'}</tbody>
+      </table>
+    </div>
+  `;
+  root.appendChild(card);
+}
+
+function openPackageModal(id) {
+  if (!Array.isArray(DATA.packages)) DATA.packages = [];
+  const isNew = !id;
+  const p = isNew
+    ? { id: nid(), code: '', name: '', type: 'MEM', price: 0, hours: 0, note: '' }
+    : DATA.packages.find(x => x.id === id);
+  if (!p) { toast('ไม่พบแพ็กเกจ', 'bad'); return; }
+
+  const typeOpts = ['MEM','PT','Plan','Other']
+    .map(t => `<option value="${t}" ${p.type === t ? 'selected' : ''}>${t}</option>`).join('');
+
+  showModal(`
+    <h3>${isNew ? 'เพิ่มแพ็กเกจใหม่' : 'แก้ไขแพ็กเกจ ' + _h(p.code || p.name)}</h3>
+    <form id="package-form" onsubmit="savePackage(event, '${_h(p.id)}', ${isNew})">
+      <div class="form-grid">
+        <div class="field"><label>รหัสแพ็กเกจ</label><input id="pk-code" value="${_h(p.code || '')}" placeholder="เช่น MEM-3M"></div>
+        <div class="field"><label>ประเภท *</label><select id="pk-type" required>${typeOpts}</select></div>
+        <div class="field full"><label>ชื่อแพ็กเกจ *</label><input id="pk-name" required value="${_h(p.name)}" placeholder="เช่น สมาชิก 3 เดือน"></div>
+        <div class="field"><label>ราคา *</label><input id="pk-price" type="number" min="0" step="1" required value="${p.price || 0}"></div>
+        <div class="field"><label>ชม./ครั้งเทรน</label><input id="pk-hours" type="number" min="0" step="1" value="${p.hours || 0}"></div>
+        <div class="field full"><label>หมายเหตุ</label><input id="pk-note" value="${_h(p.note || '')}" placeholder="เช่น 3 เดือน, รวม PT 5 ครั้ง"></div>
+      </div>
+      <div class="actions">
+        ${!isNew ? `<button type="button" class="btn danger" onclick="deletePackage('${_h(p.id)}')">ลบ</button>` : ''}
+        <button type="button" class="btn secondary" onclick="closeModal()">ยกเลิก</button>
+        <button type="submit" class="btn">บันทึก</button>
+      </div>
+    </form>
+  `);
+}
+
+function savePackage(e, id, isNew) {
+  if (e) e.preventDefault();
+  if (!Array.isArray(DATA.packages)) DATA.packages = [];
+  const obj = {
+    id,
+    code: document.getElementById('pk-code').value.trim(),
+    name: document.getElementById('pk-name').value.trim(),
+    type: document.getElementById('pk-type').value,
+    price: Number(document.getElementById('pk-price').value || 0),
+    hours: Number(document.getElementById('pk-hours').value || 0),
+    note: document.getElementById('pk-note').value.trim(),
+  };
+  if (isNew) {
+    DATA.packages.push(obj);
+  } else {
+    const idx = DATA.packages.findIndex(x => x.id === id);
+    if (idx >= 0) DATA.packages[idx] = obj;
+    else DATA.packages.push(obj);
+  }
+  saveData();
+  toast(isNew ? 'เพิ่มแพ็กเกจเรียบร้อย' : 'อัปเดตแพ็กเกจเรียบร้อย', 'ok');
+  closeModal();
+  if (CURRENT_VIEW === 'packages') navigate('packages');
+}
+
+function deletePackage(id) {
+  if (!confirm('ลบแพ็กเกจนี้?')) return;
+  DATA.packages = (DATA.packages || []).filter(x => x.id !== id);
+  saveData();
+  closeModal();
+  toast('ลบแพ็กเกจเรียบร้อย', 'ok');
+  if (CURRENT_VIEW === 'packages') navigate('packages');
+}
+
 function renderInvoices(root) {
   if (!Array.isArray(DATA.invoices)) DATA.invoices = [];
 
@@ -4484,6 +4628,7 @@ function closeModal() {
       if (remote) {
         const seed = defaultData();
         const preservedInvoices = Array.isArray(DATA.invoices) ? DATA.invoices : [];
+        const preservedPackages = Array.isArray(DATA.packages) && DATA.packages.length ? DATA.packages : seed.packages;
         DATA = {
           settings:     remote.settings  || seed.settings,
           branches:     remote.branches.length ? remote.branches : DATA.branches,
@@ -4496,6 +4641,7 @@ function closeModal() {
           loginLog:     remote.loginLog,
           lastDailyRun: remote.lastDailyRun,
           invoices:     preservedInvoices,
+          packages:     preservedPackages,
         };
         localStorage.setItem(LS_KEY, JSON.stringify(DATA));
         if (CURRENT_VIEW) navigate(CURRENT_VIEW);
