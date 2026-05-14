@@ -813,7 +813,7 @@ let SALES_LOG_DATE_FROM = '';
 let SALES_LOG_DATE_TO = '';
 let TRAININGS_DATE_FROM = '';
 let TRAININGS_DATE_TO = '';
-let TRAIN_GATE_VERIFIED = false;   // reset on every navigate()
+let TRAIN_GATE_VERIFIED = false;   // ใส่รหัสครั้งเดียวต่อ session, reset ตอน logout
 
 async function loadData() {
   // อ่าน localStorage ก่อน — สำหรับฟิลด์ที่ไม่ได้ sync ผ่าน Supabase (เช่น invoices)
@@ -909,6 +909,7 @@ function doLogin() {
 function doLogout() {
   SESSION = null;
   saveSession(null);
+  TRAIN_GATE_VERIFIED = false;
   document.getElementById('app').classList.add('hidden');
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('login-email').value = '';
@@ -1213,7 +1214,6 @@ function navigate(view) {
   if (SESSION && !canAccessView(SESSION.role, view)) {
     view = canAccessView(SESSION.role, 'dashboard') ? 'dashboard' : (NAV_ITEMS.find(i => canAccessView(SESSION.role, i.id)) || {}).id || 'dashboard';
   }
-  TRAIN_GATE_VERIFIED = false;
   CURRENT_VIEW = view;
   try { sessionStorage.setItem('fs24_view', view); } catch {}
   document.querySelectorAll('#nav button').forEach(b => {
