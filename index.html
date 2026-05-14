@@ -6,6 +6,7 @@
 <title>FITSTATION 24 — Dashboard</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   :root {
     --brand: #0B132B;
@@ -2164,7 +2165,11 @@ function renderMembers(root) {
         <option value="Expired">Expired</option>
       </select>
     </div>
-    ${editable ? '<button class="btn" onclick="openMemberModal()">+ เพิ่มสมาชิก</button>' : ''}
+    ${editable ? `<div style="display:flex; gap:8px;">
+      <button class="btn secondary" onclick="document.getElementById('member-import-file').click()" title="นำเข้าจาก Excel/CSV">⬆ นำเข้า Excel</button>
+      <input id="member-import-file" type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="importMembers(event)">
+      <button class="btn" onclick="openMemberModal()">+ เพิ่มสมาชิก</button>
+    </div>` : ''}
   `;
   root.appendChild(tb);
 
@@ -2399,6 +2404,119 @@ function deleteMember(id) {
   closeModal();
   toast('ลบสมาชิกเรียบร้อย', 'ok');
   navigate('members');
+}
+
+// ============ IMPORT MEMBERS (Excel/CSV) ============
+async function importMembers(e) {
+  const input = e.target;
+  const file = input.files && input.files[0];
+  input.value = '';
+  if (!file) return;
+  if (typeof XLSX === 'undefined') { toast('โหลด SheetJS ไม่สำเร็จ (ต้องเชื่อมต่ออินเทอร์เน็ต)', 'bad'); return; }
+
+  try {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+    if (!rows.length) { toast('ไฟล์ไม่มีข้อมูล', 'bad'); return; }
+    if (!confirm('พบ ' + rows.length + ' แถวในไฟล์ — เพิ่มเข้าระบบ? (ID ที่ซ้ำจะถูกข้าม)')) return;
+
+    const norm = s => String(s||'').trim().toLowerCase().replace(/\s+/g,'').replace(/[._\-]/g,'');
+    const aliases = {
+      id:        ['id','memberid','member_id','รหัส','รหัสสมาชิก'],
+      name:      ['name','firstname','first_name','ชื่อ'],
+      surname:   ['surname','lastname','last_name','นามสกุล'],
+      age:       ['age','อายุ'],
+      branch:    ['branch','สาขา'],
+      startDate: ['startdate','start','start_date','วันสมัคร','วันเริ่ม'],
+      endDate:   ['enddate','end','end_date','วันหมดอายุ','วันสิ้นสุด'],
+      hours:     ['hours','hour','ชม','ชั่วโมง','ชม.เทรน','ชมเทรน'],
+      trainer:   ['trainer','เทรนเนอร์'],
+      lineUid:   ['lineuid','line','lineid','line_id','lineuserid'],
+      status:    ['status','สถานะ'],
+      address:   ['address','ที่อยู่'],
+    };
+    const colKey = {};
+    const firstRowKeys = Object.keys(rows[0]);
+    Object.keys(aliases).forEach(field => {
+      const wanted = aliases[field].map(norm);
+      const k = firstRowKeys.find(k => wanted.includes(norm(k)));
+      if (k) colKey[field] = k;
+    });
+
+    const toIso = v => {
+      if (v === '' || v == null) return '';
+      if (v instanceof Date && !isNaN(v)) return v.toISOString();
+      if (typeof v === 'number' && XLSX.SSF && XLSX.SSF.parse_date_code) {
+        const d = XLSX.SSF.parse_date_code(v);
+        if (d) return new Date(Date.UTC(d.y, d.m-1, d.d)).toISOString();
+      }
+      const d = new Date(v);
+      return isNaN(d.getTime()) ? '' : d.toISOString();
+    };
+
+    const today = new Date().toISOString();
+    const defaultBranch = (DATA.branches[0] && DATA.branches[0].code) || 'BR01';
+    const branchCodes = DATA.branches.map(b => b.code);
+    const validStatus = ['Active','Frozen','Expired','Cancelled'];
+    const existingIds = new Set(DATA.members.map(m => m.id));
+    let nextNum = 1000 + DATA.members.length;
+
+    let added = 0, skipped = 0, errors = 0;
+    const skippedIds = [];
+
+    rows.forEach((row, idx) => {
+      try {
+        const get = f => colKey[f] ? row[colKey[f]] : '';
+        const name = String(get('name')||'').trim();
+        const surname = String(get('surname')||'').trim();
+        if (!name && !surname) { errors++; return; }
+
+        let id = String(get('id')||'').trim();
+        if (!id) {
+          do { nextNum++; id = 'M' + String(nextNum).padStart(4,'0'); }
+          while (existingIds.has(id));
+        }
+        if (existingIds.has(id)) { skipped++; if (skippedIds.length < 10) skippedIds.push(id); return; }
+
+        const startDate = toIso(get('startDate')) || today;
+        const endDate = toIso(get('endDate')) || startDate;
+        let branch = String(get('branch')||'').trim().toUpperCase();
+        if (!branchCodes.includes(branch)) branch = defaultBranch;
+        let status = String(get('status')||'').trim();
+        if (!validStatus.includes(status)) status = 'Active';
+
+        DATA.members.push({
+          id, name, surname,
+          age: Number(get('age')) || 0,
+          branch,
+          startDate, endDate,
+          hours: Number(get('hours')) || 0,
+          trainer: String(get('trainer')||'').trim(),
+          lineUid: String(get('lineUid')||'').trim(),
+          status,
+          address: String(get('address')||'').trim(),
+        });
+        existingIds.add(id);
+        added++;
+      } catch (err) {
+        console.error('row error', idx, err);
+        errors++;
+      }
+    });
+
+    saveData();
+    let msg = 'นำเข้าสำเร็จ ' + added + ' คน';
+    if (skipped) msg += ' / ข้าม ' + skipped + ' (ID ซ้ำ)';
+    if (errors)  msg += ' / ผิดพลาด ' + errors + ' แถว';
+    toast(msg, added ? 'ok' : 'bad');
+    if (skippedIds.length) console.log('Skipped IDs:', skippedIds);
+    navigate('members');
+  } catch (err) {
+    console.error(err);
+    toast('อ่านไฟล์ไม่สำเร็จ: ' + err.message, 'bad');
+  }
 }
 
 // ============ REGISTRATION (สมัครสมาชิก) ============
