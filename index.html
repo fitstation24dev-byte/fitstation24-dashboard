@@ -801,6 +801,18 @@ function defaultData() {
 
 function nid() { return Math.random().toString(36).slice(2, 10); }
 
+// Merge ฟิลด์เสริมของ members จาก local (companyAddress, nickname, gender, idCard, phone, email, ฯลฯ)
+// ที่ไม่ได้ sync ผ่าน Supabase กลับเข้า array ที่ load มาจาก remote
+function mergeMemberExtras(remoteMembers, localMembers) {
+  if (!Array.isArray(remoteMembers)) return remoteMembers || [];
+  if (!Array.isArray(localMembers) || localMembers.length === 0) return remoteMembers;
+  const localMap = new Map(localMembers.map(m => [m.id, m]));
+  return remoteMembers.map(rm => {
+    const lm = localMap.get(rm.id);
+    return lm ? { ...lm, ...rm } : rm;
+  });
+}
+
 // ---------- STORAGE ----------
 let DATA = null;
 let SESSION = null;
@@ -839,7 +851,7 @@ async function loadData() {
           branches:      remote.branches.length  ? remote.branches  : seed.branches,
           users:         remote.users.length     ? remote.users     : seed.users,
           employees:     remote.employees,
-          members:       remote.members,
+          members:       mergeMemberExtras(remote.members, localData && localData.members),
           sales:         remote.sales,
           trainings:     remote.trainings,
           alerts:        remote.alerts,
@@ -4655,7 +4667,7 @@ function closeModal() {
           branches:     remote.branches.length ? remote.branches : DATA.branches,
           users:        remote.users.length    ? remote.users    : DATA.users,
           employees:    remote.employees,
-          members:      remote.members,
+          members:      mergeMemberExtras(remote.members, DATA.members),
           sales:        remote.sales,
           trainings:    remote.trainings,
           alerts:       remote.alerts,
