@@ -4026,6 +4026,7 @@ function renderSettings(root) {
       <div style="display: flex; gap: 8px; flex-wrap: wrap;">
         <button class="btn small secondary" onclick="testSendExpiryAlerts()">▶ ทดสอบ: สมาชิกใกล้หมดอายุ</button>
         <button class="btn small secondary" onclick="testSendHoursLowAlerts()">▶ ทดสอบ: ชั่วโมงเทรนเหลือน้อย</button>
+        <button class="btn small secondary" onclick="testSendDailySummary()">▶ ทดสอบ: สรุปยอดเมื่อวาน</button>
       </div>
     </div>
   `;
@@ -4126,6 +4127,29 @@ async function testSendHoursLowAlerts() {
   toast('กำลังส่ง...', 'ok');
   try {
     await sendDailyHoursLowAlertsToGroup();
+    toast('ส่งสำเร็จ — เช็คใน LINE Group', 'ok');
+  } catch (err) {
+    console.error(err);
+    toast('ส่งไม่สำเร็จ: ' + (err.message || err), 'bad');
+  }
+}
+
+async function testSendDailySummary() {
+  if (!isOwner()) return;
+  if (!confirm('ส่งสรุปยอดของเมื่อวานเข้า LINE Group ของแต่ละสาขาทันที?\n(รีเซ็ตการจดที่ส่งไปแล้วก่อน)')) return;
+  const yestKey = (() => {
+    const d = new Date(); d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0,10);
+  })();
+  if (DATA.settings.dailySummarySent) {
+    Object.keys(DATA.settings.dailySummarySent).forEach(k => {
+      if (k.startsWith(yestKey + '|')) delete DATA.settings.dailySummarySent[k];
+    });
+    saveData();
+  }
+  toast('กำลังส่ง...', 'ok');
+  try {
+    await sendDailySalesSummaryToGroup();
     toast('ส่งสำเร็จ — เช็คใน LINE Group', 'ok');
   } catch (err) {
     console.error(err);
