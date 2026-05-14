@@ -2448,7 +2448,8 @@ function openMemberModal(id) {
         <div class="field"><label>เทรนเนอร์ประจำ</label><input id="mm-trainer" value="${m ? _h(m.trainer) : ''}"></div>
         <div class="field"><label>LINE User ID</label><input id="mm-line" value="${m ? _h(m.lineUid) : ''}" placeholder="Uxxxxxxxxxxxxxx"></div>
         <div class="field"><label>สถานะ</label><select id="mm-status">${statuses}</select></div>
-        <div class="field full"><label>ที่อยู่ <small class="muted">(ใช้สำหรับออกใบกำกับภาษี)</small></label><input id="mm-address" value="${m ? _h(m.address || '') : ''}" placeholder="234/138 หมู่ที่ 4 ต.บลเทพารักษ์ อ.เมืองสมุทรปราการ จ.สมุทรปราการ 10270"></div>
+        <div class="field full"><label>ที่อยู่ <small class="muted">(ที่อยู่ส่วนตัว)</small></label><input id="mm-address" value="${m ? _h(m.address || '') : ''}" placeholder="234/138 หมู่ที่ 4 ต.เทพารักษ์ อ.เมืองสมุทรปราการ จ.สมุทรปราการ 10270"></div>
+        <div class="field full"><label>ที่อยู่บริษัท <small class="muted">(สำหรับออกใบกำกับภาษี — เลขผู้เสียภาษีใส่ในวงเล็บได้)</small></label><input id="mm-company-address" value="${m ? _h(m.companyAddress || '') : ''}" placeholder="บริษัท ABC จำกัด เลขที่ 1/2 ถ.สุขุมวิท แขวง... เขต... กรุงเทพฯ 10110 (เลขผู้เสียภาษี 0105500000000)"></div>
       </div>
       <div class="actions">
         ${!isNew && isManagerOrAbove() ? `<button type="button" class="btn danger" onclick="deleteMember('${_h(m.id)}')">ลบ</button>` : ''}
@@ -2475,6 +2476,7 @@ function saveMember(e, idOrNull) {
     lineUid: document.getElementById('mm-line').value,
     status: document.getElementById('mm-status').value,
     address: document.getElementById('mm-address').value.trim(),
+    companyAddress: document.getElementById('mm-company-address').value.trim(),
   };
   if (isNew) {
     if (DATA.members.some(m => m.id === obj.id)) {
@@ -2534,7 +2536,8 @@ async function importMembers(e) {
       trainer:   ['trainer','เทรนเนอร์'],
       lineUid:   ['lineuid','line','lineid','line_id','lineuserid'],
       status:    ['status','สถานะ'],
-      address:   ['address','ที่อยู่'],
+      address:   ['address','ที่อยู่','ที่อยู่ส่วนตัว'],
+      companyAddress: ['companyaddress','company_address','companyaddr','ที่อยู่บริษัท','ที่อยู่บ.','ที่อยู่ใบกำกับภาษี','ที่อยู่ใบกำกับ'],
     };
     const colKey = {};
     const firstRowKeys = Object.keys(rows[0]);
@@ -2596,6 +2599,7 @@ async function importMembers(e) {
           lineUid: String(get('lineUid')||'').trim(),
           status,
           address: String(get('address')||'').trim(),
+          companyAddress: String(get('companyAddress')||'').trim(),
         });
         existingIds.add(id);
         added++;
@@ -3284,7 +3288,16 @@ function openInvoiceModal(id) {
         </div>
         <div class="field"><label>ในนาม (ชื่อลูกค้า) *</label><input id="iv-cname" required value="${_h(inv.customerName)}"></div>
         <div class="field"><label>รหัสสมาชิก/อ้างอิง</label><input id="iv-cmid" value="${_h(inv.customerMemberId)}" placeholder="เช่น ST-03395"></div>
-        <div class="field full"><label>ที่อยู่ลูกค้า</label><input id="iv-caddr" value="${_h(inv.customerAddress)}"></div>
+        <div class="field full">
+          <label style="display: flex; justify-content: space-between; align-items: center;">
+            <span>ที่อยู่ลูกค้า</span>
+            <select id="iv-caddr-toggle" onchange="onToggleInvoiceAddress()" style="display: none; padding: 2px 6px; font-size: 12px;">
+              <option value="company">ที่อยู่บริษัท</option>
+              <option value="personal">ที่อยู่ส่วนตัว</option>
+            </select>
+          </label>
+          <input id="iv-caddr" value="${_h(inv.customerAddress)}">
+        </div>
       </div>
 
       <div style="display: flex; justify-content: space-between; align-items: center; margin: 16px 0 8px 0;">
@@ -3423,9 +3436,34 @@ function onPickInvoiceMember() {
   if (!m) return;
   document.getElementById('iv-cname').value = m.name + ' ' + m.surname;
   document.getElementById('iv-cmid').value = m.id;
-  if (m.address) document.getElementById('iv-caddr').value = m.address;
+  const addrField = document.getElementById('iv-caddr');
+  if (addrField) {
+    const company = (m.companyAddress || '').trim();
+    const personal = (m.address || '').trim();
+    addrField.value = company || personal || '';
+    const toggle = document.getElementById('iv-caddr-toggle');
+    if (toggle) {
+      if (company && personal) {
+        toggle.style.display = '';
+        toggle.dataset.company = company;
+        toggle.dataset.personal = personal;
+        toggle.value = 'company';
+      } else {
+        toggle.style.display = 'none';
+      }
+    }
+  }
   const br = DATA.branches.find(b => b.code === m.branch);
   if (br) document.getElementById('iv-branch').value = m.branch;
+}
+
+function onToggleInvoiceAddress() {
+  const toggle = document.getElementById('iv-caddr-toggle');
+  const addrField = document.getElementById('iv-caddr');
+  if (!toggle || !addrField) return;
+  addrField.value = toggle.value === 'personal'
+    ? (toggle.dataset.personal || '')
+    : (toggle.dataset.company || '');
 }
 
 function saveInvoice(e, id, isNew) {
