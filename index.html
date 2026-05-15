@@ -3275,7 +3275,7 @@ function renderPackages(root) {
   if (!Array.isArray(DATA.packages)) DATA.packages = [];
   const card = document.createElement('div');
   card.className = 'card';
-  const canEdit = isManagerOrAbove();
+  const canEdit = SESSION && ['Owner','Manager','Staff'].includes(SESSION.role);
 
   const rows = DATA.packages.map(p => `
     <tr>
