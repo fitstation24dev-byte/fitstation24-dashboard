@@ -2515,7 +2515,17 @@ function openMemberHistoryModal(id) {
 function openMemberModal(id) {
   const m = id ? DATA.members.find(x => x.id === id) : null;
   const isNew = !m;
-  const branches = DATA.branches.map(b => `<option value="${_h(b.code)}" ${m && m.branch===b.code?'selected':''}>${_h(b.code)}</option>`).join('');
+  // For new members: if user is locked to one branch (Manager/Staff), force that branch.
+  // For Owner adding a new member: default to currently-viewed branch (or first branch if "ทุกสาขา").
+  let defaultBranch;
+  if (m) defaultBranch = m.branch;
+  else if (!canSeeAllBranches()) defaultBranch = SESSION.branch;
+  else if (CURRENT_BRANCH && CURRENT_BRANCH !== '*') defaultBranch = CURRENT_BRANCH;
+  else defaultBranch = (DATA.branches[0] && DATA.branches[0].code) || '';
+  const lockBranch = isNew && !canSeeAllBranches();
+  const branches = lockBranch
+    ? `<option value="${_h(SESSION.branch)}" selected>${_h(SESSION.branch)}</option>`
+    : DATA.branches.map(b => `<option value="${_h(b.code)}" ${b.code === defaultBranch ? 'selected' : ''}>${_h(b.code)}</option>`).join('');
   const statuses = ['Active','Frozen','Expired','Cancelled']
     .map(s => `<option value="${s}" ${m && m.status===s?'selected':''}>${s}</option>`).join('');
 
