@@ -3170,12 +3170,14 @@ function renderSalesLog(root) {
     const slipLink = s.slip ? `<a href="#" onclick="event.preventDefault(); viewSaleSlipById('${s.id}');" style="color: var(--accent); cursor:pointer;">ดูสลิป</a>` : '<span class="muted">—</span>';
     const channelBadge = s.channel ? `<span class="badge gray">${s.channel}</span>` : '<span class="muted">—</span>';
     const actions = ownerCanDelete ? `<button class="btn small secondary" onclick="editSaleDate('${s.id}')" title="แก้ไขวันที่">✎ วันที่</button> <button class="btn small danger" onclick="deleteSale('${s.id}')">ลบ</button>` : '';
+    const emp = DATA.employees.find(e => e.id === s.empId);
+    const empLabel = emp ? `${_h(s.empId)} — ${_h(emp.name)}${emp.surname ? ' ' + _h(emp.surname) : ''}` : _h(s.empId || '');
     rows += `<tr>
       <td>${fmtTime(s.ts)}</td>
       <td>${_h(s.branch)}</td>
       <td><span style="font-weight: 600; color: ${typeColor(s.type)};">${_h(s.type)}</span></td>
       <td class="center">${channelBadge}</td>
-      <td>${_h(s.empId)}</td>
+      <td>${empLabel}</td>
       <td>${s.memberName ? _h(s.memberName) : '<span class="muted">—</span>'}</td>
       <td class="right"><strong>${thb(s.amount)}</strong></td>
       <td class="center">${slipLink}</td>
