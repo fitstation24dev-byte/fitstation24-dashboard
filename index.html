@@ -2529,7 +2529,7 @@ function openMemberModal(id) {
   const statuses = ['Active','Frozen','Expired','Cancelled']
     .map(s => `<option value="${s}" ${m && m.status===s?'selected':''}>${s}</option>`).join('');
 
-  const newId = isNew ? 'M' + String(1000 + DATA.members.length + 1) : m.id;
+  const newId = isNew ? nextMemberId() : m.id;
   const today = new Date().toISOString().slice(0,10);
   const oneYearLater = new Date(); oneYearLater.setFullYear(oneYearLater.getFullYear()+1);
   showModal(`
@@ -2584,8 +2584,8 @@ function saveMember(e, idOrNull) {
     taxId: document.getElementById('mm-tax-id').value.trim(),
   };
   if (isNew) {
-    if (DATA.members.some(m => m.id === obj.id)) {
-      toast('Member ID ซ้ำ', 'bad'); return;
+    if (!obj.id || !/^M\d+$/.test(obj.id) || DATA.members.some(m => m.id === obj.id)) {
+      obj.id = nextMemberId();
     }
     DATA.members.push(obj);
   } else {
