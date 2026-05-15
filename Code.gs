@@ -198,9 +198,88 @@ function handleOpen(e) {
     .addItem('เตรียมคอลัมน์สมัครสมาชิก (ครั้งแรก)', 'setupMemberRegistration')
     .addItem('ทดสอบส่ง LINE (สาขาเลือก)', 'menuTestLine')
     .addItem('เช็คโควต้า LINE ทุกสาขา', 'menuCheckLineQuota')
-    .addItem('สรุปยอดวันนี้ → LINE Group', 'sendDailySummaryToGroups')
-    .addItem('สแกนสมาชิกใกล้หมดอายุตอนนี้', 'runDailyAtMidnight')
+    .addItem('สรุปยอดวันนี้ → LINE Group', 'menuSendSummaryToday')
+    .addItem('สรุปยอดเมื่อวาน → LINE Group', 'menuSendSummaryYesterday')
+    .addItem('สแกนสมาชิกใกล้หมดอายุตอนนี้', 'menuRunExpiryScan')
     .addToUi();
+}
+
+function menuSendSummaryToday() {
+  _runSummaryWithUi_(new Date(), 'วันนี้');
+}
+
+function menuSendSummaryYesterday() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  _runSummaryWithUi_(d, 'เมื่อวาน');
+}
+
+function _runSummaryWithUi_(targetDate, label) {
+  const ui = SpreadsheetApp.getUi();
+  try {
+    const r = sendDailySummaryToGroups(targetDate);
+    const dateStr = Utilities.formatDate(r.date, TZ, 'dd MMM yyyy');
+    let lines = ['สรุปยอด ' + label + ' (' + dateStr + ')',
+      '────────────────',
+      'สาขาทั้งหมด: ' + r.total,
+      '• ส่งสำเร็จ: ' + r.sent,
+      '• ส่งไม่สำเร็จ: ' + r.failed,
+      '• ข้าม (ขาด Token/Group): ' + r.skipped,
+      ''];
+    r.details.forEach(d => {
+      if (d.status === 'Sent') {
+        lines.push('✓ ' + d.code + ' ' + d.name + ' — ' + d.count + ' รายการ, รวม ' + (d.total || 0).toLocaleString());
+      } else if (d.status === 'Failed') {
+        lines.push('✗ ' + d.code + ' ' + d.name + ' — ส่งไม่สำเร็จ (เช็ค token/groupId)');
+      } else {
+        lines.push('⊘ ' + d.code + ' ' + d.name + ' — ' + (d.reason || 'ข้าม'));
+      }
+    });
+    if (r.total === 0) lines.push('ยังไม่ได้ตั้งสาขาใน Settings (B6:G10)');
+    ui.alert(lines.join('\n'));
+  } catch (err) {
+    ui.alert('เกิดข้อผิดพลาด: ' + err.message);
+    console.error(err);
+  }
+}
+
+function menuRunExpiryScan() {
+  const ui = SpreadsheetApp.getUi();
+  try {
+    const r = runDailyAtMidnight();
+    let lines = ['สแกนสมาชิกใกล้หมดอายุ / เทรนใกล้หมด',
+      '────────────────',
+      'สมาชิกทั้งหมด: ' + r.scanned + ' (Active: ' + r.active + ')',
+      '',
+      '⏰ ใกล้หมดอายุ: พบ ' + r.expiringFound + ' คน',
+      '  • ส่ง LINE สำเร็จ: ' + r.expiringSent,
+      '  • ไม่มี LINE UID: ' + r.expiringNoLine,
+      '',
+      '🔔 ชั่วโมงเทรนใกล้หมด: พบ ' + r.lowHrFound + ' คน',
+      '  • ส่ง LINE สำเร็จ: ' + r.lowHrSent,
+      '  • ไม่มี LINE UID: ' + r.lowHrNoLine];
+    const perBranchKeys = Object.keys(r.perBranch);
+    if (perBranchKeys.length > 0) {
+      lines.push('', 'แยกตามสาขา:');
+      perBranchKeys.forEach(k => {
+        const pb = r.perBranch[k];
+        lines.push('• ' + k + ' ' + pb.name + ' — หมดอายุ ' + pb.expiring + ', เทรนต่ำ ' + pb.lowHr);
+      });
+    }
+    const missKeys = Object.keys(r.branchMissing);
+    if (missKeys.length > 0) {
+      lines.push('', '⚠ พบรหัสสาขาที่ไม่ตรงกับ Settings:');
+      missKeys.forEach(k => lines.push('• "' + k + '" → ' + r.branchMissing[k] + ' คน'));
+    }
+    if (r.expiringFound === 0 && r.lowHrFound === 0) {
+      lines.push('', 'ℹ ไม่มีสมาชิกเข้าเงื่อนไขแจ้งเตือนในตอนนี้',
+        '  (expiryWarnDays=' + getConfig_().expiryWarnDays + ', trainerWarnHrs=' + getConfig_().trainerWarnHrs + ')');
+    }
+    ui.alert(lines.join('\n'));
+  } catch (err) {
+    ui.alert('เกิดข้อผิดพลาด: ' + err.message);
+    console.error(err);
+  }
 }
 
 function menuTestLine() {
@@ -347,13 +426,20 @@ function runDailyAtMidnight() {
   // cols: A empty, B=MemberID(1), C=ชื่อ(2), D=นามสกุล(3), E=อายุ(4), F=สาขา(5),
   //       G=วันสมัคร(6), H=วันหมดอายุ(7), I=วันคงเหลือ(8), J=ชม.เทรน(9),
   //       K=เทรนเนอร์(10), L=LINEUID(11), M=สถานะ(12)
-  let alertsExpiring = 0, alertsLowHr = 0;
+  const result = {
+    scanned: 0, active: 0,
+    expiringFound: 0, expiringSent: 0, expiringNoLine: 0,
+    lowHrFound: 0, lowHrSent: 0, lowHrNoLine: 0,
+    branchMissing: {},
+    perBranch: {},
+  };
   const today = new Date();
   today.setHours(0,0,0,0);
 
   for (let i = 2; i < data.length; i++) {
     const memId = data[i][1];
     if (!memId) continue;
+    result.scanned++;
     const memName = (data[i][2] || '') + ' ' + (data[i][3] || '');
     const branchKey = String(data[i][5] || '').trim();
     const expiry = data[i][7];
@@ -362,60 +448,81 @@ function runDailyAtMidnight() {
     const status = String(data[i][12] || '').trim();
 
     if (status !== 'Active') continue;
+    result.active++;
 
     const b = cfg.branches[branchKey];
     if (!b) {
+      result.branchMissing[branchKey || '(ว่าง)'] = (result.branchMissing[branchKey || '(ว่าง)'] || 0) + 1;
       logAlert_('Config Missing', branchKey, memId, memName, '-', 'ไม่พบสาขา ' + branchKey + ' ใน Settings', 'Skipped');
       continue;
     }
+    if (!result.perBranch[b.code]) result.perBranch[b.code] = { name: b.name, expiring: 0, lowHr: 0 };
 
     // วันหมดอายุใกล้
     if (expiry instanceof Date) {
       const daysLeft = Math.round((expiry.getTime() - today.getTime()) / (1000*60*60*24));
       if (daysLeft <= cfg.expiryWarnDays && daysLeft >= 0) {
         const msg = `⏰ ${b.name}\nคุณ${memName} สมาชิกจะหมดอายุในอีก ${daysLeft} วัน\n(หมดอายุ ${Utilities.formatDate(expiry, TZ, 'dd MMM yyyy')})\nต่ออายุได้ที่เคาน์เตอร์`;
-        if (lineUid) linePushText_(b.token, lineUid, msg);
+        if (lineUid) {
+          linePushText_(b.token, lineUid, msg);
+          result.expiringSent++;
+        } else {
+          result.expiringNoLine++;
+        }
         logAlert_('Member Expiring', branchKey, memId, memName, daysLeft + ' วัน', msg, lineUid ? 'Sent' : 'No LINE');
-        alertsExpiring++;
+        result.expiringFound++;
+        result.perBranch[b.code].expiring++;
       }
     }
 
     // ชั่วโมงเทรนใกล้หมด (เผื่อกรณีลืมเช็ค)
     if (hours > 0 && hours <= cfg.trainerWarnHrs) {
       const msg = `🔔 ${b.name}\nคุณ${memName} เหลือชั่วโมงเทรน ${hours} ครั้ง`;
-      if (lineUid) linePushText_(b.token, lineUid, msg);
+      if (lineUid) {
+        linePushText_(b.token, lineUid, msg);
+        result.lowHrSent++;
+      } else {
+        result.lowHrNoLine++;
+      }
       logAlert_('Trainer Hours Low', branchKey, memId, memName, hours, msg, lineUid ? 'Sent' : 'No LINE');
-      alertsLowHr++;
+      result.lowHrFound++;
+      result.perBranch[b.code].lowHr++;
     }
   }
 
-  console.log('runDailyAtMidnight: expiring=' + alertsExpiring + ', lowHrs=' + alertsLowHr);
+  console.log('runDailyAtMidnight: expiring=' + result.expiringFound + ', lowHrs=' + result.lowHrFound);
+  return result;
 }
 
 // ========== Time-based: 21:00 — สรุปเข้า LINE Group ของแต่ละสาขา ==========
 
-function sendDailySummaryToGroups() {
+function sendDailySummaryToGroups(targetDate) {
   const cfg = getConfig_();
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sales = ss.getSheetByName('Sales').getDataRange().getValues();
   const trainings = ss.getSheetByName('Trainings').getDataRange().getValues();
 
-  const today = new Date();
-  today.setHours(0,0,0,0);
-  const tomorrow = new Date(today.getTime() + 24*3600*1000);
+  const dayStart = new Date(targetDate || new Date());
+  dayStart.setHours(0,0,0,0);
+  const dayEnd = new Date(dayStart.getTime() + 24*3600*1000);
 
-  Object.values(cfg.branches).forEach(b => {
+  const branches = Object.values(cfg.branches);
+  const result = { date: dayStart, total: branches.length, sent: 0, failed: 0, skipped: 0, details: [] };
+
+  branches.forEach(b => {
     if (!b.token || !b.groupId) {
+      const reason = 'ขาด LINE Token หรือ Group ID ใน Settings';
       logAlert_('Daily Summary', b.code, '-', '-', '-',
-        'ข้ามสาขา ' + b.code + ' (' + b.name + ') — ขาด LINE Token หรือ Group ID ใน Settings',
-        'Skipped');
+        'ข้ามสาขา ' + b.code + ' (' + b.name + ') — ' + reason, 'Skipped');
+      result.skipped++;
+      result.details.push({ code: b.code, name: b.name, status: 'Skipped', reason });
       return;
     }
     let mem=0, pt=0, plan=0, total=0, count=0, train=0;
     for (let i = 2; i < sales.length; i++) {
       const ts = sales[i][1]; // col B
       if (!(ts instanceof Date)) continue;
-      if (ts < today || ts >= tomorrow) continue;
+      if (ts < dayStart || ts >= dayEnd) continue;
       if (String(sales[i][2] || '').trim() !== b.code) continue;
       const amt = Number(sales[i][7] || 0);
       const type = sales[i][4];
@@ -427,14 +534,14 @@ function sendDailySummaryToGroups() {
     for (let i = 2; i < trainings.length; i++) {
       const ts = trainings[i][1];
       if (!(ts instanceof Date)) continue;
-      if (ts < today || ts >= tomorrow) continue;
+      if (ts < dayStart || ts >= dayEnd) continue;
       if (String(trainings[i][2] || '').trim() !== b.code) continue;
       if (trainings[i][8] === '✓ Verified') train++;
     }
 
     const text =
       `📊 สรุปยอด ${b.name}\n` +
-      `วันที่ ${Utilities.formatDate(today, TZ, 'dd MMM yyyy')}\n` +
+      `วันที่ ${Utilities.formatDate(dayStart, TZ, 'dd MMM yyyy')}\n` +
       `———————————\n` +
       `• MEM:  ${cfg.currency}${mem.toLocaleString()}\n` +
       `• PT:   ${cfg.currency}${pt.toLocaleString()}\n` +
@@ -445,7 +552,11 @@ function sendDailySummaryToGroups() {
 
     const ok = linePushText_(b.token, b.groupId, text);
     logAlert_('Daily Summary', b.code, '-', '-', count + ' รายการ', text, ok ? 'Sent' : 'Failed');
+    if (ok) result.sent++; else result.failed++;
+    result.details.push({ code: b.code, name: b.name, status: ok ? 'Sent' : 'Failed', count, total });
   });
+
+  return result;
 }
 
 // ========== สมัครสมาชิกใหม่ — ฟอร์ม + บันทึก + สร้างเอกสารปริ้น ==========
