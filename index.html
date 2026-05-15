@@ -1602,6 +1602,10 @@ function renderSalesEntry(root) {
           </select>
         </div>
         <div class="field">
+          <label>วันที่/เวลา <small class="muted">(ปล่อยว่าง = ตอนนี้)</small></label>
+          <input id="se-ts" type="datetime-local">
+        </div>
+        <div class="field">
           <label>ชื่อสมาชิก <small class="muted">(พิมพ์เพื่อค้นหาสมาชิกเก่า)</small></label>
           <input id="se-mname" list="se-members-list" type="text" autocomplete="off" placeholder="ชื่อ-นามสกุล" oninput="onSaleMemberInput()">
           <datalist id="se-members-list">${memberOptions}</datalist>
@@ -1638,10 +1642,19 @@ function renderSalesEntry(root) {
   `;
   root.appendChild(prev);
 
-  ['se-branch','se-type','se-amount','se-channel','se-mname','se-note'].forEach(id => {
+  ['se-branch','se-type','se-amount','se-channel','se-mname','se-note','se-ts'].forEach(id => {
     document.getElementById(id).addEventListener('input', updateLinePreview);
     document.getElementById(id).addEventListener('change', updateLinePreview);
   });
+  setSaleTsToNow();
+}
+
+function setSaleTsToNow() {
+  const el = document.getElementById('se-ts');
+  if (!el) return;
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  el.value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function onMemberPick() {
@@ -1740,6 +1753,7 @@ function resetSaleForm() {
   document.getElementById('sales-form').reset();
   const hidden = document.getElementById('se-member-id');
   if (hidden) hidden.value = '';
+  setSaleTsToNow();
   updateRenewAvailability();
   updateSlipPreview();
   updateLinePreview();
@@ -2063,8 +2077,11 @@ async function onSubmitSale(e) {
   }
 
   const needsLine = (type === 'MEM' || type === 'PT');
+  const tsInput = (document.getElementById('se-ts') || {}).value || '';
+  const tsDate = tsInput ? new Date(tsInput) : new Date();
+  if (isNaN(tsDate.getTime())) { toast('วันที่/เวลาไม่ถูกต้อง', 'bad'); return; }
   const sale = {
-    id: nid(), ts: new Date().toISOString(),
+    id: nid(), ts: tsDate.toISOString(),
     branch, empId, type, memberId, memberName, amount, channel, slip, note,
     notify: needsLine ? 'Pending' : '—',
   };
