@@ -665,22 +665,42 @@ const db = {
 
   async pushAll(data) {
     if (!this.enabled) return;
+    const tableNames = [];
+    const ops = [];
+    for (const [name, spec] of Object.entries(TABLE_SPEC)) {
+      const items = data[name] || [];
+      if (items.length === 0) continue;
+      const rows = items.map(i => this.toRow(name, i));
+      tableNames.push(name);
+      ops.push(this.client.from(spec.table).upsert(rows, { onConflict: spec.pk }));
+    }
+    tableNames.push('settings:global');
+    ops.push(this.client.from('app_settings').upsert({ key: 'global', value: data.settings || {} }, { onConflict: 'key' }));
+    tableNames.push('settings:lastDailyRun');
+    ops.push(this.client.from('app_settings').upsert({ key: 'lastDailyRun', value: data.lastDailyRun || '' }, { onConflict: 'key' }));
+    let results;
     try {
-      const ops = [];
-      for (const [name, spec] of Object.entries(TABLE_SPEC)) {
-        const items = data[name] || [];
-        if (items.length === 0) continue;
-        const rows = items.map(i => this.toRow(name, i));
-        ops.push(this.client.from(spec.table).upsert(rows, { onConflict: spec.pk }));
-      }
-      ops.push(this.client.from('app_settings').upsert({ key: 'global', value: data.settings || {} }, { onConflict: 'key' }));
-      ops.push(this.client.from('app_settings').upsert({ key: 'lastDailyRun', value: data.lastDailyRun || '' }, { onConflict: 'key' }));
-      const results = await Promise.all(ops);
-      for (const r of results) if (r.error) throw r.error;
-      this.setStatus('online');
+      results = await Promise.all(ops);
     } catch (e) {
-      console.error('[db] pushAll failed', e);
+      console.error('[db] pushAll network/runtime error', e);
       this.setStatus('error');
+      if (typeof toast === 'function') toast('ซิงค์ฐานข้อมูลไม่สำเร็จ: ' + (e.message || 'unknown'), 'bad');
+      return;
+    }
+    const failures = [];
+    results.forEach((r, i) => { if (r && r.error) failures.push({ name: tableNames[i], error: r.error }); });
+    if (failures.length === 0) {
+      this.setStatus('online');
+      return;
+    }
+    failures.forEach(f => console.error('[db] upsert failed', f.name, f.error));
+    this.setStatus('error');
+    if (typeof toast === 'function') {
+      const f0 = failures[0];
+      const msg = (f0.error && (f0.error.message || f0.error.details)) || 'unknown';
+      const hintCol = /column .* does not exist/i.test(msg) || (f0.error && f0.error.code === '42703');
+      const tip = hintCol ? ' — โครงสร้าง Supabase ไม่ตรงกับโค้ด (ดู console)' : '';
+      toast(`ซิงค์ตาราง ${f0.name} ล้มเหลว: ${msg}${tip}`, 'bad');
     }
   },
 
