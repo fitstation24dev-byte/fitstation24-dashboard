@@ -2234,7 +2234,7 @@ function renderRecentTrainingsContent(card) {
   const ownerCanDelete = isOwner();
   let rows = '';
   trainings.forEach(t => {
-    const actions = ownerCanDelete ? `<td class="center"><button class="btn small danger" onclick="deleteTraining('${t.id}')">ลบ</button></td>` : '';
+    const actions = ownerCanDelete ? `<td class="center"><button class="btn small secondary" onclick="editTrainingDate('${t.id}')" title="แก้ไขวันที่">✎ วันที่</button> <button class="btn small danger" onclick="deleteTraining('${t.id}')">ลบ</button></td>` : '';
     rows += `<tr>
       <td>${fmtTime(t.ts)}</td>
       <td>${_h(t.branch)}</td>
@@ -3169,7 +3169,7 @@ function renderSalesLog(root) {
   list.slice(0, 100).forEach(s => {
     const slipLink = s.slip ? `<a href="#" onclick="event.preventDefault(); viewSaleSlipById('${s.id}');" style="color: var(--accent); cursor:pointer;">ดูสลิป</a>` : '<span class="muted">—</span>';
     const channelBadge = s.channel ? `<span class="badge gray">${s.channel}</span>` : '<span class="muted">—</span>';
-    const actions = ownerCanDelete ? `<button class="btn small danger" onclick="deleteSale('${s.id}')">ลบ</button>` : '';
+    const actions = ownerCanDelete ? `<button class="btn small secondary" onclick="editSaleDate('${s.id}')" title="แก้ไขวันที่">✎ วันที่</button> <button class="btn small danger" onclick="deleteSale('${s.id}')">ลบ</button>` : '';
     rows += `<tr>
       <td>${fmtTime(s.ts)}</td>
       <td>${_h(s.branch)}</td>
@@ -4169,6 +4169,91 @@ function deleteTraining(id) {
   DATA.trainings = DATA.trainings.filter(t => t.id !== id);
   db.del('trainings', id);
   saveData(); toast('ลบเรียบร้อย', 'ok'); navigate('trainings');
+}
+
+function isoToLocalDtInput(iso) {
+  const d = iso ? new Date(iso) : new Date();
+  if (isNaN(d.getTime())) return '';
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function editSaleDate(id) {
+  if (!isOwner()) { toast('เฉพาะ Owner เท่านั้นที่แก้ไขวันที่ได้', 'bad'); return; }
+  const s = DATA.sales.find(x => x.id === id);
+  if (!s) { toast('ไม่พบรายการ', 'bad'); return; }
+  showModal(`
+    <h3>แก้ไขวันที่ลงข้อมูล (ขาย)</h3>
+    <div class="muted small" style="margin-bottom: 8px;">
+      ${_h(s.type || '')} · ${_h(s.branch || '')} · ${_h(s.memberName || 'walk-in')} · ${thb(s.amount)}
+    </div>
+    <form id="edit-sale-date-form" onsubmit="saveSaleDate(event, '${_h(s.id)}')">
+      <div class="form-grid">
+        <div class="field full">
+          <label>วันที่/เวลา *</label>
+          <input id="esd-ts" type="datetime-local" required value="${isoToLocalDtInput(s.ts)}">
+          <small class="muted">เดิม: ${_h(fmtTime(s.ts))}</small>
+        </div>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn secondary" onclick="closeModal()">ยกเลิก</button>
+        <button type="submit" class="btn">บันทึก</button>
+      </div>
+    </form>
+  `);
+}
+
+function saveSaleDate(e, id) {
+  if (e) e.preventDefault();
+  if (!isOwner()) { toast('เฉพาะ Owner เท่านั้นที่แก้ไขวันที่ได้', 'bad'); return; }
+  const s = DATA.sales.find(x => x.id === id);
+  if (!s) { toast('ไม่พบรายการ', 'bad'); return; }
+  const v = document.getElementById('esd-ts').value;
+  if (!v) { toast('กรุณาเลือกวันที่/เวลา', 'bad'); return; }
+  const d = new Date(v);
+  if (isNaN(d.getTime())) { toast('รูปแบบวันที่ไม่ถูกต้อง', 'bad'); return; }
+  s.ts = d.toISOString();
+  saveData(); closeModal(); toast('บันทึกวันที่เรียบร้อย', 'ok'); renderSalesLog(document.getElementById('content'));
+}
+
+function editTrainingDate(id) {
+  if (!isOwner()) { toast('เฉพาะ Owner เท่านั้นที่แก้ไขวันที่ได้', 'bad'); return; }
+  const t = DATA.trainings.find(x => x.id === id);
+  if (!t) { toast('ไม่พบรายการ', 'bad'); return; }
+  showModal(`
+    <h3>แก้ไขวันที่ลงข้อมูล (เทรน)</h3>
+    <div class="muted small" style="margin-bottom: 8px;">
+      ${_h(t.branch || '')} · ${_h(t.memberName || '')} · ${_h(t.trainerName || '')}
+    </div>
+    <form id="edit-train-date-form" onsubmit="saveTrainingDate(event, '${_h(t.id)}')">
+      <div class="form-grid">
+        <div class="field full">
+          <label>วันที่/เวลา *</label>
+          <input id="etd-ts" type="datetime-local" required value="${isoToLocalDtInput(t.ts)}">
+          <small class="muted">เดิม: ${_h(fmtTime(t.ts))}</small>
+        </div>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn secondary" onclick="closeModal()">ยกเลิก</button>
+        <button type="submit" class="btn">บันทึก</button>
+      </div>
+    </form>
+  `);
+}
+
+function saveTrainingDate(e, id) {
+  if (e) e.preventDefault();
+  if (!isOwner()) { toast('เฉพาะ Owner เท่านั้นที่แก้ไขวันที่ได้', 'bad'); return; }
+  const t = DATA.trainings.find(x => x.id === id);
+  if (!t) { toast('ไม่พบรายการ', 'bad'); return; }
+  const v = document.getElementById('etd-ts').value;
+  if (!v) { toast('กรุณาเลือกวันที่/เวลา', 'bad'); return; }
+  const d = new Date(v);
+  if (isNaN(d.getTime())) { toast('รูปแบบวันที่ไม่ถูกต้อง', 'bad'); return; }
+  t.ts = d.toISOString();
+  saveData(); closeModal(); toast('บันทึกวันที่เรียบร้อย', 'ok');
+  const card = document.getElementById('recent-trainings-card');
+  if (card) renderRecentTrainingsContent(card);
 }
 
 function deleteAlert(id) {
