@@ -253,10 +253,16 @@ function onEditSales_(e) {
   if (notifyStatus === 'Sent') return;
 
   const cfg = getConfig_();
-  const b = cfg.branches[branch];
+  const branchKey = String(branch || '').trim();
+  const b = cfg.branches[branchKey];
   if (!b) {
     sh.getRange(row, 12).setValue('Failed');
-    sh.getRange(row, 13).setValue('ไม่พบสาขา ' + branch);
+    sh.getRange(row, 13).setValue('ไม่พบสาขา ' + branchKey);
+    return;
+  }
+  if (!b.token || !b.groupId) {
+    sh.getRange(row, 12).setValue('Failed');
+    sh.getRange(row, 13).setValue('สาขา ' + branchKey + ' ยังไม่ได้ตั้ง LINE Token/Group ใน Settings');
     return;
   }
 
@@ -318,8 +324,8 @@ function onEditTrainings_(e) {
 
       // แจ้งเตือน LINE OA ของสมาชิกถ้าเหลือ ≤ trainerWarnHrs
       const cfg = getConfig_();
-      const b = cfg.branches[branch];
-      const lineUid = data[i][10]; // คอลัมน์ K = LINE User ID (index 10)
+      const b = cfg.branches[String(branch || '').trim()];
+      const lineUid = data[i][11]; // คอลัมน์ L = LINE User ID (index 11)
       if (b && newVal <= cfg.trainerWarnHrs && lineUid) {
         const text = `🔔 ${b.name}\nคุณ${memName} เหลือชั่วโมงเทรน ${newVal} ครั้ง\nกรุณาติดต่อเคาน์เตอร์เพื่อต่ออายุได้ทันที`;
         linePushText_(b.token, lineUid, text);
@@ -349,32 +355,36 @@ function runDailyAtMidnight() {
     const memId = data[i][1];
     if (!memId) continue;
     const memName = (data[i][2] || '') + ' ' + (data[i][3] || '');
-    const branch = data[i][5];
+    const branchKey = String(data[i][5] || '').trim();
     const expiry = data[i][7];
     const hours  = Number(data[i][9] || 0);
-    const lineUid = data[i][10];
-    const status = data[i][12];
+    const lineUid = data[i][11]; // คอลัมน์ L = LINE User ID
+    const status = String(data[i][12] || '').trim();
 
     if (status !== 'Active') continue;
+
+    const b = cfg.branches[branchKey];
+    if (!b) {
+      logAlert_('Config Missing', branchKey, memId, memName, '-', 'ไม่พบสาขา ' + branchKey + ' ใน Settings', 'Skipped');
+      continue;
+    }
 
     // วันหมดอายุใกล้
     if (expiry instanceof Date) {
       const daysLeft = Math.round((expiry.getTime() - today.getTime()) / (1000*60*60*24));
       if (daysLeft <= cfg.expiryWarnDays && daysLeft >= 0) {
-        const b = cfg.branches[branch];
-        const msg = `⏰ ${b ? b.name : 'FITSTATION 24'}\nคุณ${memName} สมาชิกจะหมดอายุในอีก ${daysLeft} วัน\n(หมดอายุ ${Utilities.formatDate(expiry, TZ, 'dd MMM yyyy')})\nต่ออายุได้ที่เคาน์เตอร์`;
-        if (b && lineUid) linePushText_(b.token, lineUid, msg);
-        logAlert_('Member Expiring', branch, memId, memName, daysLeft + ' วัน', msg, lineUid ? 'Sent' : 'No LINE');
+        const msg = `⏰ ${b.name}\nคุณ${memName} สมาชิกจะหมดอายุในอีก ${daysLeft} วัน\n(หมดอายุ ${Utilities.formatDate(expiry, TZ, 'dd MMM yyyy')})\nต่ออายุได้ที่เคาน์เตอร์`;
+        if (lineUid) linePushText_(b.token, lineUid, msg);
+        logAlert_('Member Expiring', branchKey, memId, memName, daysLeft + ' วัน', msg, lineUid ? 'Sent' : 'No LINE');
         alertsExpiring++;
       }
     }
 
     // ชั่วโมงเทรนใกล้หมด (เผื่อกรณีลืมเช็ค)
     if (hours > 0 && hours <= cfg.trainerWarnHrs) {
-      const b = cfg.branches[branch];
-      const msg = `🔔 ${b ? b.name : 'FITSTATION 24'}\nคุณ${memName} เหลือชั่วโมงเทรน ${hours} ครั้ง`;
-      if (b && lineUid) linePushText_(b.token, lineUid, msg);
-      logAlert_('Trainer Hours Low', branch, memId, memName, hours, msg, lineUid ? 'Sent' : 'No LINE');
+      const msg = `🔔 ${b.name}\nคุณ${memName} เหลือชั่วโมงเทรน ${hours} ครั้ง`;
+      if (lineUid) linePushText_(b.token, lineUid, msg);
+      logAlert_('Trainer Hours Low', branchKey, memId, memName, hours, msg, lineUid ? 'Sent' : 'No LINE');
       alertsLowHr++;
     }
   }
@@ -395,13 +405,18 @@ function sendDailySummaryToGroups() {
   const tomorrow = new Date(today.getTime() + 24*3600*1000);
 
   Object.values(cfg.branches).forEach(b => {
-    if (!b.token || !b.groupId) return;
+    if (!b.token || !b.groupId) {
+      logAlert_('Daily Summary', b.code, '-', '-', '-',
+        'ข้ามสาขา ' + b.code + ' (' + b.name + ') — ขาด LINE Token หรือ Group ID ใน Settings',
+        'Skipped');
+      return;
+    }
     let mem=0, pt=0, plan=0, total=0, count=0, train=0;
     for (let i = 2; i < sales.length; i++) {
       const ts = sales[i][1]; // col B
       if (!(ts instanceof Date)) continue;
       if (ts < today || ts >= tomorrow) continue;
-      if (sales[i][2] !== b.code) continue;
+      if (String(sales[i][2] || '').trim() !== b.code) continue;
       const amt = Number(sales[i][7] || 0);
       const type = sales[i][4];
       count++;
@@ -413,7 +428,7 @@ function sendDailySummaryToGroups() {
       const ts = trainings[i][1];
       if (!(ts instanceof Date)) continue;
       if (ts < today || ts >= tomorrow) continue;
-      if (trainings[i][2] !== b.code) continue;
+      if (String(trainings[i][2] || '').trim() !== b.code) continue;
       if (trainings[i][8] === '✓ Verified') train++;
     }
 
@@ -428,7 +443,8 @@ function sendDailySummaryToGroups() {
       `———————————\n` +
       `รวม: ${cfg.currency}${total.toLocaleString()} (${count} รายการ)`;
 
-    linePushText_(b.token, b.groupId, text);
+    const ok = linePushText_(b.token, b.groupId, text);
+    logAlert_('Daily Summary', b.code, '-', '-', count + ' รายการ', text, ok ? 'Sent' : 'Failed');
   });
 }
 
