@@ -116,6 +116,82 @@ function linePushText_(token, to, text) {
   return ok;
 }
 
+function lineGetBotInfo_(token) {
+  if (!token) return { ok: false, reason: 'ไม่มี token' };
+  try {
+    const res = UrlFetchApp.fetch('https://api.line.me/v2/bot/info', {
+      method: 'get',
+      headers: { 'Authorization': 'Bearer ' + token },
+      muteHttpExceptions: true,
+    });
+    const code = res.getResponseCode();
+    const body = res.getContentText();
+    if (code !== 200) return { ok: false, reason: 'token ใช้ไม่ได้ (HTTP ' + code + ')', body };
+    const info = JSON.parse(body);
+    return { ok: true, info };
+  } catch (err) {
+    return { ok: false, reason: String(err) };
+  }
+}
+
+function lineGetGroupSummary_(token, groupId) {
+  if (!token || !groupId) return { ok: false, reason: 'ไม่มี token/groupId' };
+  try {
+    const res = UrlFetchApp.fetch('https://api.line.me/v2/bot/group/' + encodeURIComponent(groupId) + '/summary', {
+      method: 'get',
+      headers: { 'Authorization': 'Bearer ' + token },
+      muteHttpExceptions: true,
+    });
+    const code = res.getResponseCode();
+    const body = res.getContentText();
+    if (code === 404) return { ok: false, reason: 'Bot ไม่ได้อยู่ในกลุ่มนี้ (HTTP 404) — ต้องเชิญบอทเข้ากลุ่มก่อน' };
+    if (code === 400) return { ok: false, reason: 'Group ID ผิดรูปแบบ (HTTP 400)', body };
+    if (code !== 200) return { ok: false, reason: 'HTTP ' + code, body };
+    return { ok: true, group: JSON.parse(body) };
+  } catch (err) {
+    return { ok: false, reason: String(err) };
+  }
+}
+
+function menuDiagnoseLine() {
+  const ui = SpreadsheetApp.getUi();
+  const cfg = getConfig_();
+  const codes = Object.keys(cfg.branches);
+  if (codes.length === 0) { ui.alert('ยังไม่ได้ตั้งสาขาใน Settings'); return; }
+
+  const lines = ['🔍 วิเคราะห์ LINE Bot ทุกสาขา', '────────────────'];
+  codes.forEach(code => {
+    const b = cfg.branches[code];
+    lines.push('', '• ' + code + ' — ' + b.name);
+
+    if (!b.token) { lines.push('  ❌ ไม่มี LINE Token ใน Settings'); return; }
+    const info = lineGetBotInfo_(b.token);
+    if (!info.ok) { lines.push('  ❌ Token: ' + info.reason); return; }
+    lines.push('  ✓ Token ใช้ได้ — Bot: ' + info.info.displayName + ' (' + info.info.basicId + ')');
+
+    if (!b.groupId) { lines.push('  ❌ ไม่มี Group ID ใน Settings'); return; }
+    const firstChar = String(b.groupId).charAt(0);
+    if (firstChar === 'U') {
+      lines.push('  ⚠ Group ID = "' + b.groupId.slice(0, 8) + '..." ขึ้นต้นด้วย U → นี่คือ User ID ไม่ใช่ Group ID');
+      lines.push('     ต้องการ Group ID (ขึ้นต้นด้วย C) ลองให้บอทเข้ากลุ่มแล้วใช้ webhook ดู groupId');
+      return;
+    }
+    if (firstChar !== 'C' && firstChar !== 'R') {
+      lines.push('  ⚠ Group ID = "' + b.groupId.slice(0, 8) + '..." รูปแบบน่าจะผิด — Group ปกติขึ้นต้น "C", Room ขึ้นต้น "R"');
+    }
+
+    const gs = lineGetGroupSummary_(b.token, b.groupId);
+    if (!gs.ok) { lines.push('  ❌ Group: ' + gs.reason); return; }
+    lines.push('  ✓ Group: "' + gs.group.groupName + '" (Bot อยู่ในกลุ่ม ✓)');
+
+    const ok = linePushText_(b.token, b.groupId,
+      '🧪 ทดสอบ — ' + b.name + '\nเวลา: ' + Utilities.formatDate(new Date(), TZ, 'dd MMM yyyy HH:mm'));
+    lines.push(ok ? '  ✓ ส่งข้อความทดสอบสำเร็จ — เช็คในกลุ่ม LINE' : '  ❌ ส่งข้อความทดสอบไม่สำเร็จ');
+  });
+
+  ui.alert(lines.join('\n'));
+}
+
 function lineGetQuota_(token) {
   if (!token) return null;
   const headers = { 'Authorization': 'Bearer ' + token };
@@ -197,6 +273,7 @@ function handleOpen(e) {
     .addItem('ติดตั้ง Triggers (ครั้งแรก)', 'installTriggers')
     .addItem('เตรียมคอลัมน์สมัครสมาชิก (ครั้งแรก)', 'setupMemberRegistration')
     .addItem('ทดสอบส่ง LINE (สาขาเลือก)', 'menuTestLine')
+    .addItem('🔍 วิเคราะห์ LINE ทุกสาขา', 'menuDiagnoseLine')
     .addItem('เช็คโควต้า LINE ทุกสาขา', 'menuCheckLineQuota')
     .addItem('สรุปยอดวันนี้ → LINE Group', 'menuSendSummaryToday')
     .addItem('สรุปยอดเมื่อวาน → LINE Group', 'menuSendSummaryYesterday')
