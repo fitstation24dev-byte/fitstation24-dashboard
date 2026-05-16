@@ -4062,9 +4062,10 @@ function renderEmployees(root) {
   const canEdit = isManagerOrAbove();
   const tb = document.createElement('div');
   tb.className = 'toolbar';
+  const exportBtn = `<button class="btn secondary" onclick="exportCSV('employees')">Export CSV</button>`;
   tb.innerHTML = canEdit
-    ? `<div class="muted">สิทธิ์: ${SESSION.role} · เพิ่ม/แก้/ลบ ได้</div><button class="btn" onclick="openEmployeeModal()">+ เพิ่มพนักงาน</button>`
-    : `<div class="muted">โหมดดูอย่างเดียว · เฉพาะ Admin/Manager เท่านั้นที่เพิ่ม/ลบพนักงานได้</div><div></div>`;
+    ? `<div class="muted">สิทธิ์: ${SESSION.role} · เพิ่ม/แก้/ลบ ได้</div><div style="display:flex;gap:8px;">${exportBtn}<button class="btn" onclick="openEmployeeModal()">+ เพิ่มพนักงาน</button></div>`
+    : `<div class="muted">โหมดดูอย่างเดียว · เฉพาะ Admin/Manager เท่านั้นที่เพิ่ม/ลบพนักงานได้</div>${exportBtn}`;
   root.appendChild(tb);
 
   const list = filterByBranch(DATA.employees);
@@ -4849,6 +4850,18 @@ function exportCSV(kind) {
     rows.push(['Time','Branch','EmpID','Type','Channel','MemberID','MemberName','Amount','Slip','Note','Notify']);
     filterByBranch(DATA.sales).filter(s => s.type !== 'Train').forEach(s => {
       rows.push([s.ts, s.branch, s.empId, s.type, s.channel || '', s.memberId, s.memberName, s.amount, s.slip, s.note, s.notify]);
+    });
+  } else if (kind === 'employees') {
+    rows.push(['EmpID','ชื่อ','นามสกุล','ตำแหน่ง','สาขา','สถานะ','ยอดขาย MEM','ยอดขาย PT','ยอดขายรวม','จำนวนรายการขาย','ชั่วโมงเทรน (ครั้ง)']);
+    filterByBranch(DATA.employees).forEach(e => {
+      const empSales = DATA.sales.filter(s => s.empId === e.id && (s.type === 'MEM' || s.type === 'PT'));
+      const memAmt = empSales.filter(s => s.type === 'MEM').reduce((a,b) => a + (Number(b.amount) || 0), 0);
+      const ptAmt  = empSales.filter(s => s.type === 'PT').reduce((a,b) => a + (Number(b.amount) || 0), 0);
+      const isTrainer = normalizePosition(e.position) === 'Trainer';
+      const trainCount = isTrainer
+        ? DATA.trainings.filter(t => t.trainerId === e.id && t.verified).length
+        : '';
+      rows.push([e.id, e.name, e.surname, e.position, e.branch, e.status, memAmt, ptAmt, memAmt + ptAmt, empSales.length, trainCount]);
     });
   }
   const csv = rows.map(r => r.map(v => '"' + String(v||'').replace(/"/g,'""') + '"').join(',')).join('\n');
