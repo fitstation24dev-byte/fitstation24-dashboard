@@ -805,15 +805,22 @@ function defaultData() {
     ],
     alerts: [],
     invoices: [],
-    packages: [
-      { id: nid(), code: 'MEM-1M',  name: 'สมาชิกรายเดือน',    type: 'MEM', price: 1200,  hours: 0,  note: '1 เดือน' },
-      { id: nid(), code: 'MEM-3M',  name: 'สมาชิก 3 เดือน',     type: 'MEM', price: 3300,  hours: 0,  note: '3 เดือน' },
-      { id: nid(), code: 'MEM-6M',  name: 'สมาชิก 6 เดือน',     type: 'MEM', price: 6000,  hours: 0,  note: '6 เดือน' },
-      { id: nid(), code: 'MEM-12M', name: 'สมาชิก 1 ปี',        type: 'MEM', price: 10000, hours: 0,  note: '12 เดือน' },
-      { id: nid(), code: 'PT-10',   name: 'PT 10 ครั้ง',         type: 'PT',  price: 5000,  hours: 10, note: '' },
-      { id: nid(), code: 'PT-20',   name: 'PT 20 ครั้ง',         type: 'PT',  price: 9500,  hours: 20, note: '' },
-      { id: nid(), code: 'DAY',     name: 'รายวัน',              type: 'Plan',price: 100,   hours: 0,  note: '' },
-    ],
+    packages: (function() {
+      const presets = [
+        { code: 'MEM-1M',  name: 'สมาชิกรายเดือน',    type: 'MEM', price: 1200,  hours: 0,  note: '1 เดือน' },
+        { code: 'MEM-3M',  name: 'สมาชิก 3 เดือน',     type: 'MEM', price: 3300,  hours: 0,  note: '3 เดือน' },
+        { code: 'MEM-6M',  name: 'สมาชิก 6 เดือน',     type: 'MEM', price: 6000,  hours: 0,  note: '6 เดือน' },
+        { code: 'MEM-12M', name: 'สมาชิก 1 ปี',        type: 'MEM', price: 10000, hours: 0,  note: '12 เดือน' },
+        { code: 'PT-10',   name: 'PT 10 ครั้ง',         type: 'PT',  price: 5000,  hours: 10, note: '' },
+        { code: 'PT-20',   name: 'PT 20 ครั้ง',         type: 'PT',  price: 9500,  hours: 20, note: '' },
+        { code: 'DAY',     name: 'รายวัน',              type: 'Plan',price: 100,   hours: 0,  note: '' },
+      ];
+      const out = [];
+      ['BR01','BR02','BR03'].forEach(br => {
+        presets.forEach(p => out.push(Object.assign({ id: nid(), branch: br }, p)));
+      });
+      return out;
+    })(),
     loginLog: [],
     lastDailyRun: '',
   };
@@ -1563,7 +1570,7 @@ function renderSalesEntry(root) {
       <div class="form-grid">
         <div class="field">
           <label>สาขา *</label>
-          <select id="se-branch" required>${branches}</select>
+          <select id="se-branch" required onchange="refreshSalePackageOptions()">${branches}</select>
         </div>
         <div class="field">
           <label>พนักงาน *</label>
@@ -1583,7 +1590,6 @@ function renderSalesEntry(root) {
           <label>แพ็กเกจ <small class="muted">(เลือกเพื่อกรอกอัตโนมัติ)</small></label>
           <select id="se-package" onchange="onPickSalePackage()">
             <option value="">— ไม่ระบุ —</option>
-            ${(DATA.packages || []).map(p => `<option value="${_h(p.id)}">${_h(p.code ? p.code + ' · ' : '')}${_h(p.name)} — ${thb(p.price)}</option>`).join('')}
           </select>
         </div>
         <div class="field">
@@ -1647,6 +1653,19 @@ function renderSalesEntry(root) {
     document.getElementById(id).addEventListener('change', updateLinePreview);
   });
   setSaleTsToNow();
+  refreshSalePackageOptions();
+}
+
+function refreshSalePackageOptions() {
+  const sel = document.getElementById('se-package');
+  if (!sel) return;
+  const branchEl = document.getElementById('se-branch');
+  const br = branchEl ? branchEl.value : '';
+  const list = (DATA.packages || []).filter(p => !p.branch || !br || p.branch === br);
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">— ไม่ระบุ —</option>' +
+    list.map(p => `<option value="${_h(p.id)}">${_h(p.code ? p.code + ' · ' : '')}${_h(p.name)} — ${thb(p.price)}</option>`).join('');
+  if (prev && list.some(p => p.id === prev)) sel.value = prev;
 }
 
 function setSaleTsToNow() {
@@ -3305,11 +3324,27 @@ function renderPackages(root) {
   const card = document.createElement('div');
   card.className = 'card';
   const canEdit = SESSION && ['Owner','Manager','Staff'].includes(SESSION.role);
+  const showBranchCol = canSeeAllBranches();
 
-  const rows = DATA.packages.map(p => `
+  // filter by current branch (legacy packages without branch field are shown to all)
+  const branchFilter = effectiveBranchFilter();
+  const list = DATA.packages.filter(p => {
+    if (!p.branch) return true;
+    if (branchFilter === '*') return true;
+    return p.branch === branchFilter;
+  });
+
+  const branchName = code => {
+    const b = (DATA.branches || []).find(x => x.code === code);
+    return b ? b.name : code;
+  };
+
+  const colCount = showBranchCol ? 8 : 7;
+  const rows = list.map(p => `
     <tr>
       <td>${_h(p.code || '-')}</td>
       <td>${_h(p.name)}</td>
+      ${showBranchCol ? `<td>${p.branch ? _h(p.branch) + ' · ' + _h(branchName(p.branch)) : '<span class="muted">— ทุกสาขา —</span>'}</td>` : ''}
       <td><span class="badge ${p.type === 'MEM' ? 'ok' : p.type === 'PT' ? 'warn' : 'gray'}">${_h(p.type)}</span></td>
       <td class="right">${thb(p.price)}</td>
       <td class="center">${p.hours || 0}</td>
@@ -3320,18 +3355,22 @@ function renderPackages(root) {
     </tr>
   `).join('');
 
+  const branchTag = branchFilter === '*'
+    ? '<small class="muted">(ทุกสาขา)</small>'
+    : `<small class="muted">(สาขา ${_h(branchFilter)})</small>`;
+
   card.innerHTML = `
     <div style="display: flex; justify-content: space-between; align-items: center;">
-      <h2>แพ็กเกจ <small class="muted">(${DATA.packages.length} รายการ)</small></h2>
+      <h2>แพ็กเกจ ${branchTag} <small class="muted">${list.length} รายการ</small></h2>
       ${canEdit ? '<button class="btn" onclick="openPackageModal()">+ เพิ่มแพ็กเกจ</button>' : ''}
     </div>
     <div style="margin-top: 12px; overflow: auto;">
       <table>
         <thead><tr>
-          <th>รหัส</th><th>ชื่อแพ็กเกจ</th><th>ประเภท</th>
+          <th>รหัส</th><th>ชื่อแพ็กเกจ</th>${showBranchCol ? '<th>สาขา</th>' : ''}<th>ประเภท</th>
           <th class="right">ราคา</th><th class="center">ชม./ครั้ง</th><th>หมายเหตุ</th><th></th>
         </tr></thead>
-        <tbody>${rows || '<tr><td colspan="7" class="muted center" style="padding: 16px;">ยังไม่มีแพ็กเกจ</td></tr>'}</tbody>
+        <tbody>${rows || `<tr><td colspan="${colCount}" class="muted center" style="padding: 16px;">ยังไม่มีแพ็กเกจในสาขานี้</td></tr>`}</tbody>
       </table>
     </div>
   `;
@@ -3341,18 +3380,31 @@ function renderPackages(root) {
 function openPackageModal(id) {
   if (!Array.isArray(DATA.packages)) DATA.packages = [];
   const isNew = !id;
+  const defaultBranch = canSeeAllBranches()
+    ? (CURRENT_BRANCH && CURRENT_BRANCH !== '*' ? CURRENT_BRANCH : ((DATA.branches[0] || {}).code || ''))
+    : SESSION.branch;
   const p = isNew
-    ? { id: nid(), code: '', name: '', type: 'MEM', price: 0, hours: 0, note: '' }
+    ? { id: nid(), code: '', name: '', type: 'MEM', price: 0, hours: 0, note: '', branch: defaultBranch }
     : DATA.packages.find(x => x.id === id);
   if (!p) { toast('ไม่พบแพ็กเกจ', 'bad'); return; }
 
   const typeOpts = ['MEM','PT','Plan','Other']
     .map(t => `<option value="${t}" ${p.type === t ? 'selected' : ''}>${t}</option>`).join('');
 
+  const canPickBranch = canSeeAllBranches();
+  const currentBranch = p.branch || defaultBranch || '';
+  const branchOpts = (DATA.branches || [])
+    .map(b => `<option value="${_h(b.code)}" ${b.code === currentBranch ? 'selected' : ''}>${_h(b.code)} · ${_h(b.name)}</option>`)
+    .join('');
+  const branchField = canPickBranch
+    ? `<div class="field"><label>สาขา *</label><select id="pk-branch" required>${branchOpts}</select></div>`
+    : `<div class="field"><label>สาขา</label><input value="${_h(currentBranch)}" disabled><input type="hidden" id="pk-branch" value="${_h(currentBranch)}"></div>`;
+
   showModal(`
     <h3>${isNew ? 'เพิ่มแพ็กเกจใหม่' : 'แก้ไขแพ็กเกจ ' + _h(p.code || p.name)}</h3>
     <form id="package-form" onsubmit="savePackage(event, '${_h(p.id)}', ${isNew})">
       <div class="form-grid">
+        ${branchField}
         <div class="field"><label>รหัสแพ็กเกจ</label><input id="pk-code" value="${_h(p.code || '')}" placeholder="เช่น MEM-3M"></div>
         <div class="field"><label>ประเภท *</label><select id="pk-type" required>${typeOpts}</select></div>
         <div class="field full"><label>ชื่อแพ็กเกจ *</label><input id="pk-name" required value="${_h(p.name)}" placeholder="เช่น สมาชิก 3 เดือน"></div>
@@ -3372,8 +3424,10 @@ function openPackageModal(id) {
 function savePackage(e, id, isNew) {
   if (e) e.preventDefault();
   if (!Array.isArray(DATA.packages)) DATA.packages = [];
+  const branchEl = document.getElementById('pk-branch');
   const obj = {
     id,
+    branch: (branchEl ? branchEl.value : '') || (SESSION && SESSION.branch !== '*' ? SESSION.branch : ''),
     code: document.getElementById('pk-code').value.trim(),
     name: document.getElementById('pk-name').value.trim(),
     type: document.getElementById('pk-type').value,
