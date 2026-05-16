@@ -575,6 +575,7 @@ const TABLE_SPEC = {
   sales:     { table: 'app_sales',     pk: 'id',    fields: [['id','id'],['ts','ts'],['branch','branch'],['empId','emp_id'],['type','type'],['memberId','member_id'],['memberName','member_name'],['amount','amount'],['channel','channel'],['slip','slip'],['note','note'],['notify','notify']] },
   trainings: { table: 'app_trainings', pk: 'id',    fields: [['id','id'],['ts','ts'],['branch','branch'],['memberId','member_id'],['memberName','member_name'],['trainerId','trainer_id'],['trainerName','trainer_name'],['verified','verified'],['hoursBefore','hours_before'],['hoursAfter','hours_after']] },
   alerts:    { table: 'app_alerts',    pk: 'id',    fields: [['id','id'],['ts','ts'],['kind','kind'],['message','message'],['branch','branch'],['read','read']] },
+  packages:  { table: 'app_packages',  pk: 'id',    fields: [['id','id'],['code','code'],['name','name'],['type','type'],['price','price'],['hours','hours'],['note','note'],['branch','branch']] },
 };
 
 const db = {
@@ -884,10 +885,16 @@ async function loadData() {
           alerts:        remote.alerts,
           loginLog:      remote.loginLog,
           lastDailyRun:  remote.lastDailyRun,
+          packages:      (remote.packages && remote.packages.length)
+            ? remote.packages
+            : ((localData && Array.isArray(localData.packages) && localData.packages.length) ? localData.packages : seed.packages),
           // ฟิลด์เฉพาะเครื่อง (ไม่ได้ sync ผ่าน Supabase) — preserve จาก localStorage
           invoices:      (localData && Array.isArray(localData.invoices)) ? localData.invoices : [],
-          packages:      (localData && Array.isArray(localData.packages) && localData.packages.length) ? localData.packages : seed.packages,
         };
+        // ถ้า Supabase ยังว่างเรื่อง packages — push ข้อมูลปัจจุบันขึ้นไปครั้งแรก
+        if (!remote.packages || remote.packages.length === 0) {
+          db.pushAllDebounced(DATA);
+        }
       }
       localStorage.setItem(LS_KEY, JSON.stringify(DATA));
       return;
@@ -3451,6 +3458,7 @@ function savePackage(e, id, isNew) {
 function deletePackage(id) {
   if (!confirm('ลบแพ็กเกจนี้?')) return;
   DATA.packages = (DATA.packages || []).filter(x => x.id !== id);
+  db.del('packages', id);
   saveData();
   closeModal();
   toast('ลบแพ็กเกจเรียบร้อย', 'ok');
@@ -4916,7 +4924,7 @@ function closeModal() {
           loginLog:     remote.loginLog,
           lastDailyRun: remote.lastDailyRun,
           invoices:     preservedInvoices,
-          packages:     preservedPackages,
+          packages:     (remote.packages && remote.packages.length) ? remote.packages : preservedPackages,
         };
         localStorage.setItem(LS_KEY, JSON.stringify(DATA));
         if (CURRENT_VIEW) navigate(CURRENT_VIEW);
