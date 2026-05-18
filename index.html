@@ -3795,7 +3795,7 @@ function openPackageModal(id) {
     : DATA.packages.find(x => x.id === id);
   if (!p) { toast('ไม่พบแพ็กเกจ', 'bad'); return; }
 
-  const typeOpts = ['MEM','PT','Plan','Other']
+  const typeOpts = ['MEM','PT','MEM+PT']
     .map(t => `<option value="${t}" ${p.type === t ? 'selected' : ''}>${t}</option>`).join('');
 
   const canPickBranch = canSeeAllBranches();
