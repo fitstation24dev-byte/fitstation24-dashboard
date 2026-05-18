@@ -1915,6 +1915,29 @@ function recalcSaleAmountFromPackages() {
   }
 }
 
+function recalcSaleNoteFromPackages() {
+  const memSel = document.getElementById('se-package');
+  const ptSel = document.getElementById('se-package-pt');
+  const type = (document.getElementById('se-type') || {}).value || '';
+  const tagOf = (p) => {
+    const tag = p.code ? p.code + ' — ' + p.name : p.name;
+    return p.note ? tag + ' (' + p.note + ')' : tag;
+  };
+  const parts = [];
+  if (memSel && memSel.value) {
+    const p = (DATA.packages || []).find(x => x.id === memSel.value);
+    if (p) parts.push(tagOf(p));
+  }
+  if (type === 'MEM+PT' && ptSel && ptSel.value) {
+    const p = (DATA.packages || []).find(x => x.id === ptSel.value);
+    if (p) parts.push(tagOf(p));
+  }
+  const note = document.getElementById('se-note');
+  if (note && parts.length > 0) {
+    note.value = parts.join(' + ');
+  }
+}
+
 function onPickSalePackagePT() {
   const sel = document.getElementById('se-package-pt');
   if (!sel || !sel.value) return;
@@ -1923,6 +1946,7 @@ function onPickSalePackagePT() {
   const ptInput = document.getElementById('se-pthours');
   if (ptInput) ptInput.value = p.hours || '';
   recalcSaleAmountFromPackages();
+  recalcSaleNoteFromPackages();
   updateLinePreview();
 }
 
@@ -1983,11 +2007,7 @@ function onPickSalePackage() {
   }
   // รวมราคาของ MEM + PT (ถ้าอยู่ในโหมด MEM+PT) หรือใช้ราคาเดี่ยว
   recalcSaleAmountFromPackages();
-  const note = document.getElementById('se-note');
-  if (note) {
-    const tag = p.code ? p.code + ' — ' + p.name : p.name;
-    note.value = p.note ? tag + ' (' + p.note + ')' : tag;
-  }
+  recalcSaleNoteFromPackages();
   updateSaleSlipReq();
   updateLinePreview();
 }
