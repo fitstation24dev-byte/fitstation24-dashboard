@@ -1002,7 +1002,7 @@ function renderDashboard(root) {
   // Recent sales card
   const rs = document.createElement('div');
   rs.className = 'card';
-  const recent = sales.slice().sort((a,b) => new Date(b.ts) - new Date(a.ts)).slice(0, 8);
+  const recent = sales.slice().sort((a,b) => new Date(b.ts) - new Date(a.ts));
   let rsRows = '';
   recent.forEach(s => {
     const typeBadge = `<span style="font-weight: 600; color: ${typeColor(s.type)};">${s.type}</span>`;
@@ -1019,7 +1019,7 @@ function renderDashboard(root) {
     </tr>`;
   });
   if (rsRows === '') rsRows = '<tr><td colspan="7" class="muted center" style="padding: 20px;">ยังไม่มีรายการขาย</td></tr>';
-  rs.innerHTML = `<h2>รายการขายล่าสุด</h2>
+  rs.innerHTML = `<h2>รายการขายล่าสุด <small>${recent.length} รายการ</small></h2>
     <table>
       <thead><tr>
         <th>เวลา</th><th>ประเภท</th><th>สมาชิก</th><th>สาขา</th>
@@ -1287,7 +1287,7 @@ function renderTrainingsEntry(root) {
   // Recent trainings list
   const list = document.createElement('div');
   list.className = 'card';
-  const trainings = filterByBranch(DATA.trainings).slice().sort((a,b) => new Date(b.ts) - new Date(a.ts)).slice(0, 15);
+  const trainings = filterByBranch(DATA.trainings).slice().sort((a,b) => new Date(b.ts) - new Date(a.ts));
   let rows = '';
   trainings.forEach(t => {
     rows += `<tr>
@@ -1300,7 +1300,7 @@ function renderTrainingsEntry(root) {
     </tr>`;
   });
   if (rows === '') rows = '<tr><td colspan="6" class="muted center" style="padding: 16px;">ยังไม่มีการเทรน</td></tr>';
-  list.innerHTML = `<h2>การเทรนล่าสุด</h2>
+  list.innerHTML = `<h2>การเทรนล่าสุด <small>${trainings.length} รายการ</small></h2>
     <table>
       <thead><tr><th>เวลา</th><th>สาขา</th><th>สมาชิก</th><th>เทรนเนอร์</th><th class="center">ชั่วโมง</th><th class="center">สถานะ</th></tr></thead>
       <tbody>${rows}</tbody>
@@ -1689,7 +1689,7 @@ function renderSalesLog(root) {
   const card = document.createElement('div');
   card.className = 'card';
   let rows = '';
-  list.slice(0, 100).forEach(s => {
+  list.forEach(s => {
     const slipLink = s.slip ? `<a href="${s.slip}" target="_blank" rel="noopener" style="color: var(--accent);">ดูสลิป</a>` : '<span class="muted">—</span>';
     rows += `<tr>
       <td>${fmtTime(s.ts)}</td>
@@ -1705,7 +1705,7 @@ function renderSalesLog(root) {
   });
   if (rows === '') rows = '<tr><td colspan="9" class="muted center" style="padding: 20px;">ไม่พบรายการ</td></tr>';
   card.innerHTML = `
-    <h2>ประวัติการขาย <small>${list.length} รายการ${list.length > 100 ? ' (แสดง 100 รายการล่าสุด)' : ''}</small></h2>
+    <h2>ประวัติการขาย <small>${list.length} รายการ</small></h2>
     <table>
       <thead><tr>
         <th>เวลา</th><th>สาขา</th><th>ประเภท</th><th>พนักงาน</th>

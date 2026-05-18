@@ -1478,7 +1478,7 @@ function renderDashboard(root) {
   // Recent sales card
   const rs = document.createElement('div');
   rs.className = 'card';
-  const recent = sales.filter(s => s.type !== 'Train').slice().sort((a,b) => new Date(b.ts) - new Date(a.ts)).slice(0, 8);
+  const recent = sales.filter(s => s.type !== 'Train').slice().sort((a,b) => new Date(b.ts) - new Date(a.ts));
   let rsRows = '';
   recent.forEach(s => {
     const typeBadge = `<span style="font-weight: 600; color: ${typeColor(s.type)};">${_h(s.type)}</span>`;
@@ -1497,7 +1497,7 @@ function renderDashboard(root) {
     </tr>`;
   });
   if (rsRows === '') rsRows = '<tr><td colspan="8" class="muted center" style="padding: 20px;">ยังไม่มีรายการขาย</td></tr>';
-  rs.innerHTML = `<h2>รายการขายล่าสุด</h2>
+  rs.innerHTML = `<h2>รายการขายล่าสุด <small>${recent.length} รายการ</small></h2>
     <table>
       <thead><tr>
         <th>เวลา</th><th>ประเภท</th><th class="center">ช่องทาง</th><th>สมาชิก</th><th>สาขา</th>
@@ -2254,8 +2254,6 @@ function renderRecentTrainingsContent(card) {
   }
   const hasDateFilter = !!(TRAININGS_DATE_FROM || TRAININGS_DATE_TO);
   const total = trainings.length;
-  const limit = hasDateFilter ? 500 : 15;
-  trainings = trainings.slice(0, limit);
 
   const ownerCanDelete = isOwner();
   let rows = '';
@@ -2275,8 +2273,8 @@ function renderRecentTrainingsContent(card) {
   if (rows === '') rows = `<tr><td colspan="${colspan}" class="muted center" style="padding: 16px;">ไม่พบการเทรน</td></tr>`;
 
   const subtitle = hasDateFilter
-    ? `${total} รายการในช่วงที่เลือก${total > limit ? ' (แสดง ' + limit + ' รายการล่าสุด)' : ''}`
-    : '15 รายการล่าสุด';
+    ? `${total} รายการในช่วงที่เลือก`
+    : `${total} รายการ`;
 
   card.innerHTML = `
     <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 12px;">
@@ -3192,7 +3190,7 @@ function renderSalesLog(root) {
   card.className = 'card';
   const ownerCanDelete = isOwner();
   let rows = '';
-  list.slice(0, 100).forEach(s => {
+  list.forEach(s => {
     const slipLink = s.slip ? `<a href="#" onclick="event.preventDefault(); viewSaleSlipById('${s.id}');" style="color: var(--accent); cursor:pointer;">ดูสลิป</a>` : '<span class="muted">—</span>';
     const channelBadge = s.channel ? `<span class="badge gray">${s.channel}</span>` : '<span class="muted">—</span>';
     const actions = ownerCanDelete ? `<button class="btn small secondary" onclick="editSaleDate('${s.id}')" title="แก้ไขวันที่">✎ วันที่</button> <button class="btn small danger" onclick="deleteSale('${s.id}')">ลบ</button>` : '';
@@ -3215,7 +3213,7 @@ function renderSalesLog(root) {
   const colspan = ownerCanDelete ? 11 : 10;
   if (rows === '') rows = `<tr><td colspan="${colspan}" class="muted center" style="padding: 20px;">ไม่พบรายการ</td></tr>`;
   card.innerHTML = `
-    <h2>ประวัติการขาย <small>${list.length} รายการ${list.length > 100 ? ' (แสดง 100 รายการล่าสุด)' : ''}</small></h2>
+    <h2>ประวัติการขาย <small>${list.length} รายการ</small></h2>
     <table>
       <thead><tr>
         <th>เวลา</th><th>สาขา</th><th>ประเภท</th><th class="center">ช่องทาง</th><th>พนักงาน</th>
