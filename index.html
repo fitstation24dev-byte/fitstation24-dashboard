@@ -808,13 +808,13 @@ function defaultData() {
     invoices: [],
     packages: (function() {
       const presets = [
-        { code: 'MEM-1M',  name: 'สมาชิกรายเดือน',    type: 'MEM', price: 1200,  hours: 0,  note: '1 เดือน' },
-        { code: 'MEM-3M',  name: 'สมาชิก 3 เดือน',     type: 'MEM', price: 3300,  hours: 0,  note: '3 เดือน' },
-        { code: 'MEM-6M',  name: 'สมาชิก 6 เดือน',     type: 'MEM', price: 6000,  hours: 0,  note: '6 เดือน' },
-        { code: 'MEM-12M', name: 'สมาชิก 1 ปี',        type: 'MEM', price: 10000, hours: 0,  note: '12 เดือน' },
-        { code: 'PT-10',   name: 'PT 10 ครั้ง',         type: 'PT',  price: 5000,  hours: 10, note: '' },
-        { code: 'PT-20',   name: 'PT 20 ครั้ง',         type: 'PT',  price: 9500,  hours: 20, note: '' },
-        { code: 'DAY',     name: 'รายวัน',              type: 'Plan',price: 100,   hours: 0,  note: '' },
+        { code: 'MEM-1M',  name: 'สมาชิกรายเดือน',    type: 'MEM', price: 1200,  hours: 0,  months: 1,  note: '1 เดือน' },
+        { code: 'MEM-3M',  name: 'สมาชิก 3 เดือน',     type: 'MEM', price: 3300,  hours: 0,  months: 3,  note: '3 เดือน' },
+        { code: 'MEM-6M',  name: 'สมาชิก 6 เดือน',     type: 'MEM', price: 6000,  hours: 0,  months: 6,  note: '6 เดือน' },
+        { code: 'MEM-12M', name: 'สมาชิก 1 ปี',        type: 'MEM', price: 10000, hours: 0,  months: 12, note: '12 เดือน' },
+        { code: 'PT-10',   name: 'PT 10 ครั้ง',         type: 'PT',  price: 5000,  hours: 10, months: 0,  note: '' },
+        { code: 'PT-20',   name: 'PT 20 ครั้ง',         type: 'PT',  price: 9500,  hours: 20, months: 0,  note: '' },
+        { code: 'DAY',     name: 'รายวัน',              type: 'Plan',price: 100,   hours: 0,  months: 0,  note: '' },
       ];
       const out = [];
       ['BR01','BR02','BR03'].forEach(br => {
@@ -2155,6 +2155,7 @@ async function onSubmitSale(e) {
   const memberId = (document.getElementById('se-member-id') || {}).value || '';
   const slip = document.getElementById('se-slip').value;
   const note = document.getElementById('se-note').value;
+  const pkgId = (document.getElementById('se-package') || {}).value || '';
 
   if (channel === 'Renew' && !memberId) {
     toast('ช่องทาง Renew ใช้ได้กับสมาชิกเก่าเท่านั้น', 'bad'); return;
@@ -2174,6 +2175,19 @@ async function onSubmitSale(e) {
     notify: needsLine ? 'Pending' : '—',
   };
   DATA.sales.unshift(sale);
+
+  // Auto-sync member จากยอดขาย MEM/PT
+  const syncResult = syncMemberFromSale(sale, pkgId);
+  if (syncResult) {
+    if (syncResult.action === 'created') {
+      toast('➕ สร้างสมาชิกใหม่ ' + syncResult.member.id + ' (' + syncResult.detail + ')', 'ok');
+    } else if (syncResult.action === 'updated') {
+      toast('🔄 อัปเดต ' + syncResult.member.id + ' ' + syncResult.member.name + ' (' + syncResult.detail + ')', 'ok');
+    } else if (syncResult.action === 'no_package' && needsLine) {
+      toast('ℹ ไม่ได้เลือกแพ็กเกจ — ไม่ได้อัปเดตสมาชิกอัตโนมัติ', 'warn');
+    }
+  }
+
   saveData();
   toast('บันทึกยอดเรียบร้อย ' + thb(amount), 'ok');
   resetSaleForm();
@@ -2851,6 +2865,93 @@ function nextMemberId() {
   return 'M' + String(max + 1).padStart(4, '0');
 }
 
+// บวกเดือนตามปฏิทินจริง (เช่น 1 มี.ค. + 3 เดือน = 1 มิ.ย. = 92 วัน)
+function addCalendarMonths(date, months) {
+  const d = new Date(date);
+  d.setMonth(d.getMonth() + Number(months || 0));
+  return d;
+}
+
+// ดึงจำนวนเดือนจากแพ็กเกจ: ใช้ field months, ไม่งั้น parse จาก code/note
+function getPackageMonths(p) {
+  if (!p) return 0;
+  if (typeof p.months === 'number' && p.months > 0) return p.months;
+  const codeMatch = String(p.code || '').match(/(\d+)\s*M(?!ER|EM)/i);
+  if (codeMatch) return Number(codeMatch[1]);
+  const noteMatch = String(p.note || '').match(/(\d+)\s*(เดือน|ปี|month|year)/i);
+  if (noteMatch) {
+    const n = Number(noteMatch[1]);
+    return /ปี|year/i.test(noteMatch[2]) ? n * 12 : n;
+  }
+  return 0;
+}
+
+// Sync ข้อมูลสมาชิกจากยอดขาย — return { action, member, detail } หรือ null
+function syncMemberFromSale(sale, pkgId) {
+  if (sale.type !== 'MEM' && sale.type !== 'PT') return null;
+  const pkg = pkgId ? (DATA.packages || []).find(p => p.id === pkgId) : null;
+  if (!pkg) return { action: 'no_package' };
+
+  const months = sale.type === 'MEM' ? getPackageMonths(pkg) : 0;
+  const ptHours = sale.type === 'PT' ? Number(pkg.hours || 0) : 0;
+  if (months === 0 && ptHours === 0) return { action: 'no_data' };
+
+  const saleDate = new Date(sale.ts);
+
+  // ลูกค้าเก่า — มี memberId
+  let member = sale.memberId ? DATA.members.find(m => m.id === sale.memberId) : null;
+  if (member) {
+    const detail = [];
+    if (months > 0) {
+      const baseDate = (member.endDate && new Date(member.endDate) > saleDate)
+        ? new Date(member.endDate)
+        : saleDate;
+      const newEnd = addCalendarMonths(baseDate, months);
+      const addedDays = Math.round((newEnd - baseDate) / 86400000);
+      member.endDate = newEnd.toISOString();
+      if (member.status === 'Expired') member.status = 'Active';
+      detail.push('+' + months + ' เดือน (' + addedDays + ' วัน)');
+    }
+    if (ptHours > 0) {
+      member.hours = (Number(member.hours) || 0) + ptHours;
+      detail.push('+' + ptHours + ' ครั้ง PT');
+    }
+    return { action: 'updated', member, detail: detail.join(', ') };
+  }
+
+  // ลูกค้าใหม่ — มีชื่อ แต่ไม่มี ID
+  if (sale.memberName && sale.memberName.trim()) {
+    const parts = sale.memberName.trim().split(/\s+/);
+    const name = parts[0] || sale.memberName;
+    const surname = parts.slice(1).join(' ') || '';
+    const startDate = saleDate;
+    const endDate = months > 0 ? addCalendarMonths(startDate, months) : startDate;
+    const addedDays = months > 0 ? Math.round((endDate - startDate) / 86400000) : 0;
+
+    const newMember = {
+      id: nextMemberId(),
+      name, surname,
+      age: 0,
+      branch: sale.branch,
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+      hours: ptHours,
+      trainer: '',
+      lineUid: '',
+      status: 'Active',
+    };
+    DATA.members.push(newMember);
+    sale.memberId = newMember.id;
+
+    const detail = [];
+    if (months > 0) detail.push(months + ' เดือน (' + addedDays + ' วัน)');
+    if (ptHours > 0) detail.push(ptHours + ' ครั้ง PT');
+    return { action: 'created', member: newMember, detail: detail.join(', ') };
+  }
+
+  return null;
+}
+
 function renderRegistration(root) {
   const branches = DATA.branches.length
     ? DATA.branches
@@ -3432,21 +3533,24 @@ function renderPackages(root) {
     return b ? b.name : code;
   };
 
-  const colCount = showBranchCol ? 8 : 7;
-  const rows = list.map(p => `
+  const colCount = showBranchCol ? 9 : 8;
+  const rows = list.map(p => {
+    const months = getPackageMonths(p);
+    return `
     <tr>
       <td>${_h(p.code || '-')}</td>
       <td>${_h(p.name)}</td>
       ${showBranchCol ? `<td>${p.branch ? _h(p.branch) + ' · ' + _h(branchName(p.branch)) : '<span class="muted">— ทุกสาขา —</span>'}</td>` : ''}
       <td><span class="badge ${p.type === 'MEM' ? 'ok' : p.type === 'PT' ? 'warn' : 'gray'}">${_h(p.type)}</span></td>
       <td class="right">${thb(p.price)}</td>
+      <td class="center">${months > 0 ? months : '<span class="muted">—</span>'}</td>
       <td class="center">${p.hours || 0}</td>
       <td>${_h(p.note || '')}</td>
       <td class="center">
         ${canEdit ? `<button class="btn small secondary" onclick="openPackageModal('${_h(p.id)}')">แก้</button>` : ''}
       </td>
     </tr>
-  `).join('');
+  `;}).join('');
 
   const branchTag = branchFilter === '*'
     ? '<small class="muted">(ทุกสาขา)</small>'
@@ -3461,7 +3565,7 @@ function renderPackages(root) {
       <table>
         <thead><tr>
           <th>รหัส</th><th>ชื่อแพ็กเกจ</th>${showBranchCol ? '<th>สาขา</th>' : ''}<th>ประเภท</th>
-          <th class="right">ราคา</th><th class="center">ชม./ครั้ง</th><th>หมายเหตุ</th><th></th>
+          <th class="right">ราคา</th><th class="center">เดือน</th><th class="center">ชม./ครั้ง</th><th>หมายเหตุ</th><th></th>
         </tr></thead>
         <tbody>${rows || `<tr><td colspan="${colCount}" class="muted center" style="padding: 16px;">ยังไม่มีแพ็กเกจในสาขานี้</td></tr>`}</tbody>
       </table>
@@ -3477,7 +3581,7 @@ function openPackageModal(id) {
     ? (CURRENT_BRANCH && CURRENT_BRANCH !== '*' ? CURRENT_BRANCH : ((DATA.branches[0] || {}).code || ''))
     : SESSION.branch;
   const p = isNew
-    ? { id: nid(), code: '', name: '', type: 'MEM', price: 0, hours: 0, note: '', branch: defaultBranch }
+    ? { id: nid(), code: '', name: '', type: 'MEM', price: 0, hours: 0, months: 0, note: '', branch: defaultBranch }
     : DATA.packages.find(x => x.id === id);
   if (!p) { toast('ไม่พบแพ็กเกจ', 'bad'); return; }
 
@@ -3502,7 +3606,8 @@ function openPackageModal(id) {
         <div class="field"><label>ประเภท *</label><select id="pk-type" required>${typeOpts}</select></div>
         <div class="field full"><label>ชื่อแพ็กเกจ *</label><input id="pk-name" required value="${_h(p.name)}" placeholder="เช่น สมาชิก 3 เดือน"></div>
         <div class="field"><label>ราคา *</label><input id="pk-price" type="number" min="0" step="1" required value="${p.price || 0}"></div>
-        <div class="field"><label>ชม./ครั้งเทรน</label><input id="pk-hours" type="number" min="0" step="1" value="${p.hours || 0}"></div>
+        <div class="field"><label>จำนวนเดือน <small class="muted">(MEM)</small></label><input id="pk-months" type="number" min="0" step="1" value="${getPackageMonths(p) || 0}" placeholder="เช่น 3"></div>
+        <div class="field"><label>ชม./ครั้งเทรน <small class="muted">(PT)</small></label><input id="pk-hours" type="number" min="0" step="1" value="${p.hours || 0}"></div>
         <div class="field full"><label>หมายเหตุ</label><input id="pk-note" value="${_h(p.note || '')}" placeholder="เช่น 3 เดือน, รวม PT 5 ครั้ง"></div>
       </div>
       <div class="actions">
@@ -3526,6 +3631,7 @@ function savePackage(e, id, isNew) {
     type: document.getElementById('pk-type').value,
     price: Number(document.getElementById('pk-price').value || 0),
     hours: Number(document.getElementById('pk-hours').value || 0),
+    months: Number(document.getElementById('pk-months').value || 0),
     note: document.getElementById('pk-note').value.trim(),
   };
   if (isNew) {
