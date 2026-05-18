@@ -538,6 +538,48 @@ let CURRENT_BRANCH = '*';
 let CHARTS = {};
 let DASH_PERIOD = { type: 'today', from: null, to: null };
 
+// ---------- PAGINATION ----------
+const PAGE_SIZE = 20;
+let SALES_LOG_PAGE = 1;
+let TRAININGS_PAGE = 1;
+
+function paginationHTML(total, current, onChangeFn) {
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  current = Math.max(1, Math.min(current, totalPages));
+  if (totalPages <= 1) return '';
+  const pages = [];
+  const push = (p) => pages.push(`<button class="btn small ${p === current ? '' : 'secondary'}" onclick="${onChangeFn}(${p})">${p}</button>`);
+  const dots = () => pages.push('<span class="muted small" style="padding:0 4px;">…</span>');
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) push(i);
+  } else {
+    push(1);
+    if (current > 4) dots();
+    const s = Math.max(2, current - 2);
+    const e = Math.min(totalPages - 1, current + 2);
+    for (let i = s; i <= e; i++) push(i);
+    if (current < totalPages - 3) dots();
+    push(totalPages);
+  }
+  const prevDisabled = current === 1 ? 'disabled' : '';
+  const nextDisabled = current === totalPages ? 'disabled' : '';
+  return `<div class="pagination" style="display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;margin-top:14px;">
+    <button class="btn small secondary" ${prevDisabled} onclick="${onChangeFn}(${current - 1})">« ก่อนหน้า</button>
+    ${pages.join(' ')}
+    <button class="btn small secondary" ${nextDisabled} onclick="${onChangeFn}(${current + 1})">ถัดไป »</button>
+    <span class="muted small" style="margin-left:8px;">หน้า ${current} / ${totalPages}</span>
+  </div>`;
+}
+
+function setSalesLogPage(p) {
+  SALES_LOG_PAGE = p;
+  navigate('sales-log');
+}
+function setTrainingsPage(p) {
+  TRAININGS_PAGE = p;
+  navigate('trainings');
+}
+
 function loadData() {
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -1288,8 +1330,15 @@ function renderTrainingsEntry(root) {
   const list = document.createElement('div');
   list.className = 'card';
   const trainings = filterByBranch(DATA.trainings).slice().sort((a,b) => new Date(b.ts) - new Date(a.ts));
+
+  const totalPages = Math.max(1, Math.ceil(trainings.length / PAGE_SIZE));
+  if (TRAININGS_PAGE > totalPages) TRAININGS_PAGE = totalPages;
+  if (TRAININGS_PAGE < 1) TRAININGS_PAGE = 1;
+  const pageStart = (TRAININGS_PAGE - 1) * PAGE_SIZE;
+  const pageList = trainings.slice(pageStart, pageStart + PAGE_SIZE);
+
   let rows = '';
-  trainings.forEach(t => {
+  pageList.forEach(t => {
     rows += `<tr>
       <td>${fmtTime(t.ts)}</td>
       <td>${t.branch}</td>
@@ -1300,11 +1349,17 @@ function renderTrainingsEntry(root) {
     </tr>`;
   });
   if (rows === '') rows = '<tr><td colspan="6" class="muted center" style="padding: 16px;">ยังไม่มีการเทรน</td></tr>';
-  list.innerHTML = `<h2>การเทรนล่าสุด <small>${trainings.length} รายการ</small></h2>
+
+  const rangeLabel = trainings.length > 0
+    ? `แสดง ${pageStart + 1}–${Math.min(pageStart + PAGE_SIZE, trainings.length)} จาก ${trainings.length} รายการ`
+    : `${trainings.length} รายการ`;
+
+  list.innerHTML = `<h2>การเทรนล่าสุด <small>${rangeLabel}</small></h2>
     <table>
       <thead><tr><th>เวลา</th><th>สาขา</th><th>สมาชิก</th><th>เทรนเนอร์</th><th class="center">ชั่วโมง</th><th class="center">สถานะ</th></tr></thead>
       <tbody>${rows}</tbody>
-    </table>`;
+    </table>
+    ${paginationHTML(trainings.length, TRAININGS_PAGE, 'setTrainingsPage')}`;
   root.appendChild(list);
 }
 
@@ -1660,7 +1715,7 @@ function renderSalesLog(root) {
   tb.className = 'toolbar';
   tb.innerHTML = `
     <div class="filters">
-      <select id="sl-type" onchange="renderSalesLog(document.getElementById('content'))">
+      <select id="sl-type" onchange="SALES_LOG_PAGE=1;renderSalesLog(document.getElementById('content'))">
         <option value="">ทุกประเภท</option>
         <option value="MEM">MEM</option>
         <option value="PT">PT</option>
@@ -1668,7 +1723,7 @@ function renderSalesLog(root) {
         <option value="Train">Train</option>
         <option value="Other">อื่นๆ</option>
       </select>
-      <select id="sl-notify" onchange="renderSalesLog(document.getElementById('content'))">
+      <select id="sl-notify" onchange="SALES_LOG_PAGE=1;renderSalesLog(document.getElementById('content'))">
         <option value="">ทุกสถานะ LINE</option>
         <option value="Sent">Sent</option>
         <option value="Pending">Pending</option>
@@ -1688,8 +1743,15 @@ function renderSalesLog(root) {
 
   const card = document.createElement('div');
   card.className = 'card';
+
+  const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+  if (SALES_LOG_PAGE > totalPages) SALES_LOG_PAGE = totalPages;
+  if (SALES_LOG_PAGE < 1) SALES_LOG_PAGE = 1;
+  const pageStart = (SALES_LOG_PAGE - 1) * PAGE_SIZE;
+  const pageList = list.slice(pageStart, pageStart + PAGE_SIZE);
+
   let rows = '';
-  list.forEach(s => {
+  pageList.forEach(s => {
     const slipLink = s.slip ? `<a href="${s.slip}" target="_blank" rel="noopener" style="color: var(--accent);">ดูสลิป</a>` : '<span class="muted">—</span>';
     rows += `<tr>
       <td>${fmtTime(s.ts)}</td>
@@ -1704,8 +1766,13 @@ function renderSalesLog(root) {
     </tr>`;
   });
   if (rows === '') rows = '<tr><td colspan="9" class="muted center" style="padding: 20px;">ไม่พบรายการ</td></tr>';
+
+  const rangeLabel = list.length > 0
+    ? `แสดง ${pageStart + 1}–${Math.min(pageStart + PAGE_SIZE, list.length)} จาก ${list.length} รายการ`
+    : `${list.length} รายการ`;
+
   card.innerHTML = `
-    <h2>ประวัติการขาย <small>${list.length} รายการ</small></h2>
+    <h2>ประวัติการขาย <small>${rangeLabel}</small></h2>
     <table>
       <thead><tr>
         <th>เวลา</th><th>สาขา</th><th>ประเภท</th><th>พนักงาน</th>
@@ -1714,6 +1781,7 @@ function renderSalesLog(root) {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
+    ${paginationHTML(list.length, SALES_LOG_PAGE, 'setSalesLogPage')}
   `;
   root.appendChild(card);
 }

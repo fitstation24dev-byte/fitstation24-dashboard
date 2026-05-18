@@ -855,6 +855,48 @@ let TRAININGS_DATE_FROM = '';
 let TRAININGS_DATE_TO = '';
 let TRAIN_GATE_VERIFIED = false;   // ใส่รหัสครั้งเดียวต่อ session, reset ตอน logout
 
+// ---------- PAGINATION ----------
+const PAGE_SIZE = 20;
+let SALES_LOG_PAGE = 1;
+let TRAININGS_PAGE = 1;
+
+function paginationHTML(total, current, onChangeFn) {
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  current = Math.max(1, Math.min(current, totalPages));
+  if (totalPages <= 1) return '';
+  const pages = [];
+  const push = (p) => pages.push(`<button class="btn small ${p === current ? '' : 'secondary'}" onclick="${onChangeFn}(${p})">${p}</button>`);
+  const dots = () => pages.push('<span class="muted small" style="padding:0 4px;">…</span>');
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i++) push(i);
+  } else {
+    push(1);
+    if (current > 4) dots();
+    const s = Math.max(2, current - 2);
+    const e = Math.min(totalPages - 1, current + 2);
+    for (let i = s; i <= e; i++) push(i);
+    if (current < totalPages - 3) dots();
+    push(totalPages);
+  }
+  const prevDisabled = current === 1 ? 'disabled' : '';
+  const nextDisabled = current === totalPages ? 'disabled' : '';
+  return `<div class="pagination" style="display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap;margin-top:14px;">
+    <button class="btn small secondary" ${prevDisabled} onclick="${onChangeFn}(${current - 1})">« ก่อนหน้า</button>
+    ${pages.join(' ')}
+    <button class="btn small secondary" ${nextDisabled} onclick="${onChangeFn}(${current + 1})">ถัดไป »</button>
+    <span class="muted small" style="margin-left:8px;">หน้า ${current} / ${totalPages}</span>
+  </div>`;
+}
+
+function setSalesLogPage(p) {
+  SALES_LOG_PAGE = p;
+  renderSalesLog(document.getElementById('content'));
+}
+function setTrainingsPage(p) {
+  TRAININGS_PAGE = p;
+  renderRecentTrainingsContent(document.getElementById('recent-trainings-card'));
+}
+
 async function loadData() {
   // อ่าน localStorage ก่อน — สำหรับฟิลด์ที่ไม่ได้ sync ผ่าน Supabase (เช่น invoices)
   let localData = null;
@@ -2255,9 +2297,15 @@ function renderRecentTrainingsContent(card) {
   const hasDateFilter = !!(TRAININGS_DATE_FROM || TRAININGS_DATE_TO);
   const total = trainings.length;
 
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  if (TRAININGS_PAGE > totalPages) TRAININGS_PAGE = totalPages;
+  if (TRAININGS_PAGE < 1) TRAININGS_PAGE = 1;
+  const pageStart = (TRAININGS_PAGE - 1) * PAGE_SIZE;
+  const pageList = trainings.slice(pageStart, pageStart + PAGE_SIZE);
+
   const ownerCanDelete = isOwner();
   let rows = '';
-  trainings.forEach(t => {
+  pageList.forEach(t => {
     const actions = ownerCanDelete ? `<td class="center"><button class="btn small secondary" onclick="editTrainingDate('${t.id}')" title="แก้ไขวันที่">✎ วันที่</button> <button class="btn small danger" onclick="deleteTraining('${t.id}')">ลบ</button></td>` : '';
     rows += `<tr>
       <td>${fmtTime(t.ts)}</td>
@@ -2272,25 +2320,26 @@ function renderRecentTrainingsContent(card) {
   const colspan = ownerCanDelete ? 7 : 6;
   if (rows === '') rows = `<tr><td colspan="${colspan}" class="muted center" style="padding: 16px;">ไม่พบการเทรน</td></tr>`;
 
-  const subtitle = hasDateFilter
-    ? `${total} รายการในช่วงที่เลือก`
+  const rangeLabel = total > 0
+    ? `แสดง ${pageStart + 1}–${Math.min(pageStart + PAGE_SIZE, total)} จาก ${total} รายการ${hasDateFilter ? ' (ในช่วงที่เลือก)' : ''}`
     : `${total} รายการ`;
 
   card.innerHTML = `
     <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-      <h2 style="margin: 0;">การเทรน <small>${subtitle}</small></h2>
+      <h2 style="margin: 0;">การเทรน <small>${rangeLabel}</small></h2>
       <div class="filters" style="align-items: center;">
         <label class="muted small">จาก:</label>
-        <input type="date" value="${TRAININGS_DATE_FROM}" onchange="TRAININGS_DATE_FROM=this.value;renderRecentTrainingsContent(document.getElementById('recent-trainings-card'))">
+        <input type="date" value="${TRAININGS_DATE_FROM}" onchange="TRAININGS_DATE_FROM=this.value;TRAININGS_PAGE=1;renderRecentTrainingsContent(document.getElementById('recent-trainings-card'))">
         <label class="muted small">ถึง:</label>
-        <input type="date" value="${TRAININGS_DATE_TO}" onchange="TRAININGS_DATE_TO=this.value;renderRecentTrainingsContent(document.getElementById('recent-trainings-card'))">
-        ${hasDateFilter ? '<button class="btn small secondary" onclick="TRAININGS_DATE_FROM=\'\';TRAININGS_DATE_TO=\'\';renderRecentTrainingsContent(document.getElementById(\'recent-trainings-card\'))">ล้างวันที่</button>' : ''}
+        <input type="date" value="${TRAININGS_DATE_TO}" onchange="TRAININGS_DATE_TO=this.value;TRAININGS_PAGE=1;renderRecentTrainingsContent(document.getElementById('recent-trainings-card'))">
+        ${hasDateFilter ? '<button class="btn small secondary" onclick="TRAININGS_DATE_FROM=\'\';TRAININGS_DATE_TO=\'\';TRAININGS_PAGE=1;renderRecentTrainingsContent(document.getElementById(\'recent-trainings-card\'))">ล้างวันที่</button>' : ''}
       </div>
     </div>
     <table>
       <thead><tr><th>เวลา</th><th>สาขา</th><th>สมาชิก</th><th>เทรนเนอร์</th><th class="center">ชั่วโมง</th><th class="center">สถานะ</th>${ownerCanDelete ? '<th class="center">จัดการ</th>' : ''}</tr></thead>
       <tbody>${rows}</tbody>
-    </table>`;
+    </table>
+    ${paginationHTML(total, TRAININGS_PAGE, 'setTrainingsPage')}`;
 }
 
 function onPickTrainMemberFromInput() {
@@ -3148,24 +3197,24 @@ function renderSalesLog(root) {
   tb.className = 'toolbar';
   tb.innerHTML = `
     <div class="filters" style="align-items: center; flex-wrap: wrap;">
-      <select id="sl-type" onchange="renderSalesLog(document.getElementById('content'))">
+      <select id="sl-type" onchange="SALES_LOG_PAGE=1;renderSalesLog(document.getElementById('content'))">
         <option value="">ทุกประเภท</option>
         <option value="MEM" ${document.getElementById('sl-type')?.value==='MEM'?'selected':''}>MEM</option>
         <option value="PT" ${document.getElementById('sl-type')?.value==='PT'?'selected':''}>PT</option>
         <option value="Plan" ${document.getElementById('sl-type')?.value==='Plan'?'selected':''}>Plan</option>
         <option value="Other" ${document.getElementById('sl-type')?.value==='Other'?'selected':''}>อื่นๆ</option>
       </select>
-      <select id="sl-notify" onchange="renderSalesLog(document.getElementById('content'))">
+      <select id="sl-notify" onchange="SALES_LOG_PAGE=1;renderSalesLog(document.getElementById('content'))">
         <option value="">ทุกสถานะ LINE</option>
         <option value="Sent" ${document.getElementById('sl-notify')?.value==='Sent'?'selected':''}>Sent</option>
         <option value="Pending" ${document.getElementById('sl-notify')?.value==='Pending'?'selected':''}>Pending</option>
         <option value="Failed" ${document.getElementById('sl-notify')?.value==='Failed'?'selected':''}>Failed</option>
       </select>
       <label class="muted small">จาก:</label>
-      <input type="date" id="sl-from" value="${SALES_LOG_DATE_FROM}" onchange="SALES_LOG_DATE_FROM=this.value;renderSalesLog(document.getElementById('content'))">
+      <input type="date" id="sl-from" value="${SALES_LOG_DATE_FROM}" onchange="SALES_LOG_DATE_FROM=this.value;SALES_LOG_PAGE=1;renderSalesLog(document.getElementById('content'))">
       <label class="muted small">ถึง:</label>
-      <input type="date" id="sl-to" value="${SALES_LOG_DATE_TO}" onchange="SALES_LOG_DATE_TO=this.value;renderSalesLog(document.getElementById('content'))">
-      ${(SALES_LOG_DATE_FROM || SALES_LOG_DATE_TO) ? '<button class="btn small secondary" onclick="SALES_LOG_DATE_FROM=\'\';SALES_LOG_DATE_TO=\'\';renderSalesLog(document.getElementById(\'content\'))">ล้างวันที่</button>' : ''}
+      <input type="date" id="sl-to" value="${SALES_LOG_DATE_TO}" onchange="SALES_LOG_DATE_TO=this.value;SALES_LOG_PAGE=1;renderSalesLog(document.getElementById('content'))">
+      ${(SALES_LOG_DATE_FROM || SALES_LOG_DATE_TO) ? '<button class="btn small secondary" onclick="SALES_LOG_DATE_FROM=\'\';SALES_LOG_DATE_TO=\'\';SALES_LOG_PAGE=1;renderSalesLog(document.getElementById(\'content\'))">ล้างวันที่</button>' : ''}
     </div>
     <button class="btn secondary" onclick="exportCSV('sales')">Export CSV</button>
   `;
@@ -3189,8 +3238,15 @@ function renderSalesLog(root) {
   const card = document.createElement('div');
   card.className = 'card';
   const ownerCanDelete = isOwner();
+
+  const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+  if (SALES_LOG_PAGE > totalPages) SALES_LOG_PAGE = totalPages;
+  if (SALES_LOG_PAGE < 1) SALES_LOG_PAGE = 1;
+  const pageStart = (SALES_LOG_PAGE - 1) * PAGE_SIZE;
+  const pageList = list.slice(pageStart, pageStart + PAGE_SIZE);
+
   let rows = '';
-  list.forEach(s => {
+  pageList.forEach(s => {
     const slipLink = s.slip ? `<a href="#" onclick="event.preventDefault(); viewSaleSlipById('${s.id}');" style="color: var(--accent); cursor:pointer;">ดูสลิป</a>` : '<span class="muted">—</span>';
     const channelBadge = s.channel ? `<span class="badge gray">${s.channel}</span>` : '<span class="muted">—</span>';
     const actions = ownerCanDelete ? `<button class="btn small secondary" onclick="editSaleDate('${s.id}')" title="แก้ไขวันที่">✎ วันที่</button> <button class="btn small danger" onclick="deleteSale('${s.id}')">ลบ</button>` : '';
@@ -3212,8 +3268,13 @@ function renderSalesLog(root) {
   });
   const colspan = ownerCanDelete ? 11 : 10;
   if (rows === '') rows = `<tr><td colspan="${colspan}" class="muted center" style="padding: 20px;">ไม่พบรายการ</td></tr>`;
+
+  const rangeLabel = list.length > 0
+    ? `แสดง ${pageStart + 1}–${Math.min(pageStart + PAGE_SIZE, list.length)} จาก ${list.length} รายการ`
+    : `${list.length} รายการ`;
+
   card.innerHTML = `
-    <h2>ประวัติการขาย <small>${list.length} รายการ</small></h2>
+    <h2>ประวัติการขาย <small>${rangeLabel}</small></h2>
     <table>
       <thead><tr>
         <th>เวลา</th><th>สาขา</th><th>ประเภท</th><th class="center">ช่องทาง</th><th>พนักงาน</th>
@@ -3223,6 +3284,7 @@ function renderSalesLog(root) {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
+    ${paginationHTML(list.length, SALES_LOG_PAGE, 'setSalesLogPage')}
   `;
   root.appendChild(card);
 }
