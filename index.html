@@ -859,6 +859,7 @@ let TRAIN_GATE_VERIFIED = false;   // ใส่รหัสครั้งเด
 const PAGE_SIZE = 20;
 let SALES_LOG_PAGE = 1;
 let TRAININGS_PAGE = 1;
+let DASH_SALES_PAGE = 1;
 
 function paginationHTML(total, current, onChangeFn) {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -895,6 +896,10 @@ function setSalesLogPage(p) {
 function setTrainingsPage(p) {
   TRAININGS_PAGE = p;
   renderRecentTrainingsContent(document.getElementById('recent-trainings-card'));
+}
+function setDashSalesPage(p) {
+  DASH_SALES_PAGE = p;
+  navigate('dashboard');
 }
 
 async function loadData() {
@@ -1521,8 +1526,15 @@ function renderDashboard(root) {
   const rs = document.createElement('div');
   rs.className = 'card';
   const recent = sales.filter(s => s.type !== 'Train').slice().sort((a,b) => new Date(b.ts) - new Date(a.ts));
+
+  const rsTotalPages = Math.max(1, Math.ceil(recent.length / PAGE_SIZE));
+  if (DASH_SALES_PAGE > rsTotalPages) DASH_SALES_PAGE = rsTotalPages;
+  if (DASH_SALES_PAGE < 1) DASH_SALES_PAGE = 1;
+  const rsStart = (DASH_SALES_PAGE - 1) * PAGE_SIZE;
+  const rsPageList = recent.slice(rsStart, rsStart + PAGE_SIZE);
+
   let rsRows = '';
-  recent.forEach(s => {
+  rsPageList.forEach(s => {
     const typeBadge = `<span style="font-weight: 600; color: ${typeColor(s.type)};">${_h(s.type)}</span>`;
     const channel = s.channel ? `<span class="badge gray">${_h(s.channel)}</span>` : '<span class="muted">—</span>';
     const notify = renderNotifyBadge(s.notify);
@@ -1539,14 +1551,20 @@ function renderDashboard(root) {
     </tr>`;
   });
   if (rsRows === '') rsRows = '<tr><td colspan="8" class="muted center" style="padding: 20px;">ยังไม่มีรายการขาย</td></tr>';
-  rs.innerHTML = `<h2>รายการขายล่าสุด <small>${recent.length} รายการ</small></h2>
+
+  const rsRangeLabel = recent.length > 0
+    ? `แสดง ${rsStart + 1}–${Math.min(rsStart + PAGE_SIZE, recent.length)} จาก ${recent.length} รายการ`
+    : `${recent.length} รายการ`;
+
+  rs.innerHTML = `<h2>รายการขายล่าสุด <small>${rsRangeLabel}</small></h2>
     <table>
       <thead><tr>
         <th>เวลา</th><th>ประเภท</th><th class="center">ช่องทาง</th><th>สมาชิก</th><th>สาขา</th>
         <th class="right">ยอด</th><th class="center">สลิป</th><th class="center">LINE</th>
       </tr></thead>
       <tbody>${rsRows}</tbody>
-    </table>`;
+    </table>
+    ${paginationHTML(recent.length, DASH_SALES_PAGE, 'setDashSalesPage')}`;
   root.appendChild(rs);
 
   // Build chart
