@@ -543,6 +543,8 @@ const PAGE_SIZE = 20;
 let SALES_LOG_PAGE = 1;
 let TRAININGS_PAGE = 1;
 let DASH_SALES_PAGE = 1;
+let MEMBER_SEARCH = '';
+let MEMBER_STATUS = '';
 
 function paginationHTML(total, current, onChangeFn) {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -1453,18 +1455,20 @@ function onSubmitTrain(e) {
 
 // ============ MEMBERS ============
 function renderMembers(root) {
+  root.innerHTML = '';
   const editable = ['Owner','Manager','Staff'].includes(SESSION.role);
   const tb = document.createElement('div');
   tb.className = 'toolbar';
   tb.innerHTML = `
     <div class="filters">
-      <input id="m-search" type="text" placeholder="ค้นหา ชื่อ/นามสกุล/รหัส..." oninput="renderMembers(document.getElementById('content'))">
-      <select id="m-status" onchange="renderMembers(document.getElementById('content'))">
-        <option value="">ทุกสถานะ</option>
-        <option value="Active">Active</option>
-        <option value="Frozen">Frozen</option>
-        <option value="Expired">Expired</option>
+      <input id="m-search" type="text" placeholder="ค้นหา ชื่อ/นามสกุล/รหัส..." value="${MEMBER_SEARCH}" oninput="MEMBER_SEARCH=this.value;renderMembersList()">
+      <select id="m-status" onchange="MEMBER_STATUS=this.value;renderMembersList()">
+        <option value="" ${MEMBER_STATUS===''?'selected':''}>ทุกสถานะ</option>
+        <option value="Active" ${MEMBER_STATUS==='Active'?'selected':''}>Active</option>
+        <option value="Frozen" ${MEMBER_STATUS==='Frozen'?'selected':''}>Frozen</option>
+        <option value="Expired" ${MEMBER_STATUS==='Expired'?'selected':''}>Expired</option>
       </select>
+      ${MEMBER_SEARCH || MEMBER_STATUS ? '<button class="btn small secondary" onclick="MEMBER_SEARCH=\'\';MEMBER_STATUS=\'\';renderMembers(document.getElementById(\'content\'))">ล้างค้นหา</button>' : ''}
     </div>
     ${editable ? `<div style="display:flex; gap:8px;">
       <button class="btn secondary" onclick="document.getElementById('member-import-file').click()" title="นำเข้าจาก Excel/CSV">⬆ นำเข้า Excel</button>
@@ -1474,27 +1478,25 @@ function renderMembers(root) {
   `;
   root.appendChild(tb);
 
-  // preserve search/filter values across re-renders
-  const prevSearch = document.getElementById('m-search') ? document.getElementById('m-search').value : '';
-  const prevStatus = document.getElementById('m-status') ? document.getElementById('m-status').value : '';
-  // (the toolbar HTML re-rendered, so values reset; restore manually)
-  setTimeout(() => {
-    const s = document.getElementById('m-search'); if (s && prevSearch) s.value = prevSearch;
-    const st = document.getElementById('m-status'); if (st && prevStatus) st.value = prevStatus;
-  }, 0);
+  const listContainer = document.createElement('div');
+  listContainer.id = 'members-list-container';
+  root.appendChild(listContainer);
+  renderMembersList();
+}
 
-  const search = (window.event && window.event.target && window.event.target.id === 'm-search') ? window.event.target.value : '';
-  const statusFilter = (window.event && window.event.target && window.event.target.id === 'm-status') ? window.event.target.value : '';
-
+function renderMembersList() {
+  const container = document.getElementById('members-list-container');
+  if (!container) return;
+  const editable = ['Owner','Manager','Staff'].includes(SESSION.role);
   const card = document.createElement('div');
   card.className = 'card';
   const ref = todayStart();
   let list = filterByBranch(DATA.members);
-  if (search) {
-    const q = search.toLowerCase();
+  if (MEMBER_SEARCH) {
+    const q = MEMBER_SEARCH.toLowerCase();
     list = list.filter(m => (m.name + ' ' + m.surname + ' ' + m.id).toLowerCase().includes(q));
   }
-  if (statusFilter) list = list.filter(m => m.status === statusFilter);
+  if (MEMBER_STATUS) list = list.filter(m => m.status === MEMBER_STATUS);
   list.sort((a, b) => daysBetween(a.endDate, ref) - daysBetween(b.endDate, ref));
 
   let rows = '';
@@ -1519,7 +1521,12 @@ function renderMembers(root) {
   });
   if (rows === '') rows = `<tr><td colspan="${editable?10:9}" class="muted center" style="padding: 20px;">ไม่พบข้อมูลสมาชิก</td></tr>`;
 
+  const headerLabel = (MEMBER_SEARCH || MEMBER_STATUS)
+    ? `ผลการค้นหา <small>${list.length} รายการ</small>`
+    : `สมาชิกทั้งหมด <small>${list.length} รายการ</small>`;
+
   card.innerHTML = `
+    <h2>${headerLabel}</h2>
     <table>
       <thead><tr>
         <th>ID</th><th>ชื่อ-นามสกุล</th><th class="center">อายุ</th>
@@ -1530,7 +1537,8 @@ function renderMembers(root) {
       <tbody>${rows}</tbody>
     </table>
   `;
-  root.appendChild(card);
+  container.innerHTML = '';
+  container.appendChild(card);
 }
 
 function statusBadge(s) {
