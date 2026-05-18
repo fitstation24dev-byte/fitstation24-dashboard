@@ -1670,6 +1670,14 @@ function renderSalesEntry(root) {
           <label>จำนวนเงิน *</label>
           <input id="se-amount" type="number" min="0" step="1" required placeholder="0">
         </div>
+        <div class="field" id="se-months-field" style="display:none;">
+          <label>จำนวนเดือน <small class="muted">(MEM — สำหรับต่ออายุสมาชิก)</small></label>
+          <input id="se-months" type="number" min="0" step="1" placeholder="เช่น 1, 3, 6, 12">
+        </div>
+        <div class="field" id="se-pthours-field" style="display:none;">
+          <label>จำนวนครั้ง PT <small class="muted">(เพิ่มชั่วโมงเทรน)</small></label>
+          <input id="se-pthours" type="number" min="0" step="1" placeholder="เช่น 10, 20">
+        </div>
         <div class="field">
           <label>ช่องทาง *</label>
           <select id="se-channel" required>
@@ -1765,6 +1773,11 @@ function updateSaleSlipReq() {
   const req = document.getElementById('se-slip-req');
   if (t === 'MEM' || t === 'PT') req.style.display = '';
   else req.style.display = 'none';
+  // โชว์/ซ่อน field จำนวนเดือน-จำนวนครั้ง PT ตามประเภท
+  const mf = document.getElementById('se-months-field');
+  const pf = document.getElementById('se-pthours-field');
+  if (mf) mf.style.display = (t === 'MEM') ? '' : 'none';
+  if (pf) pf.style.display = (t === 'PT')  ? '' : 'none';
   updateLinePreview();
 }
 
@@ -1777,9 +1790,15 @@ function onPickSalePackage() {
   if (typeSel && p.type) {
     const opt = Array.from(typeSel.options).find(o => o.value === p.type);
     if (opt) typeSel.value = p.type;
+    updateSaleSlipReq();
   }
   const amt = document.getElementById('se-amount');
   if (amt) amt.value = p.price || 0;
+  // เติมจำนวนเดือน/จำนวนครั้ง PT จากแพ็กเกจ
+  const mInput = document.getElementById('se-months');
+  if (mInput) mInput.value = getPackageMonths(p) || '';
+  const ptInput = document.getElementById('se-pthours');
+  if (ptInput) ptInput.value = (p.type === 'PT' && p.hours) ? p.hours : '';
   const note = document.getElementById('se-note');
   if (note) {
     const tag = p.code ? p.code + ' — ' + p.name : p.name;
@@ -2161,6 +2180,8 @@ async function onSubmitSale(e) {
   const slip = document.getElementById('se-slip').value;
   const note = document.getElementById('se-note').value;
   const pkgId = (document.getElementById('se-package') || {}).value || '';
+  const months = Number((document.getElementById('se-months') || {}).value || 0);
+  const ptHours = Number((document.getElementById('se-pthours') || {}).value || 0);
 
   if (channel === 'Renew' && !memberId) {
     toast('ช่องทาง Renew ใช้ได้กับสมาชิกเก่าเท่านั้น', 'bad'); return;
@@ -2168,6 +2189,14 @@ async function onSubmitSale(e) {
 
   if ((type === 'MEM' || type === 'PT') && !slip) {
     if (!confirm('ประเภท ' + type + ' ปกติต้องแนบสลิป\nบันทึกโดยไม่มีสลิปจริงหรือ?')) return;
+  }
+
+  // เตือนเมื่อ MEM/PT ไม่มีจำนวนเดือน/PT — สมาชิกจะไม่ถูกเพิ่ม
+  if (type === 'MEM' && months === 0 && !pkgId) {
+    if (!confirm('คุณยังไม่กรอก "จำนวนเดือน" และไม่เลือกแพ็กเกจ\nระบบจะไม่สร้าง/อัปเดตสมาชิกอัตโนมัติ\n\nบันทึกยอดต่อไปหรือไม่?')) return;
+  }
+  if (type === 'PT' && ptHours === 0 && !pkgId) {
+    if (!confirm('คุณยังไม่กรอก "จำนวนครั้ง PT" และไม่เลือกแพ็กเกจ\nระบบจะไม่อัปเดตชั่วโมงเทรนของสมาชิก\n\nบันทึกยอดต่อไปหรือไม่?')) return;
   }
 
   const needsLine = (type === 'MEM' || type === 'PT');
@@ -2182,14 +2211,12 @@ async function onSubmitSale(e) {
   DATA.sales.unshift(sale);
 
   // Auto-sync member จากยอดขาย MEM/PT
-  const syncResult = syncMemberFromSale(sale, pkgId);
+  const syncResult = syncMemberFromSale(sale, { pkgId, months, ptHours });
   if (syncResult) {
     if (syncResult.action === 'created') {
-      toast('➕ สร้างสมาชิกใหม่ ' + syncResult.member.id + ' (' + syncResult.detail + ')', 'ok');
+      toast('➕ สร้างสมาชิกใหม่ ' + syncResult.member.id + ' ' + syncResult.member.name + ' (' + syncResult.detail + ')', 'ok');
     } else if (syncResult.action === 'updated') {
       toast('🔄 อัปเดต ' + syncResult.member.id + ' ' + syncResult.member.name + ' (' + syncResult.detail + ')', 'ok');
-    } else if (syncResult.action === 'no_package' && needsLine) {
-      toast('ℹ ไม่ได้เลือกแพ็กเกจ — ไม่ได้อัปเดตสมาชิกอัตโนมัติ', 'warn');
     }
   }
 
@@ -2900,13 +2927,21 @@ function getPackageMonths(p) {
 }
 
 // Sync ข้อมูลสมาชิกจากยอดขาย — return { action, member, detail } หรือ null
-function syncMemberFromSale(sale, pkgId) {
+// opts: { months, ptHours, pkgId } — รับค่าจากฟอร์มโดยตรง (override package)
+function syncMemberFromSale(sale, opts) {
   if (sale.type !== 'MEM' && sale.type !== 'PT') return null;
-  const pkg = pkgId ? (DATA.packages || []).find(p => p.id === pkgId) : null;
-  if (!pkg) return { action: 'no_package' };
+  opts = opts || {};
+  const pkg = opts.pkgId ? (DATA.packages || []).find(p => p.id === opts.pkgId) : null;
 
-  const months = sale.type === 'MEM' ? getPackageMonths(pkg) : 0;
-  const ptHours = sale.type === 'PT' ? Number(pkg.hours || 0) : 0;
+  // ค่าจากฟอร์มมาก่อน, ถ้าไม่มีค่อย fallback ไปแพ็กเกจ
+  let months = 0;
+  let ptHours = 0;
+  if (sale.type === 'MEM') {
+    months = Number(opts.months) || (pkg ? getPackageMonths(pkg) : 0);
+  } else if (sale.type === 'PT') {
+    ptHours = Number(opts.ptHours) || (pkg ? Number(pkg.hours || 0) : 0);
+  }
+
   if (months === 0 && ptHours === 0) return { action: 'no_data' };
 
   const saleDate = new Date(sale.ts);
