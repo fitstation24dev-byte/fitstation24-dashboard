@@ -862,6 +862,7 @@ let TRAININGS_PAGE = 1;
 let DASH_SALES_PAGE = 1;
 let MEMBER_SEARCH = '';
 let MEMBER_STATUS = '';
+let MEMBER_PAGE = 1;
 
 function paginationHTML(total, current, onChangeFn) {
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -902,6 +903,10 @@ function setTrainingsPage(p) {
 function setDashSalesPage(p) {
   DASH_SALES_PAGE = p;
   navigate('dashboard');
+}
+function setMemberPage(p) {
+  MEMBER_PAGE = p;
+  renderMembersList();
 }
 
 async function loadData() {
@@ -2453,14 +2458,14 @@ function renderMembers(root) {
   tb.className = 'toolbar';
   tb.innerHTML = `
     <div class="filters">
-      <input id="m-search" type="text" placeholder="ค้นหา ชื่อ/นามสกุล/รหัส..." value="${_h(MEMBER_SEARCH)}" oninput="MEMBER_SEARCH=this.value;renderMembersList()">
-      <select id="m-status" onchange="MEMBER_STATUS=this.value;renderMembersList()">
+      <input id="m-search" type="text" placeholder="ค้นหา ชื่อ/นามสกุล/รหัส..." value="${_h(MEMBER_SEARCH)}" oninput="MEMBER_SEARCH=this.value;MEMBER_PAGE=1;renderMembersList()">
+      <select id="m-status" onchange="MEMBER_STATUS=this.value;MEMBER_PAGE=1;renderMembersList()">
         <option value="" ${MEMBER_STATUS===''?'selected':''}>ทุกสถานะ</option>
         <option value="Active" ${MEMBER_STATUS==='Active'?'selected':''}>Active</option>
         <option value="Frozen" ${MEMBER_STATUS==='Frozen'?'selected':''}>Frozen</option>
         <option value="Expired" ${MEMBER_STATUS==='Expired'?'selected':''}>Expired</option>
       </select>
-      ${MEMBER_SEARCH || MEMBER_STATUS ? '<button class="btn small secondary" onclick="MEMBER_SEARCH=\'\';MEMBER_STATUS=\'\';renderMembers(document.getElementById(\'content\'))">ล้างค้นหา</button>' : ''}
+      ${MEMBER_SEARCH || MEMBER_STATUS ? '<button class="btn small secondary" onclick="MEMBER_SEARCH=\'\';MEMBER_STATUS=\'\';MEMBER_PAGE=1;renderMembers(document.getElementById(\'content\'))">ล้างค้นหา</button>' : ''}
     </div>
     ${editable ? `<div style="display:flex; gap:8px;">
       <button class="btn secondary" onclick="document.getElementById('member-import-file').click()" title="นำเข้าจาก Excel/CSV">⬆ นำเข้า Excel</button>
@@ -2491,8 +2496,14 @@ function renderMembersList() {
   if (MEMBER_STATUS) list = list.filter(m => m.status === MEMBER_STATUS);
   list.sort((a, b) => daysBetween(a.endDate, ref) - daysBetween(b.endDate, ref));
 
+  const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
+  if (MEMBER_PAGE > totalPages) MEMBER_PAGE = totalPages;
+  if (MEMBER_PAGE < 1) MEMBER_PAGE = 1;
+  const pageStart = (MEMBER_PAGE - 1) * PAGE_SIZE;
+  const pageList = list.slice(pageStart, pageStart + PAGE_SIZE);
+
   let rows = '';
-  list.forEach(m => {
+  pageList.forEach(m => {
     const days = daysBetween(m.endDate, ref);
     const dayCls = days < 0 ? 'days-low' : (days <= DATA.settings.expiryWarnDays ? 'days-warn' : '');
     const hrCls = m.hours > 0 && m.hours <= DATA.settings.trainerWarnHrs ? 'hrs-low' : '';
@@ -2514,12 +2525,13 @@ function renderMembersList() {
   });
   if (rows === '') rows = `<tr><td colspan="10" class="muted center" style="padding: 20px;">ไม่พบข้อมูลสมาชิก</td></tr>`;
 
-  const headerLabel = (MEMBER_SEARCH || MEMBER_STATUS)
-    ? `ผลการค้นหา <small>${list.length} รายการ</small>`
-    : `สมาชิกทั้งหมด <small>${list.length} รายการ</small>`;
+  const baseTitle = (MEMBER_SEARCH || MEMBER_STATUS) ? 'ผลการค้นหา' : 'สมาชิกทั้งหมด';
+  const rangeLabel = list.length > 0
+    ? `แสดง ${pageStart + 1}–${Math.min(pageStart + PAGE_SIZE, list.length)} จาก ${list.length} รายการ`
+    : `${list.length} รายการ`;
 
   card.innerHTML = `
-    <h2>${headerLabel}</h2>
+    <h2>${baseTitle} <small>${rangeLabel}</small></h2>
     <table>
       <thead><tr>
         <th>ID</th><th>ชื่อ-นามสกุล</th><th class="center">อายุ</th>
@@ -2529,6 +2541,7 @@ function renderMembersList() {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
+    ${paginationHTML(list.length, MEMBER_PAGE, 'setMemberPage')}
   `;
   container.innerHTML = '';
   container.appendChild(card);
