@@ -1611,7 +1611,7 @@ function renderDashboard(root) {
 }
 
 function typeColor(t) {
-  return { 'MEM': '#534AB7', 'PT': '#185FA5', 'Plan': '#888780', 'Train': '#16A34A' }[t] || '#6B7280';
+  return { 'MEM': '#534AB7', 'PT': '#185FA5', 'MEM+PT': '#7C3AED', 'Plan': '#888780', 'Train': '#16A34A' }[t] || '#6B7280';
 }
 function renderNotifyBadge(n) {
   if (n === 'Sent') return '<span class="badge ok">Sent</span>';
@@ -1661,8 +1661,7 @@ function renderSalesEntry(root) {
             <option value="">เลือก...</option>
             <option value="MEM">MEM (สมาชิก)</option>
             <option value="PT">PT (เทรน)</option>
-            <option value="Plan">Plan (รายวัน)</option>
-            <option value="Other">อื่นๆ</option>
+            <option value="MEM+PT">MEM+PT (สมาชิก + เทรน)</option>
           </select>
         </div>
         <div class="field">
@@ -1851,7 +1850,11 @@ function refreshSalePackageOptions() {
   const selectedType = typeEl ? typeEl.value : '';
   const list = (DATA.packages || [])
     .filter(p => !p.branch || !br || p.branch === br)
-    .filter(p => !selectedType || p.type === selectedType);
+    .filter(p => {
+      if (!selectedType) return false;
+      if (selectedType === 'MEM+PT') return p.type === 'MEM' || p.type === 'PT';
+      return p.type === selectedType;
+    });
   const prev = sel.value;
   const hint = selectedType ? '— เลือกแพ็กเกจ ' + selectedType + ' —' : '— เลือกประเภทก่อน —';
   sel.innerHTML = `<option value="">${hint}</option>` +
@@ -1880,13 +1883,13 @@ function onMemberPick() {
 function updateSaleSlipReq() {
   const t = document.getElementById('se-type').value;
   const req = document.getElementById('se-slip-req');
-  if (t === 'MEM' || t === 'PT') req.style.display = '';
-  else req.style.display = 'none';
+  const needsSlip = (t === 'MEM' || t === 'PT' || t === 'MEM+PT');
+  if (req) req.style.display = needsSlip ? '' : 'none';
   // โชว์/ซ่อน field จำนวนเดือน-จำนวนครั้ง PT ตามประเภท
   const mf = document.getElementById('se-months-field');
   const pf = document.getElementById('se-pthours-field');
-  if (mf) mf.style.display = (t === 'MEM') ? '' : 'none';
-  if (pf) pf.style.display = (t === 'PT')  ? '' : 'none';
+  if (mf) mf.style.display = (t === 'MEM' || t === 'MEM+PT') ? '' : 'none';
+  if (pf) pf.style.display = (t === 'PT'  || t === 'MEM+PT') ? '' : 'none';
   updateLinePreview();
 }
 
@@ -1897,17 +1900,33 @@ function onPickSalePackage() {
   if (!p) return;
   const typeSel = document.getElementById('se-type');
   if (typeSel && p.type) {
-    const opt = Array.from(typeSel.options).find(o => o.value === p.type);
-    if (opt) typeSel.value = p.type;
+    const currentType = typeSel.value;
+    // ไม่ override ถ้าผู้ใช้กำลังอยู่ในโหมด MEM+PT และแพ็กเกจเป็น MEM หรือ PT
+    const compatible = currentType === p.type || (currentType === 'MEM+PT' && (p.type === 'MEM' || p.type === 'PT'));
+    if (!compatible) {
+      const opt = Array.from(typeSel.options).find(o => o.value === p.type);
+      if (opt) typeSel.value = p.type;
+    }
     updateSaleSlipReq();
   }
   const amt = document.getElementById('se-amount');
-  if (amt) amt.value = p.price || 0;
-  // เติมจำนวนเดือน/จำนวนครั้ง PT จากแพ็กเกจ
-  const mInput = document.getElementById('se-months');
-  if (mInput) mInput.value = getPackageMonths(p) || '';
-  const ptInput = document.getElementById('se-pthours');
-  if (ptInput) ptInput.value = (p.type === 'PT' && p.hours) ? p.hours : '';
+  const currentType = (document.getElementById('se-type') || {}).value || '';
+  if (amt) {
+    // ใน MEM+PT ให้บวกราคาเข้ากับยอดเดิม (รวมแพ็กเกจ 2 ก้อน)
+    if (currentType === 'MEM+PT' && Number(amt.value || 0) > 0) {
+      amt.value = Number(amt.value || 0) + Number(p.price || 0);
+    } else {
+      amt.value = p.price || 0;
+    }
+  }
+  // เติมจำนวนเดือน/จำนวนครั้ง PT จากแพ็กเกจตามประเภท (ไม่ทับ field อื่น)
+  if (p.type === 'MEM') {
+    const mInput = document.getElementById('se-months');
+    if (mInput) mInput.value = getPackageMonths(p) || '';
+  } else if (p.type === 'PT') {
+    const ptInput = document.getElementById('se-pthours');
+    if (ptInput) ptInput.value = p.hours || '';
+  }
   const note = document.getElementById('se-note');
   if (note) {
     const tag = p.code ? p.code + ' — ' + p.name : p.name;
@@ -1946,7 +1965,7 @@ function updateRenewAvailability() {
 
 function updateLinePreview() {
   const t = document.getElementById('se-type').value;
-  if (!['MEM','PT'].includes(t)) {
+  if (!['MEM','PT','MEM+PT'].includes(t)) {
     document.getElementById('se-line-preview').textContent = 'ประเภท ' + (t || '—') + ' ไม่ต้องส่ง LINE';
     return;
   }
@@ -2328,11 +2347,11 @@ async function onSubmitSale(e) {
     toast('ช่องทาง Renew ใช้ได้กับสมาชิกเก่าเท่านั้น', 'bad'); return;
   }
 
-  if ((type === 'MEM' || type === 'PT') && !slip) {
+  if ((type === 'MEM' || type === 'PT' || type === 'MEM+PT') && !slip) {
     if (!confirm('ประเภท ' + type + ' ปกติต้องแนบสลิป\nบันทึกโดยไม่มีสลิปจริงหรือ?')) return;
   }
 
-  const needsLine = (type === 'MEM' || type === 'PT');
+  const needsLine = (type === 'MEM' || type === 'PT' || type === 'MEM+PT');
   const tsInput = (document.getElementById('se-ts') || {}).value || '';
   const tsDate = tsInput ? new Date(tsInput) : new Date();
   if (isNaN(tsDate.getTime())) { toast('วันที่/เวลาไม่ถูกต้อง', 'bad'); return; }
@@ -3067,17 +3086,18 @@ function getPackageMonths(p) {
 // Sync ข้อมูลสมาชิกจากยอดขาย — return { action, member, detail } หรือ null
 // opts: { months, ptHours, pkgId } — รับค่าจากฟอร์มโดยตรง (override package)
 function syncMemberFromSale(sale, opts) {
-  if (sale.type !== 'MEM' && sale.type !== 'PT') return null;
+  if (sale.type !== 'MEM' && sale.type !== 'PT' && sale.type !== 'MEM+PT') return null;
   opts = opts || {};
   const pkg = opts.pkgId ? (DATA.packages || []).find(p => p.id === opts.pkgId) : null;
 
   // ค่าจากฟอร์มมาก่อน, ถ้าไม่มีค่อย fallback ไปแพ็กเกจ
   let months = 0;
   let ptHours = 0;
-  if (sale.type === 'MEM') {
-    months = Number(opts.months) || (pkg ? getPackageMonths(pkg) : 0);
-  } else if (sale.type === 'PT') {
-    ptHours = Number(opts.ptHours) || (pkg ? Number(pkg.hours || 0) : 0);
+  if (sale.type === 'MEM' || sale.type === 'MEM+PT') {
+    months = Number(opts.months) || (pkg && pkg.type === 'MEM' ? getPackageMonths(pkg) : 0);
+  }
+  if (sale.type === 'PT' || sale.type === 'MEM+PT') {
+    ptHours = Number(opts.ptHours) || (pkg && pkg.type === 'PT' ? Number(pkg.hours || 0) : 0);
   }
 
   const saleDate = new Date(sale.ts);
@@ -3514,8 +3534,7 @@ function renderSalesLog(root) {
         <option value="">ทุกประเภท</option>
         <option value="MEM" ${document.getElementById('sl-type')?.value==='MEM'?'selected':''}>MEM</option>
         <option value="PT" ${document.getElementById('sl-type')?.value==='PT'?'selected':''}>PT</option>
-        <option value="Plan" ${document.getElementById('sl-type')?.value==='Plan'?'selected':''}>Plan</option>
-        <option value="Other" ${document.getElementById('sl-type')?.value==='Other'?'selected':''}>อื่นๆ</option>
+        <option value="MEM+PT" ${document.getElementById('sl-type')?.value==='MEM+PT'?'selected':''}>MEM+PT</option>
       </select>
       <select id="sl-notify" onchange="SALES_LOG_PAGE=1;renderSalesLog(document.getElementById('content'))">
         <option value="">ทุกสถานะ LINE</option>
