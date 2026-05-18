@@ -1664,9 +1664,15 @@ function renderSalesEntry(root) {
             <option value="MEM+PT">MEM+PT (สมาชิก + เทรน)</option>
           </select>
         </div>
-        <div class="field">
-          <label>แพ็กเกจ <small class="muted">(เลือกเพื่อกรอกอัตโนมัติ)</small></label>
+        <div class="field" id="se-package-field">
+          <label id="se-package-label">แพ็กเกจ <small class="muted">(เลือกเพื่อกรอกอัตโนมัติ)</small></label>
           <select id="se-package" onchange="onPickSalePackage()">
+            <option value="">— ไม่ระบุ —</option>
+          </select>
+        </div>
+        <div class="field" id="se-package-pt-field" style="display:none;">
+          <label>แพ็กเกจ PT <small class="muted">(เลือกเพิ่ม)</small></label>
+          <select id="se-package-pt" onchange="onPickSalePackagePT()">
             <option value="">— ไม่ระบุ —</option>
           </select>
         </div>
@@ -1848,18 +1854,76 @@ function refreshSalePackageOptions() {
   const typeEl = document.getElementById('se-type');
   const br = branchEl ? branchEl.value : '';
   const selectedType = typeEl ? typeEl.value : '';
-  const list = (DATA.packages || [])
-    .filter(p => !p.branch || !br || p.branch === br)
-    .filter(p => {
-      if (!selectedType) return false;
-      if (selectedType === 'MEM+PT') return p.type === 'MEM' || p.type === 'PT';
-      return p.type === selectedType;
-    });
+
+  // ตัวกรองแพ็กเกจของแต่ละช่อง
+  const allPkgs = (DATA.packages || []).filter(p => !p.branch || !br || p.branch === br);
+  const buildOptions = (filterType, hint) =>
+    `<option value="">${hint}</option>` +
+    allPkgs.filter(p => p.type === filterType)
+      .map(p => `<option value="${_h(p.id)}">${_h(p.code ? p.code + ' · ' : '')}${_h(p.name)} — ${thb(p.price)}</option>`).join('');
+
+  // ช่องหลัก (se-package) — รู้ filter type จาก selectedType
+  const primaryType = selectedType === 'MEM+PT' ? 'MEM' : selectedType;
+  const primaryHint = primaryType ? '— เลือกแพ็กเกจ ' + primaryType + ' —' : '— เลือกประเภทก่อน —';
   const prev = sel.value;
-  const hint = selectedType ? '— เลือกแพ็กเกจ ' + selectedType + ' —' : '— เลือกประเภทก่อน —';
-  sel.innerHTML = `<option value="">${hint}</option>` +
-    list.map(p => `<option value="${_h(p.id)}">${_h(p.code ? p.code + ' · ' : '')}${_h(p.name)} — ${thb(p.price)}</option>`).join('');
-  if (prev && list.some(p => p.id === prev)) sel.value = prev;
+  sel.innerHTML = primaryType ? buildOptions(primaryType, primaryHint) : `<option value="">${primaryHint}</option>`;
+  if (prev && allPkgs.some(p => p.id === prev && p.type === primaryType)) sel.value = prev;
+  else sel.value = '';
+
+  // อัปเดต label ของช่องหลัก
+  const lblPrimary = document.getElementById('se-package-label');
+  if (lblPrimary) {
+    lblPrimary.innerHTML = (selectedType === 'MEM+PT')
+      ? 'แพ็กเกจ MEM <small class="muted">(เลือกเพื่อกรอกอัตโนมัติ)</small>'
+      : 'แพ็กเกจ <small class="muted">(เลือกเพื่อกรอกอัตโนมัติ)</small>';
+  }
+
+  // ช่อง PT (se-package-pt) — โผล่เฉพาะเมื่อ MEM+PT
+  const ptField = document.getElementById('se-package-pt-field');
+  const ptSel = document.getElementById('se-package-pt');
+  if (ptField && ptSel) {
+    if (selectedType === 'MEM+PT') {
+      ptField.style.display = '';
+      const prevPt = ptSel.value;
+      ptSel.innerHTML = buildOptions('PT', '— เลือกแพ็กเกจ PT —');
+      if (prevPt && allPkgs.some(p => p.id === prevPt && p.type === 'PT')) ptSel.value = prevPt;
+      else ptSel.value = '';
+    } else {
+      ptField.style.display = 'none';
+      ptSel.value = '';
+    }
+  }
+}
+
+function recalcSaleAmountFromPackages() {
+  const memSel = document.getElementById('se-package');
+  const ptSel = document.getElementById('se-package-pt');
+  const type = (document.getElementById('se-type') || {}).value || '';
+  let sum = 0;
+  if (memSel && memSel.value) {
+    const p = (DATA.packages || []).find(x => x.id === memSel.value);
+    if (p) sum += Number(p.price || 0);
+  }
+  if (type === 'MEM+PT' && ptSel && ptSel.value) {
+    const p = (DATA.packages || []).find(x => x.id === ptSel.value);
+    if (p) sum += Number(p.price || 0);
+  }
+  const amt = document.getElementById('se-amount');
+  if (amt && sum > 0) {
+    amt.value = sum;
+    updateSplitSummary();
+  }
+}
+
+function onPickSalePackagePT() {
+  const sel = document.getElementById('se-package-pt');
+  if (!sel || !sel.value) return;
+  const p = (DATA.packages || []).find(x => x.id === sel.value);
+  if (!p) return;
+  const ptInput = document.getElementById('se-pthours');
+  if (ptInput) ptInput.value = p.hours || '';
+  recalcSaleAmountFromPackages();
+  updateLinePreview();
 }
 
 function setSaleTsToNow() {
@@ -1909,17 +1973,7 @@ function onPickSalePackage() {
     }
     updateSaleSlipReq();
   }
-  const amt = document.getElementById('se-amount');
-  const currentType = (document.getElementById('se-type') || {}).value || '';
-  if (amt) {
-    // ใน MEM+PT ให้บวกราคาเข้ากับยอดเดิม (รวมแพ็กเกจ 2 ก้อน)
-    if (currentType === 'MEM+PT' && Number(amt.value || 0) > 0) {
-      amt.value = Number(amt.value || 0) + Number(p.price || 0);
-    } else {
-      amt.value = p.price || 0;
-    }
-  }
-  // เติมจำนวนเดือน/จำนวนครั้ง PT จากแพ็กเกจตามประเภท (ไม่ทับ field อื่น)
+  // เติมจำนวนเดือน/จำนวนครั้ง PT จากแพ็กเกจตามประเภท
   if (p.type === 'MEM') {
     const mInput = document.getElementById('se-months');
     if (mInput) mInput.value = getPackageMonths(p) || '';
@@ -1927,6 +1981,8 @@ function onPickSalePackage() {
     const ptInput = document.getElementById('se-pthours');
     if (ptInput) ptInput.value = p.hours || '';
   }
+  // รวมราคาของ MEM + PT (ถ้าอยู่ในโหมด MEM+PT) หรือใช้ราคาเดี่ยว
+  recalcSaleAmountFromPackages();
   const note = document.getElementById('se-note');
   if (note) {
     const tag = p.code ? p.code + ' — ' + p.name : p.name;
@@ -1999,6 +2055,8 @@ function resetSaleForm() {
   if (hidden) hidden.value = '';
   setSaleTsToNow();
   resetSaleSplits();
+  refreshSalePackageOptions();
+  updateSaleSlipReq();
   updateRenewAvailability();
   updateSlipPreview();
   updateLinePreview();
