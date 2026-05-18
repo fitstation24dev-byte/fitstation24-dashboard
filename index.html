@@ -2191,14 +2191,6 @@ async function onSubmitSale(e) {
     if (!confirm('ประเภท ' + type + ' ปกติต้องแนบสลิป\nบันทึกโดยไม่มีสลิปจริงหรือ?')) return;
   }
 
-  // เตือนเมื่อ MEM/PT ไม่มีจำนวนเดือน/PT — สมาชิกจะไม่ถูกเพิ่ม
-  if (type === 'MEM' && months === 0 && !pkgId) {
-    if (!confirm('คุณยังไม่กรอก "จำนวนเดือน" และไม่เลือกแพ็กเกจ\nระบบจะไม่สร้าง/อัปเดตสมาชิกอัตโนมัติ\n\nบันทึกยอดต่อไปหรือไม่?')) return;
-  }
-  if (type === 'PT' && ptHours === 0 && !pkgId) {
-    if (!confirm('คุณยังไม่กรอก "จำนวนครั้ง PT" และไม่เลือกแพ็กเกจ\nระบบจะไม่อัปเดตชั่วโมงเทรนของสมาชิก\n\nบันทึกยอดต่อไปหรือไม่?')) return;
-  }
-
   const needsLine = (type === 'MEM' || type === 'PT');
   const tsInput = (document.getElementById('se-ts') || {}).value || '';
   const tsDate = tsInput ? new Date(tsInput) : new Date();
@@ -2942,8 +2934,6 @@ function syncMemberFromSale(sale, opts) {
     ptHours = Number(opts.ptHours) || (pkg ? Number(pkg.hours || 0) : 0);
   }
 
-  if (months === 0 && ptHours === 0) return { action: 'no_data' };
-
   const saleDate = new Date(sale.ts);
 
   // ลูกค้าเก่า — มี memberId
@@ -2964,10 +2954,11 @@ function syncMemberFromSale(sale, opts) {
       member.hours = (Number(member.hours) || 0) + ptHours;
       detail.push('+' + ptHours + ' ครั้ง PT');
     }
+    if (detail.length === 0) return null;
     return { action: 'updated', member, detail: detail.join(', ') };
   }
 
-  // ลูกค้าใหม่ — มีชื่อ แต่ไม่มี ID
+  // ลูกค้าใหม่ — มีชื่อ แต่ไม่มี ID → สร้างสมาชิกใหม่เสมอ
   if (sale.memberName && sale.memberName.trim()) {
     const parts = sale.memberName.trim().split(/\s+/);
     const name = parts[0] || sale.memberName;
@@ -2994,6 +2985,7 @@ function syncMemberFromSale(sale, opts) {
     const detail = [];
     if (months > 0) detail.push(months + ' เดือน (' + addedDays + ' วัน)');
     if (ptHours > 0) detail.push(ptHours + ' ครั้ง PT');
+    if (detail.length === 0) detail.push('ยังไม่กำหนดอายุสมาชิก — แก้ไขในเมนูสมาชิกได้');
     return { action: 'created', member: newMember, detail: detail.join(', ') };
   }
 
