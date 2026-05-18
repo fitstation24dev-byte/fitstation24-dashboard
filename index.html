@@ -1657,7 +1657,7 @@ function renderSalesEntry(root) {
         </div>
         <div class="field">
           <label>ประเภท *</label>
-          <select id="se-type" required onchange="updateSaleSlipReq()">
+          <select id="se-type" required onchange="updateSaleSlipReq();refreshSalePackageOptions()">
             <option value="">เลือก...</option>
             <option value="MEM">MEM (สมาชิก)</option>
             <option value="PT">PT (เทรน)</option>
@@ -1846,10 +1846,15 @@ function refreshSalePackageOptions() {
   const sel = document.getElementById('se-package');
   if (!sel) return;
   const branchEl = document.getElementById('se-branch');
+  const typeEl = document.getElementById('se-type');
   const br = branchEl ? branchEl.value : '';
-  const list = (DATA.packages || []).filter(p => !p.branch || !br || p.branch === br);
+  const selectedType = typeEl ? typeEl.value : '';
+  const list = (DATA.packages || [])
+    .filter(p => !p.branch || !br || p.branch === br)
+    .filter(p => !selectedType || p.type === selectedType);
   const prev = sel.value;
-  sel.innerHTML = '<option value="">— ไม่ระบุ —</option>' +
+  const hint = selectedType ? '— เลือกแพ็กเกจ ' + selectedType + ' —' : '— เลือกประเภทก่อน —';
+  sel.innerHTML = `<option value="">${hint}</option>` +
     list.map(p => `<option value="${_h(p.id)}">${_h(p.code ? p.code + ' · ' : '')}${_h(p.name)} — ${thb(p.price)}</option>`).join('');
   if (prev && list.some(p => p.id === prev)) sel.value = prev;
 }
