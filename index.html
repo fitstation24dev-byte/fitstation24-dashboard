@@ -1646,9 +1646,14 @@ function renderSalesEntry(root) {
           <label>สาขา *</label>
           <select id="se-branch" required onchange="refreshSalePackageOptions()">${branches}</select>
         </div>
-        <div class="field">
-          <label>พนักงาน *</label>
-          <select id="se-emp" required><option value="">เลือก...</option>${employees}</select>
+        <div class="field full">
+          <label>ผู้ขาย * <small class="muted">(ใส่ได้หลายคน — แบ่งยอดได้)</small></label>
+          <div id="se-splits"></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;gap:8px;flex-wrap:wrap;">
+            <button type="button" class="btn small secondary" onclick="addSplitRow()">+ เพิ่มผู้ขาย</button>
+            <button type="button" class="btn small secondary" onclick="autoSplitEqual()" title="แบ่งเท่าๆ กันจากยอดรวม">⚖ แบ่งเท่าๆ กัน</button>
+            <span id="se-splits-summary" class="muted small"></span>
+          </div>
         </div>
         <div class="field">
           <label>ประเภท *</label>
@@ -1734,8 +1739,107 @@ function renderSalesEntry(root) {
     document.getElementById(id).addEventListener('input', updateLinePreview);
     document.getElementById(id).addEventListener('change', updateLinePreview);
   });
+  // ยอดรวมเปลี่ยน → refresh สรุปผู้ขาย
+  document.getElementById('se-amount').addEventListener('input', updateSplitSummary);
   setSaleTsToNow();
   refreshSalePackageOptions();
+  // เริ่มต้นด้วย 1 แถวผู้ขาย
+  resetSaleSplits();
+}
+
+// ========== SPLITS (ผู้ขายหลายคน) ==========
+function buildEmployeeOptionsHTML() {
+  return DATA.employees
+    .filter(e => canSeeAllBranches() || e.branch === SESSION.branch)
+    .filter(e => e.status === 'Active' || e.status === undefined || e.status === '')
+    .map(e => `<option value="${_h(e.id)}">${_h(e.id)} — ${_h(e.name)} ${_h(e.surname)}</option>`).join('');
+}
+
+function addSplitRow(empId, amount) {
+  const container = document.getElementById('se-splits');
+  if (!container) return;
+  const row = document.createElement('div');
+  row.className = 'split-row';
+  row.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:6px;';
+  row.innerHTML = `
+    <select class="split-emp" required style="flex:2;min-width:0;" onchange="updateLinePreview()">
+      <option value="">เลือกพนักงาน...</option>
+      ${buildEmployeeOptionsHTML()}
+    </select>
+    <input type="number" class="split-amount" min="0" step="1" placeholder="ยอด" required style="flex:1;min-width:90px;" oninput="updateSplitSummary();updateLinePreview()">
+    <button type="button" class="btn small danger" onclick="removeSplitRow(this)" title="ลบ" style="flex:0 0 auto;">✕</button>
+  `;
+  container.appendChild(row);
+  if (empId) row.querySelector('.split-emp').value = empId;
+  if (amount != null && amount !== '') row.querySelector('.split-amount').value = amount;
+  updateSplitSummary();
+}
+
+function removeSplitRow(btn) {
+  const row = btn.closest('.split-row');
+  if (!row) return;
+  const container = document.getElementById('se-splits');
+  if (!container) return;
+  if (container.querySelectorAll('.split-row').length <= 1) {
+    toast('ต้องมีผู้ขายอย่างน้อย 1 คน', 'warn');
+    return;
+  }
+  row.remove();
+  updateSplitSummary();
+  updateLinePreview();
+}
+
+function updateSplitSummary() {
+  const rows = document.querySelectorAll('#se-splits .split-row');
+  const sum = Array.from(rows).reduce((acc, r) => acc + Number(r.querySelector('.split-amount').value || 0), 0);
+  const total = Number((document.getElementById('se-amount') || {}).value || 0);
+  const summary = document.getElementById('se-splits-summary');
+  if (!summary) return;
+  if (sum === 0 && total === 0) {
+    summary.textContent = '';
+  } else if (total === 0) {
+    summary.innerHTML = `รวมผู้ขาย: <strong>${thb(sum)}</strong>`;
+  } else if (sum === total) {
+    summary.innerHTML = `<span style="color:#16A34A;">✓ รวมผู้ขาย ${thb(sum)} (ตรงกับยอดรวม)</span>`;
+  } else {
+    summary.innerHTML = `<span style="color:#D97706;">⚠ ผู้ขาย ${thb(sum)} / ยอดรวม ${thb(total)} (ต่าง ${thb(Math.abs(sum-total))})</span>`;
+  }
+}
+
+function autoSplitEqual() {
+  const rows = document.querySelectorAll('#se-splits .split-row');
+  const total = Number((document.getElementById('se-amount') || {}).value || 0);
+  if (rows.length === 0) { toast('กรุณาเพิ่มผู้ขายก่อน', 'warn'); return; }
+  if (total === 0) { toast('กรอกยอดรวมก่อน', 'warn'); return; }
+  const each = Math.floor(total / rows.length);
+  const remainder = total - each * rows.length;
+  rows.forEach((r, i) => {
+    r.querySelector('.split-amount').value = each + (i === 0 ? remainder : 0);
+  });
+  updateSplitSummary();
+  updateLinePreview();
+}
+
+function gatherSplits() {
+  const rows = document.querySelectorAll('#se-splits .split-row');
+  const splits = [];
+  rows.forEach(r => {
+    const empId = r.querySelector('.split-emp').value;
+    const amt = Number(r.querySelector('.split-amount').value || 0);
+    if (empId && amt > 0) {
+      const emp = DATA.employees.find(e => e.id === empId);
+      const empName = emp ? ((emp.name || '') + ' ' + (emp.surname || '')).trim() : empId;
+      splits.push({ empId, empName, amount: amt });
+    }
+  });
+  return splits;
+}
+
+function resetSaleSplits() {
+  const container = document.getElementById('se-splits');
+  if (!container) return;
+  container.innerHTML = '';
+  addSplitRow();
 }
 
 function refreshSalePackageOptions() {
@@ -1843,19 +1947,23 @@ function updateLinePreview() {
   }
   const branch = document.getElementById('se-branch').value;
   const br = DATA.branches.find(b => b.code === branch);
-  const empId = document.getElementById('se-emp').value;
-  const emp = DATA.employees.find(e => e.id === empId);
+  const splits = gatherSplits();
   const amount = document.getElementById('se-amount').value || '0';
   const channel = document.getElementById('se-channel').value || '-';
   const memName = document.getElementById('se-mname').value || '-';
   const note = document.getElementById('se-note').value || '';
   const slip = document.getElementById('se-slip').value ? '(แนบแล้ว)' : '(ยังไม่แนบสลิป)';
+  const empLine = splits.length === 0
+    ? '-'
+    : splits.length === 1
+      ? splits[0].empName
+      : '\n' + splits.map(s => '  • ' + s.empName + ' — ' + DATA.settings.currency + Number(s.amount).toLocaleString()).join('\n');
   const text = `🧾 ยอดใหม่ — ${br ? br.name : branch}
 ประเภท: ${t}
 ช่องทาง: ${channel}
 สมาชิก: ${memName}
-พนักงาน: ${emp ? emp.name + ' ' + emp.surname : empId}
-ยอด: ${DATA.settings.currency}${Number(amount).toLocaleString()}
+ผู้ขาย: ${empLine}
+ยอดรวม: ${DATA.settings.currency}${Number(amount).toLocaleString()}
 ${note ? 'หมายเหตุ: ' + note + '\n' : ''}เวลา: ${new Date().toLocaleString('th-TH')}
 สลิป: ${slip}`;
   document.getElementById('se-line-preview').textContent = text;
@@ -1866,6 +1974,7 @@ function resetSaleForm() {
   const hidden = document.getElementById('se-member-id');
   if (hidden) hidden.value = '';
   setSaleTsToNow();
+  resetSaleSplits();
   updateRenewAvailability();
   updateSlipPreview();
   updateLinePreview();
@@ -1987,13 +2096,24 @@ async function sendLineMessage(text, slipUrl, branchCode) {
 
 async function sendSaleToLine(sale, slipUrl) {
   const branch = DATA.branches.find(b => b.code === sale.branch);
-  const emp = DATA.employees.find(e => e.id === sale.empId);
+  const cur = DATA.settings.currency;
+  let empLine;
+  if (Array.isArray(sale.splits) && sale.splits.length > 0) {
+    if (sale.splits.length === 1) {
+      empLine = sale.splits[0].empName || sale.splits[0].empId;
+    } else {
+      empLine = '\n' + sale.splits.map(sp => '  • ' + (sp.empName || sp.empId) + ' — ' + cur + Number(sp.amount).toLocaleString()).join('\n');
+    }
+  } else {
+    const emp = DATA.employees.find(e => e.id === sale.empId);
+    empLine = emp ? emp.name + ' ' + emp.surname : sale.empId;
+  }
   const text = `🧾 ยอดใหม่ — ${branch ? branch.name : sale.branch}
 ประเภท: ${sale.type}
 ช่องทาง: ${sale.channel || '-'}
 สมาชิก: ${sale.memberName || '-'}
-พนักงาน: ${emp ? emp.name + ' ' + emp.surname : sale.empId}
-ยอด: ${DATA.settings.currency}${Number(sale.amount).toLocaleString()}${sale.note ? '\nหมายเหตุ: ' + sale.note : ''}
+ผู้ขาย: ${empLine}
+ยอดรวม: ${cur}${Number(sale.amount).toLocaleString()}${sale.note ? '\nหมายเหตุ: ' + sale.note : ''}
 เวลา: ${new Date(sale.ts).toLocaleString('th-TH')}`;
   await sendLineMessage(text, slipUrl, sale.branch);
 }
@@ -2103,13 +2223,18 @@ async function sendDailySalesSummaryToGroup() {
 
     const empMap = {};
     brSales.forEach(s => {
-      if (!s.empId) return;
-      const e = empMap[s.empId] = empMap[s.empId] || { mem:0, pt:0, plan:0, other:0, train:0 };
-      const amt = Number(s.amount) || 0;
-      if (s.type === 'MEM') e.mem += amt;
-      else if (s.type === 'PT') e.pt += amt;
-      else if (s.type === 'Plan') e.plan += amt;
-      else e.other += amt;
+      // ถ้ามี splits → กระจายยอดให้ผู้ขายแต่ละคน
+      const contributions = (Array.isArray(s.splits) && s.splits.length > 0)
+        ? s.splits.map(sp => ({ empId: sp.empId, amount: Number(sp.amount) || 0 }))
+        : (s.empId ? [{ empId: s.empId, amount: Number(s.amount) || 0 }] : []);
+      contributions.forEach(c => {
+        if (!c.empId) return;
+        const e = empMap[c.empId] = empMap[c.empId] || { mem:0, pt:0, plan:0, other:0, train:0 };
+        if (s.type === 'MEM') e.mem += c.amount;
+        else if (s.type === 'PT') e.pt += c.amount;
+        else if (s.type === 'Plan') e.plan += c.amount;
+        else e.other += c.amount;
+      });
     });
     brTrains.forEach(t => {
       if (!t.trainerId) return;
@@ -2171,7 +2296,7 @@ MEM: ${cur}${fmt(totalMem)} · PT: ${cur}${fmt(totalPt)}
 async function onSubmitSale(e) {
   e.preventDefault();
   const branch = document.getElementById('se-branch').value;
-  const empId = document.getElementById('se-emp').value;
+  const splits = gatherSplits();
   const type = document.getElementById('se-type').value;
   const amount = Number(document.getElementById('se-amount').value);
   const channel = document.getElementById('se-channel').value;
@@ -2182,6 +2307,17 @@ async function onSubmitSale(e) {
   const pkgId = (document.getElementById('se-package') || {}).value || '';
   const months = Number((document.getElementById('se-months') || {}).value || 0);
   const ptHours = Number((document.getElementById('se-pthours') || {}).value || 0);
+
+  if (splits.length === 0) {
+    toast('กรุณาเลือกผู้ขายอย่างน้อย 1 คน + กรอกยอด', 'bad'); return;
+  }
+
+  const splitSum = splits.reduce((a, b) => a + b.amount, 0);
+  if (amount > 0 && amount !== splitSum) {
+    if (!confirm(`ยอดรวมผู้ขาย ${splitSum.toLocaleString()} ไม่ตรงกับยอดรวม ${amount.toLocaleString()}\nต่างกัน ${Math.abs(amount - splitSum).toLocaleString()} บาท\n\nบันทึกต่อหรือไม่?`)) return;
+  }
+
+  const empId = splits[0].empId; // primary employee (backward compat)
 
   if (channel === 'Renew' && !memberId) {
     toast('ช่องทาง Renew ใช้ได้กับสมาชิกเก่าเท่านั้น', 'bad'); return;
@@ -2197,7 +2333,7 @@ async function onSubmitSale(e) {
   if (isNaN(tsDate.getTime())) { toast('วันที่/เวลาไม่ถูกต้อง', 'bad'); return; }
   const sale = {
     id: nid(), ts: tsDate.toISOString(),
-    branch, empId, type, memberId, memberName, amount, channel, slip, note,
+    branch, empId, splits, type, memberId, memberName, amount, channel, slip, note,
     notify: needsLine ? 'Pending' : '—',
   };
   DATA.sales.unshift(sale);
@@ -2594,8 +2730,13 @@ function openMemberHistoryModal(id) {
 
   let salesRows = '';
   sales.forEach(s => {
-    const emp = DATA.employees.find(e => e.id === s.empId);
-    const empName = emp ? emp.name + ' ' + emp.surname : s.empId;
+    let empName;
+    if (Array.isArray(s.splits) && s.splits.length > 1) {
+      empName = s.splits.map(sp => sp.empName || sp.empId).join(', ');
+    } else {
+      const emp = DATA.employees.find(e => e.id === s.empId);
+      empName = emp ? emp.name + ' ' + emp.surname : s.empId;
+    }
     const slipCell = s.slip ? `<a href="${_h(s.slip)}" target="_blank" rel="noopener">ดู</a>` : '<span class="muted">—</span>';
     salesRows += `<tr>
       <td>${fmtDate(s.ts)} ${fmtTimeShort(s.ts)}</td>
@@ -3417,8 +3558,13 @@ function renderSalesLog(root) {
     const slipLink = s.slip ? `<a href="#" onclick="event.preventDefault(); viewSaleSlipById('${s.id}');" style="color: var(--accent); cursor:pointer;">ดูสลิป</a>` : '<span class="muted">—</span>';
     const channelBadge = s.channel ? `<span class="badge gray">${s.channel}</span>` : '<span class="muted">—</span>';
     const actions = ownerCanDelete ? `<button class="btn small secondary" onclick="editSaleDate('${s.id}')" title="แก้ไขวันที่">✎ วันที่</button> <button class="btn small danger" onclick="deleteSale('${s.id}')">ลบ</button>` : '';
-    const emp = DATA.employees.find(e => e.id === s.empId);
-    const empLabel = emp ? `${_h(s.empId)} — ${_h(emp.name)}${emp.surname ? ' ' + _h(emp.surname) : ''}` : _h(s.empId || '');
+    let empLabel;
+    if (Array.isArray(s.splits) && s.splits.length > 1) {
+      empLabel = s.splits.map(sp => `${_h(sp.empName || sp.empId)}: ${thb(sp.amount)}`).join('<br>');
+    } else {
+      const emp = DATA.employees.find(e => e.id === s.empId);
+      empLabel = emp ? `${_h(s.empId)} — ${_h(emp.name)}${emp.surname ? ' ' + _h(emp.surname) : ''}` : _h(s.empId || '');
+    }
     rows += `<tr>
       <td>${fmtTime(s.ts)}</td>
       <td>${_h(s.branch)}</td>
@@ -4326,8 +4472,13 @@ function renderEmployees(root) {
       ? `<img class="emp-avatar" src="${e.photo}" alt="">`
       : `<div class="emp-avatar">${initial}</div>`;
     const salesAmount = DATA.sales
-      .filter(s => s.empId === e.id && (s.type === 'MEM' || s.type === 'PT'))
-      .reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+      .filter(s => s.type === 'MEM' || s.type === 'PT')
+      .reduce((sum, s) => {
+        if (Array.isArray(s.splits) && s.splits.length > 0) {
+          return sum + s.splits.filter(sp => sp.empId === e.id).reduce((a, sp) => a + (Number(sp.amount) || 0), 0);
+        }
+        return s.empId === e.id ? sum + (Number(s.amount) || 0) : sum;
+      }, 0);
     const isTrainer = normalizePosition(e.position) === 'Trainer';
     const trainCount = isTrainer
       ? DATA.trainings.filter(t => t.trainerId === e.id && t.verified).length
@@ -5093,10 +5244,21 @@ function exportCSV(kind) {
     });
   } else if (kind === 'employees') {
     rows.push(['EmpID','ชื่อ','นามสกุล','ตำแหน่ง','สาขา','สถานะ','ยอดขาย MEM','ยอดขาย PT','ยอดขายรวม','จำนวนรายการขาย','ชั่วโมงเทรน (ครั้ง)']);
+    // helper: ดึงยอดของพนักงานจากยอดขาย (รองรับ splits)
+    const empContribution = (sale, empId) => {
+      if (Array.isArray(sale.splits) && sale.splits.length > 0) {
+        return sale.splits.filter(sp => sp.empId === empId).reduce((a, sp) => a + (Number(sp.amount) || 0), 0);
+      }
+      return sale.empId === empId ? (Number(sale.amount) || 0) : 0;
+    };
+    const empInSale = (sale, empId) => {
+      if (Array.isArray(sale.splits) && sale.splits.length > 0) return sale.splits.some(sp => sp.empId === empId);
+      return sale.empId === empId;
+    };
     filterByBranch(DATA.employees).forEach(e => {
-      const empSales = DATA.sales.filter(s => s.empId === e.id && (s.type === 'MEM' || s.type === 'PT'));
-      const memAmt = empSales.filter(s => s.type === 'MEM').reduce((a,b) => a + (Number(b.amount) || 0), 0);
-      const ptAmt  = empSales.filter(s => s.type === 'PT').reduce((a,b) => a + (Number(b.amount) || 0), 0);
+      const empSales = DATA.sales.filter(s => empInSale(s, e.id) && (s.type === 'MEM' || s.type === 'PT'));
+      const memAmt = empSales.filter(s => s.type === 'MEM').reduce((a,b) => a + empContribution(b, e.id), 0);
+      const ptAmt  = empSales.filter(s => s.type === 'PT').reduce((a,b) => a + empContribution(b, e.id), 0);
       const isTrainer = normalizePosition(e.position) === 'Trainer';
       const trainCount = isTrainer
         ? DATA.trainings.filter(t => t.trainerId === e.id && t.verified).length
