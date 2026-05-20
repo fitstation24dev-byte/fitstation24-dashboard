@@ -4574,7 +4574,7 @@ function renderEmployees(root) {
       ? `<img class="emp-avatar" src="${e.photo}" alt="">`
       : `<div class="emp-avatar">${initial}</div>`;
     const salesAmount = DATA.sales
-      .filter(s => s.type === 'MEM' || s.type === 'PT')
+      .filter(s => s.type === 'MEM' || s.type === 'PT' || s.type === 'MEM+PT')
       .reduce((sum, s) => {
         if (Array.isArray(s.splits) && s.splits.length > 0) {
           return sum + s.splits.filter(sp => sp.empId === e.id).reduce((a, sp) => a + (Number(sp.amount) || 0), 0);
@@ -5358,8 +5358,8 @@ function exportCSV(kind) {
       return sale.empId === empId;
     };
     filterByBranch(DATA.employees).forEach(e => {
-      const empSales = DATA.sales.filter(s => empInSale(s, e.id) && (s.type === 'MEM' || s.type === 'PT'));
-      const memAmt = empSales.filter(s => s.type === 'MEM').reduce((a,b) => a + empContribution(b, e.id), 0);
+      const empSales = DATA.sales.filter(s => empInSale(s, e.id) && (s.type === 'MEM' || s.type === 'PT' || s.type === 'MEM+PT'));
+      const memAmt = empSales.filter(s => s.type === 'MEM' || s.type === 'MEM+PT').reduce((a,b) => a + empContribution(b, e.id), 0);
       const ptAmt  = empSales.filter(s => s.type === 'PT').reduce((a,b) => a + empContribution(b, e.id), 0);
       const isTrainer = normalizePosition(e.position) === 'Trainer';
       const trainCount = isTrainer
