@@ -892,25 +892,32 @@ function paginationHTML(total, current, onChangeFn) {
   </div>`;
 }
 
+function scrollToTop() {
+  try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch { window.scrollTo(0, 0); }
+  document.documentElement.scrollTop = 0;
+  document.body.scrollTop = 0;
+  const main = document.querySelector('.main');
+  if (main) main.scrollTop = 0;
+}
 function setSalesLogPage(p) {
   SALES_LOG_PAGE = p;
   renderSalesLog(document.getElementById('content'));
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  scrollToTop();
 }
 function setTrainingsPage(p) {
   TRAININGS_PAGE = p;
   renderRecentTrainingsContent(document.getElementById('recent-trainings-card'));
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  scrollToTop();
 }
 function setDashSalesPage(p) {
   DASH_SALES_PAGE = p;
   navigate('dashboard');
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  scrollToTop();
 }
 function setMemberPage(p) {
   MEMBER_PAGE = p;
   renderMembersList();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  scrollToTop();
 }
 
 async function loadData() {
