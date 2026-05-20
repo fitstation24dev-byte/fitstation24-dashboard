@@ -3615,6 +3615,7 @@ function printContract(m) {
 
 // ============ SALES LOG ============
 function renderSalesLog(root) {
+  root.innerHTML = '';
   const tb = document.createElement('div');
   tb.className = 'toolbar';
   tb.innerHTML = `
