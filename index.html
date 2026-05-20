@@ -1367,16 +1367,24 @@ function renderDashboard(root) {
   const trainings = filterByBranch(DATA.trainings);
 
   const todaySales = sales.filter(s => inRange(s.ts, range));
-  const todayMem = todaySales.filter(s => s.type === 'MEM').reduce((a,b) => a + Number(b.amount || 0), 0);
-  const todayPt  = todaySales.filter(s => s.type === 'PT').reduce((a,b) => a + Number(b.amount || 0), 0);
-  const todayMemPt = todaySales.filter(s => s.type === 'MEM+PT').reduce((a,b) => a + Number(b.amount || 0), 0);
+  const memPart = (s) => {
+    if (s.type === 'MEM') return Number(s.amount || 0);
+    if (s.type === 'MEM+PT') return s.memAmount != null ? Number(s.memAmount) : Number(s.amount || 0) / 2;
+    return 0;
+  };
+  const ptPart = (s) => {
+    if (s.type === 'PT') return Number(s.amount || 0);
+    if (s.type === 'MEM+PT') return s.ptAmount != null ? Number(s.ptAmount) : Number(s.amount || 0) / 2;
+    return 0;
+  };
+  const todayMem  = todaySales.reduce((a,b) => a + memPart(b), 0);
+  const todayPt   = todaySales.reduce((a,b) => a + ptPart(b),  0);
   const todayPlan = todaySales.filter(s => s.type === 'Plan').reduce((a,b) => a + Number(b.amount || 0), 0);
   const todayTotal = todaySales.filter(s => s.type !== 'Train').reduce((a,b) => a + Number(b.amount || 0), 0);
-  const memPtCount = todaySales.filter(s => s.type === 'MEM+PT').length;
   const todayTrain = trainings.filter(t => t.verified && inRange(t.ts, range)).length;
 
-  const memCount = todaySales.filter(s => s.type === 'MEM').length;
-  const ptCount  = todaySales.filter(s => s.type === 'PT').length;
+  const memCount = todaySales.filter(s => s.type === 'MEM' || s.type === 'MEM+PT').length;
+  const ptCount  = todaySales.filter(s => s.type === 'PT'  || s.type === 'MEM+PT').length;
 
   // Period picker toolbar
   const opts = [
@@ -1430,11 +1438,6 @@ function renderDashboard(root) {
       <div class="value">${ptCount}</div>
       <div class="sub">${thb(todayPt)}</div>
     </div>
-    <div class="kpi">
-      <div class="label">MEM+PT ${dateLabel}</div>
-      <div class="value">${memPtCount}</div>
-      <div class="sub">${thb(todayMemPt)}</div>
-    </div>
     <div class="kpi ok">
       <div class="label">เทรน${dateLabel}</div>
       <div class="value">${todayTrain}</div>
@@ -1468,25 +1471,23 @@ function renderDashboard(root) {
   bb.className = 'card';
   let rows = '';
   const showBranches = canSeeAllBranches() ? DATA.branches.map(b => b.code) : [SESSION.branch];
-  let totals = { mem: 0, pt: 0, mempt: 0, plan: 0, all: 0, train: 0, overdue: 0 };
+  let totals = { mem: 0, pt: 0, plan: 0, all: 0, train: 0, overdue: 0 };
   const overdueRef = today;
   showBranches.forEach(code => {
     const br = DATA.branches.find(x => x.code === code);
     const bs = DATA.sales.filter(s => s.branch === code && inRange(s.ts, range));
-    const mem = bs.filter(x => x.type === 'MEM').reduce((a,b) => a + Number(b.amount || 0), 0);
-    const pt  = bs.filter(x => x.type === 'PT').reduce((a,b) => a + Number(b.amount || 0), 0);
-    const mempt = bs.filter(x => x.type === 'MEM+PT').reduce((a,b) => a + Number(b.amount || 0), 0);
+    const mem = bs.reduce((a,b) => a + memPart(b), 0);
+    const pt  = bs.reduce((a,b) => a + ptPart(b),  0);
     const pl  = bs.filter(x => x.type === 'Plan').reduce((a,b) => a + Number(b.amount || 0), 0);
     const tot = bs.filter(x => x.type !== 'Train').reduce((a,b) => a + Number(b.amount || 0), 0);
     const tr  = DATA.trainings.filter(t => t.branch === code && t.verified && inRange(t.ts, range)).length;
     const overdue = DATA.members.filter(m => m.branch === code && m.status === 'Active' && new Date(m.endDate) < overdueRef).length;
-    totals.mem += mem; totals.pt += pt; totals.mempt += mempt; totals.plan += pl; totals.all += tot; totals.train += tr; totals.overdue += overdue;
+    totals.mem += mem; totals.pt += pt; totals.plan += pl; totals.all += tot; totals.train += tr; totals.overdue += overdue;
     rows += `
       <tr>
         <td><strong>${_h(code)}</strong> · <span class="muted">${br ? _h(br.name.replace(code + ' - ', '')) : ''}</span></td>
         <td class="right">${thb(mem)}</td>
         <td class="right">${thb(pt)}</td>
-        <td class="right">${thb(mempt)}</td>
         <td class="right">${thb(pl)}</td>
         <td class="right"><strong>${thb(tot)}</strong></td>
         <td class="right">${tr}</td>
@@ -1499,7 +1500,6 @@ function renderDashboard(root) {
         <td>รวม</td>
         <td class="right">${thb(totals.mem)}</td>
         <td class="right">${thb(totals.pt)}</td>
-        <td class="right">${thb(totals.mempt)}</td>
         <td class="right">${thb(totals.plan)}</td>
         <td class="right">${thb(totals.all)}</td>
         <td class="right">${totals.train}</td>
@@ -1510,7 +1510,7 @@ function renderDashboard(root) {
     <h2>ยอด${dateLabel}แยกตามสาขา</h2>
     <table>
       <thead><tr>
-        <th>สาขา</th><th class="right">MEM</th><th class="right">PT</th><th class="right">MEM+PT</th><th class="right">Plan</th>
+        <th>สาขา</th><th class="right">MEM</th><th class="right">PT</th><th class="right">Plan</th>
         <th class="right">รวม</th><th class="right">เทรน</th><th class="right">เกินกำหนด</th>
       </tr></thead>
       <tbody>${rows}</tbody>
@@ -2454,10 +2454,19 @@ async function onSubmitSale(e) {
   const tsInput = (document.getElementById('se-ts') || {}).value || '';
   const tsDate = tsInput ? new Date(tsInput) : new Date();
   if (isNaN(tsDate.getTime())) { toast('วันที่/เวลาไม่ถูกต้อง', 'bad'); return; }
+  let memAmount = null, ptAmount = null;
+  if (type === 'MEM+PT') {
+    const memPkg = (DATA.packages || []).find(p => p.id === pkgId);
+    const ptPkgId = (document.getElementById('se-package-pt') || {}).value || '';
+    const ptPkg = (DATA.packages || []).find(p => p.id === ptPkgId);
+    memAmount = memPkg ? Number(memPkg.price || 0) : Math.round(amount / 2);
+    ptAmount = ptPkg ? Number(ptPkg.price || 0) : (amount - memAmount);
+  }
   const sale = {
     id: nid(), ts: tsDate.toISOString(),
     branch, empId, splits, type, memberId, memberName, amount, channel, slip, note,
     notify: needsLine ? 'Pending' : '—',
+    ...(memAmount != null ? { memAmount, ptAmount } : {}),
   };
   DATA.sales.unshift(sale);
 
