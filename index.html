@@ -895,18 +895,22 @@ function paginationHTML(total, current, onChangeFn) {
 function setSalesLogPage(p) {
   SALES_LOG_PAGE = p;
   renderSalesLog(document.getElementById('content'));
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 function setTrainingsPage(p) {
   TRAININGS_PAGE = p;
   renderRecentTrainingsContent(document.getElementById('recent-trainings-card'));
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 function setDashSalesPage(p) {
   DASH_SALES_PAGE = p;
   navigate('dashboard');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 function setMemberPage(p) {
   MEMBER_PAGE = p;
   renderMembersList();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 async function loadData() {
