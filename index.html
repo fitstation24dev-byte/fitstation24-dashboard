@@ -1678,7 +1678,7 @@ function renderSalesEntry(root) {
         </div>
         <div class="field">
           <label>ประเภท *</label>
-          <select id="se-type" required onchange="updateSaleSlipReq();refreshSalePackageOptions()">
+          <select id="se-type" required onchange="updateSaleSlipReq();refreshSalePackageOptions();updateSplitTypeVisibility()">
             <option value="">เลือก...</option>
             <option value="MEM">MEM (สมาชิก)</option>
             <option value="PT">PT (เทรน)</option>
@@ -1781,9 +1781,11 @@ function buildEmployeeOptionsHTML() {
     .map(e => `<option value="${_h(e.id)}">${_h(e.id)} — ${_h(e.name)} ${_h(e.surname)}</option>`).join('');
 }
 
-function addSplitRow(empId, amount) {
+function addSplitRow(empId, amount, splitType) {
   const container = document.getElementById('se-splits');
   if (!container) return;
+  const saleType = (document.getElementById('se-type') || {}).value || '';
+  const showType = saleType === 'MEM+PT';
   const row = document.createElement('div');
   row.className = 'split-row';
   row.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:6px;';
@@ -1792,13 +1794,26 @@ function addSplitRow(empId, amount) {
       <option value="">เลือกพนักงาน...</option>
       ${buildEmployeeOptionsHTML()}
     </select>
+    <select class="split-type" title="ระบุประเภทยอดของพนักงานคนนี้" style="flex:0 0 88px;display:${showType ? '' : 'none'};" onchange="updateSplitSummary();updateLinePreview()">
+      <option value="MEM">MEM</option>
+      <option value="PT">PT</option>
+    </select>
     <input type="number" class="split-amount" min="0" step="1" placeholder="ยอด" required style="flex:1;min-width:90px;" oninput="updateSplitSummary();updateLinePreview()">
     <button type="button" class="btn small danger" onclick="removeSplitRow(this)" title="ลบ" style="flex:0 0 auto;">✕</button>
   `;
   container.appendChild(row);
   if (empId) row.querySelector('.split-emp').value = empId;
   if (amount != null && amount !== '') row.querySelector('.split-amount').value = amount;
+  if (splitType) row.querySelector('.split-type').value = splitType;
   updateSplitSummary();
+}
+
+function updateSplitTypeVisibility() {
+  const saleType = (document.getElementById('se-type') || {}).value || '';
+  const show = saleType === 'MEM+PT';
+  document.querySelectorAll('#se-splits .split-type').forEach(el => {
+    el.style.display = show ? '' : 'none';
+  });
 }
 
 function removeSplitRow(btn) {
@@ -1848,14 +1863,17 @@ function autoSplitEqual() {
 
 function gatherSplits() {
   const rows = document.querySelectorAll('#se-splits .split-row');
+  const saleType = (document.getElementById('se-type') || {}).value || '';
   const splits = [];
   rows.forEach(r => {
     const empId = r.querySelector('.split-emp').value;
     const amt = Number(r.querySelector('.split-amount').value || 0);
+    const typeEl = r.querySelector('.split-type');
+    const splitType = (saleType === 'MEM+PT' && typeEl) ? typeEl.value : '';
     if (empId && amt > 0) {
       const emp = DATA.employees.find(e => e.id === empId);
       const empName = emp ? ((emp.name || '') + ' ' + (emp.surname || '')).trim() : empId;
-      splits.push({ empId, empName, amount: amt });
+      splits.push({ empId, empName, amount: amt, ...(splitType ? { type: splitType } : {}) });
     }
   });
   return splits;
@@ -2360,12 +2378,18 @@ async function sendDailySalesSummaryToGroup() {
       const ratio = saleTotal > 0 ? 1 / saleTotal : 0;
 
       const contributions = (Array.isArray(s.splits) && s.splits.length > 0)
-        ? s.splits.map(sp => ({ empId: sp.empId, amount: Number(sp.amount) || 0 }))
+        ? s.splits.map(sp => ({ empId: sp.empId, amount: Number(sp.amount) || 0, splitType: sp.type }))
         : (s.empId ? [{ empId: s.empId, amount: saleTotal }] : []);
       contributions.forEach(c => {
         if (!c.empId) return;
         const e = empMap[c.empId] = empMap[c.empId] || { mem:0, pt:0, plan:0, other:0, train:0 };
-        // กระจายสัดส่วนตามยอด split / ยอดเต็มของรายการ
+        // MEM+PT + split มี type ของตัวเอง → ใช้ตรง ๆ
+        if (s.type === 'MEM+PT' && (c.splitType === 'MEM' || c.splitType === 'PT')) {
+          if (c.splitType === 'MEM') e.mem += c.amount;
+          else e.pt += c.amount;
+          return;
+        }
+        // ไม่มี → กระจายสัดส่วนตามยอด split / ยอดเต็มของรายการ
         const w = c.amount * ratio;
         e.mem   += memShare   * w;
         e.pt    += ptShare    * w;
@@ -2483,11 +2507,17 @@ async function onSubmitSale(e) {
   if (isNaN(tsDate.getTime())) { toast('วันที่/เวลาไม่ถูกต้อง', 'bad'); return; }
   let memAmount = null, ptAmount = null;
   if (type === 'MEM+PT') {
-    const memPkg = (DATA.packages || []).find(p => p.id === pkgId);
-    const ptPkgId = (document.getElementById('se-package-pt') || {}).value || '';
-    const ptPkg = (DATA.packages || []).find(p => p.id === ptPkgId);
-    memAmount = memPkg ? Number(memPkg.price || 0) : Math.round(amount / 2);
-    ptAmount = ptPkg ? Number(ptPkg.price || 0) : (amount - memAmount);
+    const hasSplitTypes = splits.some(s => s.type === 'MEM' || s.type === 'PT');
+    if (hasSplitTypes) {
+      memAmount = splits.filter(s => s.type === 'MEM').reduce((a, s) => a + s.amount, 0);
+      ptAmount  = splits.filter(s => s.type === 'PT').reduce((a, s) => a + s.amount, 0);
+    } else {
+      const memPkg = (DATA.packages || []).find(p => p.id === pkgId);
+      const ptPkgId = (document.getElementById('se-package-pt') || {}).value || '';
+      const ptPkg = (DATA.packages || []).find(p => p.id === ptPkgId);
+      memAmount = memPkg ? Number(memPkg.price || 0) : Math.round(amount / 2);
+      ptAmount = ptPkg ? Number(ptPkg.price || 0) : (amount - memAmount);
+    }
   }
   const sale = {
     id: nid(), ts: tsDate.toISOString(),
