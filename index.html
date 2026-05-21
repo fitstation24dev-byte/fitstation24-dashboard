@@ -2365,12 +2365,15 @@ async function sendDailySalesSummaryToGroup() {
       e.train += 1;
     });
 
-    const empIds = Object.keys(empMap);
+    const empIds = Object.keys(empMap).filter(id => {
+      const e = empMap[id];
+      return e.mem > 0 || e.pt > 0 || e.train > 0;
+    });
     if (empIds.length === 0) continue;
 
     empIds.sort((a, b) => {
-      const ta = empMap[a].mem + empMap[a].pt + empMap[a].plan + empMap[a].other;
-      const tb = empMap[b].mem + empMap[b].pt + empMap[b].plan + empMap[b].other;
+      const ta = empMap[a].mem + empMap[a].pt;
+      const tb = empMap[b].mem + empMap[b].pt;
       return tb - ta;
     });
 
