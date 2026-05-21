@@ -2346,17 +2346,31 @@ async function sendDailySalesSummaryToGroup() {
 
     const empMap = {};
     brSales.forEach(s => {
-      // ถ้ามี splits → กระจายยอดให้ผู้ขายแต่ละคน
+      const saleTotal = Number(s.amount) || 0;
+      // สำหรับ MEM+PT ให้แยกสัดส่วน MEM/PT จาก memAmount/ptAmount
+      let memShare = 0, ptShare = 0, planShare = 0, otherShare = 0;
+      if (s.type === 'MEM') memShare = saleTotal;
+      else if (s.type === 'PT') ptShare = saleTotal;
+      else if (s.type === 'MEM+PT') {
+        memShare = s.memAmount != null ? Number(s.memAmount) : saleTotal / 2;
+        ptShare  = s.ptAmount  != null ? Number(s.ptAmount)  : saleTotal / 2;
+      }
+      else if (s.type === 'Plan') planShare = saleTotal;
+      else otherShare = saleTotal;
+      const ratio = saleTotal > 0 ? 1 / saleTotal : 0;
+
       const contributions = (Array.isArray(s.splits) && s.splits.length > 0)
         ? s.splits.map(sp => ({ empId: sp.empId, amount: Number(sp.amount) || 0 }))
-        : (s.empId ? [{ empId: s.empId, amount: Number(s.amount) || 0 }] : []);
+        : (s.empId ? [{ empId: s.empId, amount: saleTotal }] : []);
       contributions.forEach(c => {
         if (!c.empId) return;
         const e = empMap[c.empId] = empMap[c.empId] || { mem:0, pt:0, plan:0, other:0, train:0 };
-        if (s.type === 'MEM') e.mem += c.amount;
-        else if (s.type === 'PT') e.pt += c.amount;
-        else if (s.type === 'Plan') e.plan += c.amount;
-        else e.other += c.amount;
+        // กระจายสัดส่วนตามยอด split / ยอดเต็มของรายการ
+        const w = c.amount * ratio;
+        e.mem   += memShare   * w;
+        e.pt    += ptShare    * w;
+        e.plan  += planShare  * w;
+        e.other += otherShare * w;
       });
     });
     brTrains.forEach(t => {
@@ -2384,8 +2398,18 @@ async function sendDailySalesSummaryToGroup() {
       return `${i+1}. ${nm} — MEM ${fmt(e.mem)} / PT ${fmt(e.pt)} / เทรน ${e.train}`;
     }).join('\n');
 
-    const totalMem = brSales.filter(s => s.type === 'MEM').reduce((a,b) => a + (Number(b.amount)||0), 0);
-    const totalPt  = brSales.filter(s => s.type === 'PT').reduce((a,b) => a + (Number(b.amount)||0), 0);
+    const memPart = s => {
+      if (s.type === 'MEM') return Number(s.amount) || 0;
+      if (s.type === 'MEM+PT') return s.memAmount != null ? Number(s.memAmount) : (Number(s.amount)||0) / 2;
+      return 0;
+    };
+    const ptPart = s => {
+      if (s.type === 'PT') return Number(s.amount) || 0;
+      if (s.type === 'MEM+PT') return s.ptAmount != null ? Number(s.ptAmount) : (Number(s.amount)||0) / 2;
+      return 0;
+    };
+    const totalMem = brSales.reduce((a,b) => a + memPart(b), 0);
+    const totalPt  = brSales.reduce((a,b) => a + ptPart(b), 0);
     const totalAll = brSales.reduce((a,b) => a + (Number(b.amount)||0), 0);
     const dateStr  = yest.toLocaleDateString('th-TH', { day:'2-digit', month:'2-digit', year:'numeric' });
 
