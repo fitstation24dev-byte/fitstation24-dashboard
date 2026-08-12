@@ -561,12 +561,12 @@
   .sch-card .daytag { display: inline-block; font-size: 11px; font-weight: 700; color: #fff; padding: 2px 10px; border-radius: 20px; margin-bottom: 8px; }
 
   /* Poster */
-  .sch-poster { background: radial-gradient(1200px 500px at 10% -10%, #1C2541 0%, #0B132B 55%, #060a17 100%); border-radius: 20px; padding: 28px 26px 30px; color: #fff; box-shadow: 0 20px 50px rgba(0,0,0,.3); }
+  .sch-poster { background: radial-gradient(1200px 500px at 10% -10%, #1C2541 0%, #0B132B 55%, #060a17 100%); border-radius: 20px; padding: 28px 26px 30px; color: #fff; box-shadow: 0 20px 50px rgba(0,0,0,.3); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .sch-poster .ph { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 1px solid rgba(255,255,255,.14); padding-bottom: 16px; margin-bottom: 18px; flex-wrap: wrap; gap: 10px; }
   .sch-poster .ph .big { font-size: 30px; font-weight: 800; letter-spacing: 1px; line-height: 1.05; }
   .sch-poster .ph .big span { color: var(--accent); }
   .sch-poster .ph .sub { color: #9fb0d0; font-size: 13px; margin-top: 4px; }
-  .sch-poster .pgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+  .sch-poster .pgrid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 16px; }
   .sch-poster .pday { }
   .sch-poster .pday h4 { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: var(--teal); margin: 0 0 10px; padding-bottom: 6px; border-bottom: 1px dashed rgba(255,255,255,.14); }
   .sch-poster .pitem { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.06); }
@@ -586,11 +586,23 @@
     .sch-board { grid-template-columns: repeat(7, 78vw); }
     .sch-viewsw button { padding: 8px 10px; }
     .sch-viewsw button .lbl { display: none; }
+    .sch-poster .pgrid { grid-template-columns: repeat(2, 1fr); }
   }
   @media print {
+    @page { size: landscape; margin: 10mm; }
+    body { background: #fff !important; }
     .sidebar, .topbar, .sch-toolbar { display: none !important; }
     .main, .content { margin: 0 !important; padding: 0 !important; }
-    .sch-poster { box-shadow: none; }
+    .app { display: block !important; }
+    .sch-poster {
+      box-shadow: none;
+      border: 3px solid var(--accent);
+      outline: 1px solid rgba(255,255,255,.15);
+      outline-offset: -9px;
+      padding: 26px 24px 28px;
+      break-inside: avoid;
+    }
+    .sch-poster .pgrid { grid-template-columns: repeat(7, minmax(0, 1fr)) !important; gap: 12px; }
   }
 </style>
 </head>
