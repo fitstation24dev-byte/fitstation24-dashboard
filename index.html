@@ -583,11 +583,10 @@
   .pg-table { width: 100%; border-collapse: separate; border-spacing: 6px; table-layout: fixed; }
   .pg-table th, .pg-table td { padding: 0; }
   .pg-table thead th { vertical-align: middle; }
-  .pg-timehead { width: 8%; color: var(--accent); font-weight: 800; font-size: 14px; letter-spacing: 1px; text-align: center; }
+  .pg-timehead { width: 11%; color: var(--accent); font-weight: 800; font-size: 14px; letter-spacing: 1px; text-align: center; }
   .pg-dayhead { color: #fff; font-weight: 800; font-size: 13px; letter-spacing: .5px; text-align: center; padding: 4px 2px; }
-  .pg-dayhead.is-today { color: var(--accent); }
-  .pg-dayhead .pg-dayth { font-size: 10px; font-weight: 600; color: var(--teal); letter-spacing: 0; margin-top: 2px; }
-  .pg-time { background: rgba(148,163,184,.22); color: #fff; font-weight: 700; font-size: 12px; text-align: center; border-radius: 9px; white-space: nowrap; font-variant-numeric: tabular-nums; line-height: 1.25; }
+  .pg-dayhead .pg-dayth { font-size: 10px; font-weight: 600; color: rgba(255,255,255,.7); letter-spacing: 0; margin-top: 2px; }
+  .pg-time { background: rgba(148,163,184,.22); color: #fff; font-weight: 700; font-size: 12px; text-align: center; border-radius: 9px; white-space: nowrap; font-variant-numeric: tabular-nums; line-height: 1.25; padding: 0 4px; }
   .pg-table tbody td { height: 64px; vertical-align: stretch; }
   .pg-cell { height: 100%; min-height: 58px; border-radius: 9px; padding: 7px 6px; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,.22); }
   .pg-cell + .pg-cell { margin-top: 5px; }
@@ -4372,7 +4371,7 @@ function schPosterHTML(list, branchFilter) {
   const slotMap = new Map();
   list.forEach(c => {
     const k = slotKey(c);
-    if (!slotMap.has(k)) slotMap.set(k, { key: k, min: schMinutes(c.start), label: schFmt(c.start) + (c.end ? '\n– ' + schFmt(c.end) : '') });
+    if (!slotMap.has(k)) slotMap.set(k, { key: k, min: schMinutes(c.start), label: schFmt(c.start) + (c.end ? ' – ' + schFmt(c.end) : '') });
   });
   const slots = Array.from(slotMap.values()).sort((a, b) => a.min - b.min);
 
@@ -4386,7 +4385,7 @@ function schPosterHTML(list, branchFilter) {
   });
 
   const headCells = SCH_DAYS_EN.map((d, i) =>
-    `<th class="pg-dayhead ${i === schTodayIdx() ? 'is-today' : ''}">${d}<div class="pg-dayth">${SCH_DAYS[i]}</div></th>`).join('');
+    `<th class="pg-dayhead">${d}<div class="pg-dayth">${SCH_DAYS[i]}</div></th>`).join('');
 
   const rows = slots.map(s => {
     const cells = [];
@@ -4402,7 +4401,7 @@ function schPosterHTML(list, branchFilter) {
         cells.push('<td><div class="pg-empty"></div></td>');
       }
     }
-    return `<tr><th class="pg-time">${_h(s.label).replace(/\n/g, '<br>')}</th>${cells.join('')}</tr>`;
+    return `<tr><th class="pg-time">${_h(s.label)}</th>${cells.join('')}</tr>`;
   }).join('');
 
   return `<div class="sch-poster sch-poster-grid">
