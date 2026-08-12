@@ -7,6 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
   :root {
     --brand: #0B132B;
@@ -4185,7 +4186,7 @@ function renderClassSchedule(root) {
     </div>
     <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
       <div class="sch-viewsw">${sw}</div>
-      ${SCHEDULE_VIEW === 'poster' ? '<button class="btn secondary" onclick="window.print()">🖨️ พิมพ์/บันทึก</button>' : ''}
+      ${SCHEDULE_VIEW === 'poster' ? '<button class="btn secondary" onclick="downloadPosterPNG()">⬇️ ดาวน์โหลด .PNG</button><button class="btn secondary" onclick="window.print()">🖨️ พิมพ์/บันทึก</button>' : ''}
       ${canEdit ? '<button class="btn" onclick="openClassModal()">+ เพิ่มคลาส</button>' : ''}
     </div>
   `;
@@ -4211,6 +4212,35 @@ function renderClassSchedule(root) {
 function setScheduleView(v) {
   SCHEDULE_VIEW = v;
   if (CURRENT_VIEW === 'schedule') navigate('schedule');
+}
+
+async function downloadPosterPNG() {
+  const el = document.querySelector('.sch-poster');
+  if (!el) { toast('กรุณาเปิดมุมมองโปสเตอร์ก่อน', 'bad'); return; }
+  if (typeof html2canvas === 'undefined') { toast('โหลดตัวแปลงรูปภาพไม่สำเร็จ (ต้องเชื่อมต่ออินเทอร์เน็ต)', 'bad'); return; }
+  const btns = Array.from(document.querySelectorAll('.sch-toolbar .btn'));
+  btns.forEach(b => b.disabled = true);
+  toast('กำลังสร้างรูปภาพ...', '');
+  try {
+    const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#0B132B', useCORS: true, logging: false });
+    const branch = effectiveBranchFilter();
+    const dstr = new Date().toISOString().slice(0, 10);
+    const fname = `ตารางคลาส${branch && branch !== '*' ? '-' + branch : ''}-${dstr}.png`;
+    canvas.toBlob(blob => {
+      if (!blob) { toast('สร้างรูปภาพไม่สำเร็จ', 'bad'); return; }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = fname;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+      toast('ดาวน์โหลดรูปภาพเรียบร้อย', 'ok');
+    }, 'image/png');
+  } catch (e) {
+    console.error('downloadPosterPNG error', e);
+    toast('สร้างรูปภาพไม่สำเร็จ', 'bad');
+  } finally {
+    btns.forEach(b => b.disabled = false);
+  }
 }
 
 function schByDay(list) {
