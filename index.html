@@ -577,6 +577,24 @@
   .sch-poster .pitem .dot { width: 4px; border-radius: 4px; flex-shrink: 0; }
   .sch-poster .pempty { color: #5a6b8c; font-size: 12px; font-style: italic; }
 
+  /* Poster — grid matrix (เวลา × วัน) */
+  .sch-poster-grid .pg-month { font-size: 30px; font-weight: 800; color: var(--accent); letter-spacing: 1px; line-height: 1; }
+  .sch-poster-grid .pg-scroll { overflow-x: auto; }
+  .pg-table { width: 100%; border-collapse: separate; border-spacing: 6px; table-layout: fixed; }
+  .pg-table th, .pg-table td { padding: 0; }
+  .pg-table thead th { vertical-align: middle; }
+  .pg-timehead { width: 8%; color: var(--accent); font-weight: 800; font-size: 14px; letter-spacing: 1px; text-align: center; }
+  .pg-dayhead { color: #fff; font-weight: 800; font-size: 13px; letter-spacing: .5px; text-align: center; padding: 4px 2px; }
+  .pg-dayhead.is-today { color: var(--accent); }
+  .pg-dayhead .pg-dayth { font-size: 10px; font-weight: 600; color: var(--teal); letter-spacing: 0; margin-top: 2px; }
+  .pg-time { background: rgba(148,163,184,.22); color: #fff; font-weight: 700; font-size: 12px; text-align: center; border-radius: 9px; white-space: nowrap; font-variant-numeric: tabular-nums; line-height: 1.25; }
+  .pg-table tbody td { height: 64px; vertical-align: stretch; }
+  .pg-cell { height: 100%; min-height: 58px; border-radius: 9px; padding: 7px 6px; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,.22); }
+  .pg-cell + .pg-cell { margin-top: 5px; }
+  .pg-cn { font-weight: 800; font-size: 11.5px; line-height: 1.15; text-transform: uppercase; word-break: break-word; }
+  .pg-ct { font-size: 10px; font-weight: 600; opacity: .92; margin-top: 3px; }
+  .pg-empty { height: 100%; min-height: 58px; border-radius: 9px; background: rgba(255,255,255,.04); border: 1px dashed rgba(255,255,255,.1); }
+
   /* colour picker in modal */
   .sch-swatches { display: flex; gap: 8px; flex-wrap: wrap; }
   .sch-swatch { width: 30px; height: 30px; border-radius: 9px; cursor: pointer; border: 2px solid transparent; transition: transform .1s; }
@@ -4146,6 +4164,7 @@ function deletePackage(id) {
 // ============ CLASS SCHEDULE (ตารางคลาส) ============
 const SCH_DAYS = ['จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์','อาทิตย์'];
 const SCH_DAYS_SHORT = ['จ.','อ.','พ.','พฤ.','ศ.','ส.','อา.'];
+const SCH_DAYS_EN = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY'];
 const SCH_COLORS = ['#FF5C00','#5BC0BE','#7C3AED','#2563EB','#DB2777','#16A34A','#F59E0B','#0EA5E9','#E11D48','#0F766E','#4F46E5','#0B132B'];
 const SCH_LEVELS = ['ทั่วไป','เริ่มต้น','ปานกลาง','ขั้นสูง'];
 const SCH_VIEWS = [
@@ -4343,27 +4362,60 @@ function schCardsHTML(list) {
 }
 
 function schPosterHTML(list, branchFilter) {
-  const days = schByDay(list);
   const gymName = (DATA.settings && DATA.settings.gymName) || 'FITSTATION 24';
   const branchTxt = branchFilter === '*' ? 'ทุกสาขา' : 'สาขา ' + branchFilter;
-  const cols = days.map((arr, i) => {
-    const items = arr.length ? arr.map(c => `
-      <div class="pitem">
-        <div class="dot" style="background:${_h(c.color || '#FF5C00')}"></div>
-        <div class="ptime">${schFmt(c.start)}${c.end ? ' – ' + schFmt(c.end) : ''}</div>
-        <div style="flex:1;">
-          <div class="pname">${_h(c.name)}</div>
-          ${(c.trainer || c.room) ? `<div class="pmeta">${[c.trainer ? _h(c.trainer) : '', c.room ? '· ' + _h(c.room) : ''].join(' ')}</div>` : ''}
-        </div>
-      </div>`).join('') : '<div class="pempty">— ไม่มีคลาส —</div>';
-    return `<div class="pday"><h4>${SCH_DAYS[i]}</h4>${items}</div>`;
+  let monthTxt = '';
+  try { monthTxt = new Date().toLocaleDateString('en-US', { month: 'long' }); } catch {}
+
+  // สร้าง "แถวเวลา" จากช่วงเวลาที่ไม่ซ้ำกัน (start–end) — คลาสคนละช่วงเวลา = คนละแถว
+  const slotKey = c => schFmt(c.start) + '~' + (c.end ? schFmt(c.end) : '');
+  const slotMap = new Map();
+  list.forEach(c => {
+    const k = slotKey(c);
+    if (!slotMap.has(k)) slotMap.set(k, { key: k, min: schMinutes(c.start), label: schFmt(c.start) + (c.end ? '\n– ' + schFmt(c.end) : '') });
+  });
+  const slots = Array.from(slotMap.values()).sort((a, b) => a.min - b.min);
+
+  // จัดคลาสลงช่อง [วัน][ช่วงเวลา]
+  const cellMap = {};
+  list.forEach(c => {
+    const d = Number(c.day);
+    if (d < 0 || d > 6) return;
+    const k = d + '|' + slotKey(c);
+    (cellMap[k] = cellMap[k] || []).push(c);
+  });
+
+  const headCells = SCH_DAYS_EN.map((d, i) =>
+    `<th class="pg-dayhead ${i === schTodayIdx() ? 'is-today' : ''}">${d}<div class="pg-dayth">${SCH_DAYS[i]}</div></th>`).join('');
+
+  const rows = slots.map(s => {
+    const cells = [];
+    for (let d = 0; d < 7; d++) {
+      const arr = cellMap[d + '|' + s.key] || [];
+      if (arr.length) {
+        cells.push(`<td>${arr.map(c => `
+          <div class="pg-cell" style="background:${_h(c.color || '#FF5C00')}">
+            <div class="pg-cn">${_h(c.name)}</div>
+            ${c.trainer ? `<div class="pg-ct">${_h(c.trainer)}</div>` : ''}
+          </div>`).join('')}</td>`);
+      } else {
+        cells.push('<td><div class="pg-empty"></div></td>');
+      }
+    }
+    return `<tr><th class="pg-time">${_h(s.label).replace(/\n/g, '<br>')}</th>${cells.join('')}</tr>`;
   }).join('');
-  return `<div class="sch-poster">
+
+  return `<div class="sch-poster sch-poster-grid">
     <div class="ph">
-      <div><div class="big">CLASS <span>SCHEDULE</span></div><div class="sub">${_h(gymName)} · ${_h(branchTxt)}</div></div>
-      <div class="sub">ตารางคลาสประจำสัปดาห์</div>
+      <div><div class="big">GYM <span>CLASS</span></div><div class="sub">${_h(gymName)} · ${_h(branchTxt)}</div></div>
+      <div class="pg-month">${_h(monthTxt)}</div>
     </div>
-    <div class="pgrid">${cols}</div>
+    <div class="pg-scroll">
+      <table class="pg-table">
+        <thead><tr><th class="pg-timehead">TIME</th>${headCells}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
   </div>`;
 }
 
