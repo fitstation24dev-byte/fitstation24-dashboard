@@ -570,7 +570,7 @@
   .sch-poster .pday { }
   .sch-poster .pday h4 { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: var(--teal); margin: 0 0 10px; padding-bottom: 6px; border-bottom: 1px dashed rgba(255,255,255,.14); }
   .sch-poster .pitem { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.06); }
-  .sch-poster .pitem .ptime { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 13px; color: #fff; min-width: 46px; }
+  .sch-poster .pitem .ptime { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 13px; color: #fff; min-width: 92px; white-space: nowrap; }
   .sch-poster .pitem .pname { font-size: 13px; font-weight: 600; }
   .sch-poster .pitem .pmeta { font-size: 11px; color: #9fb0d0; margin-top: 1px; }
   .sch-poster .pitem .dot { width: 4px; border-radius: 4px; flex-shrink: 0; }
@@ -4308,7 +4308,7 @@ function schPosterHTML(list, branchFilter) {
     const items = arr.length ? arr.map(c => `
       <div class="pitem">
         <div class="dot" style="background:${_h(c.color || '#FF5C00')}"></div>
-        <div class="ptime">${schFmt(c.start)}</div>
+        <div class="ptime">${schFmt(c.start)}${c.end ? ' – ' + schFmt(c.end) : ''}</div>
         <div style="flex:1;">
           <div class="pname">${_h(c.name)}</div>
           ${(c.trainer || c.room) ? `<div class="pmeta">${[c.trainer ? _h(c.trainer) : '', c.room ? '· ' + _h(c.room) : ''].join(' ')}</div>` : ''}
