@@ -4366,7 +4366,7 @@ function openClassModal(id) {
         <div class="field"><label>วัน *</label><select id="cl-day" required>${dayOpts}</select></div>
         <div class="field"><label>เวลาเริ่ม *</label><input id="cl-start" type="time" required value="${_h(c.start)}"></div>
         <div class="field"><label>เวลาจบ</label><input id="cl-end" type="time" value="${_h(c.end || '')}"></div>
-        <div class="field"><label>เทรนเนอร์/ผู้สอน</label><input id="cl-trainer" list="cl-trainers" value="${_h(c.trainer || '')}" placeholder="ชื่อผู้สอน"><datalist id="cl-trainers">${trainerDatalist}</datalist></div>
+        <div class="field"><label>ครูผู้สอน <small class="muted">(พิมพ์ชื่อได้อิสระ)</small></label><input id="cl-trainer" list="cl-trainers" autocomplete="off" value="${_h(c.trainer || '')}" placeholder="พิมพ์ชื่อครูผู้สอน หรือเลือกจากรายชื่อ"><datalist id="cl-trainers">${trainerDatalist}</datalist></div>
         <div class="field"><label>ห้อง/โซน</label><input id="cl-room" value="${_h(c.room || '')}" placeholder="เช่น Studio A"></div>
         <div class="field"><label>รับสูงสุด (คน)</label><input id="cl-capacity" type="number" min="0" step="1" value="${c.capacity || ''}" placeholder="เช่น 15"></div>
         <div class="field"><label>ระดับ</label><select id="cl-level">${lvlOpts}</select></div>
