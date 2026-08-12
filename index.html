@@ -498,6 +498,100 @@
     background: white;
     font-size: 13px;
   }
+
+  /* ====== CLASS SCHEDULE ====== */
+  .sch-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .sch-title { display: flex; align-items: center; gap: 10px; }
+  .sch-title h2 { margin: 0; }
+  .sch-viewsw { display: inline-flex; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 4px; gap: 2px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+  .sch-viewsw button {
+    border: none; background: transparent; color: var(--muted); font-weight: 600; font-size: 13px;
+    padding: 8px 14px; border-radius: 9px; display: inline-flex; align-items: center; gap: 6px; transition: all .18s;
+  }
+  .sch-viewsw button:hover { color: var(--text); }
+  .sch-viewsw button.active { background: var(--brand); color: #fff; box-shadow: 0 4px 12px rgba(11,19,43,.28); }
+  .sch-viewsw .ico { font-size: 15px; }
+
+  /* Board (weekly columns) */
+  .sch-board { display: grid; grid-template-columns: repeat(7, minmax(150px, 1fr)); gap: 10px; overflow-x: auto; padding-bottom: 6px; }
+  .sch-col { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; min-height: 120px; display: flex; flex-direction: column; overflow: hidden; }
+  .sch-col.is-today { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(255,92,0,.15); }
+  .sch-colhead { padding: 10px 12px; font-weight: 700; font-size: 13px; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, var(--brand), #1C2541); color: #fff; }
+  .sch-colhead .cnt { font-size: 11px; font-weight: 600; background: rgba(255,255,255,.2); padding: 1px 8px; border-radius: 20px; }
+  .sch-col.is-today .sch-colhead { background: linear-gradient(135deg, var(--accent), #ff8a3d); }
+  .sch-collist { padding: 8px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+  .sch-collist .empty { color: var(--muted); font-size: 12px; text-align: center; padding: 18px 6px; }
+
+  .sch-chip {
+    border-radius: 11px; padding: 9px 11px; color: #fff; cursor: pointer; position: relative; overflow: hidden;
+    box-shadow: 0 3px 10px rgba(0,0,0,.12); transition: transform .12s, box-shadow .12s;
+  }
+  .sch-chip:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,.22); }
+  .sch-chip .t { font-weight: 700; font-size: 13px; line-height: 1.25; }
+  .sch-chip .time { font-size: 11px; font-weight: 600; opacity: .95; display: flex; align-items: center; gap: 5px; margin-top: 3px; }
+  .sch-chip .meta { font-size: 11px; opacity: .9; margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+  .sch-chip .lvl { position: absolute; top: 8px; right: 8px; font-size: 9px; font-weight: 700; letter-spacing: .5px; background: rgba(255,255,255,.25); padding: 1px 7px; border-radius: 10px; text-transform: uppercase; }
+
+  /* Timeline (time grid) */
+  .sch-timeline { display: grid; grid-template-columns: 56px repeat(7, minmax(120px, 1fr)); background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: auto; }
+  .sch-tl-corner { position: sticky; left: 0; z-index: 3; background: var(--surface); border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); }
+  .sch-tl-dh { position: sticky; top: 0; z-index: 2; background: linear-gradient(135deg, var(--brand), #1C2541); color: #fff; font-weight: 700; font-size: 12px; text-align: center; padding: 10px 4px; border-right: 1px solid rgba(255,255,255,.08); }
+  .sch-tl-dh.is-today { background: linear-gradient(135deg, var(--accent), #ff8a3d); }
+  .sch-tl-axis { position: sticky; left: 0; z-index: 1; background: var(--surface); border-right: 1px solid var(--border); }
+  .sch-tl-hr { font-size: 10px; color: var(--muted); text-align: right; padding: 2px 6px 0 0; border-top: 1px solid var(--border); font-variant-numeric: tabular-nums; }
+  .sch-tl-day { position: relative; border-right: 1px solid var(--border); }
+  .sch-tl-day .hr-line { border-top: 1px solid var(--border); }
+  .sch-tl-block {
+    position: absolute; left: 3px; right: 3px; border-radius: 9px; color: #fff; padding: 5px 7px; overflow: hidden; cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,.18); transition: transform .12s, box-shadow .12s; z-index: 1;
+  }
+  .sch-tl-block:hover { transform: scale(1.02); box-shadow: 0 6px 16px rgba(0,0,0,.28); z-index: 4; }
+  .sch-tl-block .t { font-weight: 700; font-size: 12px; line-height: 1.2; }
+  .sch-tl-block .time { font-size: 10px; opacity: .95; }
+
+  /* Cards */
+  .sch-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  .sch-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; cursor: pointer; transition: transform .14s, box-shadow .14s; }
+  .sch-card:hover { transform: translateY(-3px); box-shadow: 0 12px 28px rgba(0,0,0,.14); }
+  .sch-card .bar { height: 8px; }
+  .sch-card .body { padding: 14px; }
+  .sch-card .body h3 { margin: 0 0 8px; font-size: 16px; }
+  .sch-card .row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); margin-top: 6px; }
+  .sch-card .row .k { color: var(--muted); width: 18px; text-align: center; }
+  .sch-card .daytag { display: inline-block; font-size: 11px; font-weight: 700; color: #fff; padding: 2px 10px; border-radius: 20px; margin-bottom: 8px; }
+
+  /* Poster */
+  .sch-poster { background: radial-gradient(1200px 500px at 10% -10%, #1C2541 0%, #0B132B 55%, #060a17 100%); border-radius: 20px; padding: 28px 26px 30px; color: #fff; box-shadow: 0 20px 50px rgba(0,0,0,.3); }
+  .sch-poster .ph { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 1px solid rgba(255,255,255,.14); padding-bottom: 16px; margin-bottom: 18px; flex-wrap: wrap; gap: 10px; }
+  .sch-poster .ph .big { font-size: 30px; font-weight: 800; letter-spacing: 1px; line-height: 1.05; }
+  .sch-poster .ph .big span { color: var(--accent); }
+  .sch-poster .ph .sub { color: #9fb0d0; font-size: 13px; margin-top: 4px; }
+  .sch-poster .pgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+  .sch-poster .pday { }
+  .sch-poster .pday h4 { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: var(--teal); margin: 0 0 10px; padding-bottom: 6px; border-bottom: 1px dashed rgba(255,255,255,.14); }
+  .sch-poster .pitem { display: flex; gap: 10px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.06); }
+  .sch-poster .pitem .ptime { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 13px; color: #fff; min-width: 46px; }
+  .sch-poster .pitem .pname { font-size: 13px; font-weight: 600; }
+  .sch-poster .pitem .pmeta { font-size: 11px; color: #9fb0d0; margin-top: 1px; }
+  .sch-poster .pitem .dot { width: 4px; border-radius: 4px; flex-shrink: 0; }
+  .sch-poster .pempty { color: #5a6b8c; font-size: 12px; font-style: italic; }
+
+  /* colour picker in modal */
+  .sch-swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+  .sch-swatch { width: 30px; height: 30px; border-radius: 9px; cursor: pointer; border: 2px solid transparent; transition: transform .1s; }
+  .sch-swatch:hover { transform: scale(1.12); }
+  .sch-swatch.sel { border-color: var(--text); box-shadow: 0 0 0 2px #fff inset; }
+
+  @media (max-width: 720px) {
+    .sch-board { grid-template-columns: repeat(7, 78vw); }
+    .sch-viewsw button { padding: 8px 10px; }
+    .sch-viewsw button .lbl { display: none; }
+  }
+  @media print {
+    .sidebar, .topbar, .sch-toolbar { display: none !important; }
+    .main, .content { margin: 0 !important; padding: 0 !important; }
+    .sch-poster { box-shadow: none; }
+  }
 </style>
 </head>
 <body>
@@ -955,6 +1049,7 @@ async function loadData() {
             : ((localData && Array.isArray(localData.packages) && localData.packages.length) ? localData.packages : seed.packages),
           // ฟิลด์เฉพาะเครื่อง (ไม่ได้ sync ผ่าน Supabase) — preserve จาก localStorage
           invoices:      (localData && Array.isArray(localData.invoices)) ? localData.invoices : [],
+          classes:       (localData && Array.isArray(localData.classes)) ? localData.classes : [],
         };
         // ถ้า Supabase ยังว่างเรื่อง packages — push ข้อมูลปัจจุบันขึ้นไปครั้งแรก
         if (!remote.packages || remote.packages.length === 0) {
@@ -1077,6 +1172,7 @@ const NAV_ITEMS = [
   { id: 'trainings',    label: 'บันทึกการเทรน' },
   { id: 'members',      label: 'สมาชิก' },
   { id: 'packages',     label: 'แพ็กเกจ' },
+  { id: 'schedule',     label: 'ตารางคลาส' },
   { id: 'sales-log',    label: 'ประวัติการขาย' },
   { id: 'invoices',     label: 'ใบกำกับภาษี' },
   { id: 'alerts',       label: 'การแจ้งเตือน' },
@@ -1088,9 +1184,9 @@ const DELEGABLE_ROLES = ['Manager','Staff','Trainer'];
 
 function defaultRolePermissions() {
   return {
-    Manager: ['dashboard','sales','trainings','members','packages','registration','sales-log','invoices','alerts','employees','reports'],
-    Staff:   ['dashboard','sales','trainings','members','packages','registration','sales-log','invoices','alerts'],
-    Trainer: ['dashboard','trainings','members'],
+    Manager: ['dashboard','sales','trainings','members','packages','schedule','registration','sales-log','invoices','alerts','employees','reports'],
+    Staff:   ['dashboard','sales','trainings','members','packages','schedule','registration','sales-log','invoices','alerts'],
+    Trainer: ['dashboard','trainings','members','schedule'],
   };
 }
 
@@ -1334,7 +1430,7 @@ function navigate(view) {
   CHARTS = {};
   const titles = {
     'dashboard': 'Dashboard', 'sales': 'บันทึกยอดขาย', 'trainings': 'บันทึกการเทรน',
-    'members': 'สมาชิก', 'packages': 'แพ็กเกจ', 'registration': '📝 สมัครสมาชิก',
+    'members': 'สมาชิก', 'packages': 'แพ็กเกจ', 'schedule': 'ตารางคลาส', 'registration': '📝 สมัครสมาชิก',
     'sales-log': 'ประวัติการขาย', 'invoices': 'ใบกำกับภาษี',
     'alerts': 'การแจ้งเตือน',
     'employees': 'พนักงาน', 'reports': 'รายงาน', 'settings': 'ตั้งค่าระบบ',
@@ -1347,6 +1443,7 @@ function navigate(view) {
   else if (view === 'trainings')      renderTrainingsEntry(c);
   else if (view === 'members')        renderMembers(c);
   else if (view === 'packages')       renderPackages(c);
+  else if (view === 'schedule')       renderClassSchedule(c);
   else if (view === 'registration')   renderRegistration(c);
   else if (view === 'sales-log')      renderSalesLog(c);
   else if (view === 'invoices')       renderInvoices(c);
@@ -4033,6 +4130,310 @@ function deletePackage(id) {
   if (CURRENT_VIEW === 'packages') navigate('packages');
 }
 
+// ============ CLASS SCHEDULE (ตารางคลาส) ============
+const SCH_DAYS = ['จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์','อาทิตย์'];
+const SCH_DAYS_SHORT = ['จ.','อ.','พ.','พฤ.','ศ.','ส.','อา.'];
+const SCH_COLORS = ['#FF5C00','#5BC0BE','#7C3AED','#2563EB','#DB2777','#16A34A','#F59E0B','#0EA5E9','#E11D48','#0F766E','#4F46E5','#0B132B'];
+const SCH_LEVELS = ['ทั่วไป','เริ่มต้น','ปานกลาง','ขั้นสูง'];
+const SCH_VIEWS = [
+  { id: 'board',    icon: '▤', label: 'บอร์ดรายสัปดาห์' },
+  { id: 'timeline', icon: '◷', label: 'ไทม์ไลน์' },
+  { id: 'cards',    icon: '▦', label: 'การ์ด' },
+  { id: 'poster',   icon: '✦', label: 'โปสเตอร์' },
+];
+let SCHEDULE_VIEW = 'board';
+
+// วันของสัปดาห์แบบ Mon=0 ... Sun=6
+function schTodayIdx() { return (new Date().getDay() + 6) % 7; }
+function schMinutes(t) { const [h, m] = String(t || '0:0').split(':').map(Number); return (h || 0) * 60 + (m || 0); }
+function schFmt(t) { return String(t || '').slice(0, 5); }
+function schClasses() {
+  if (!Array.isArray(DATA.classes)) DATA.classes = [];
+  const bf = effectiveBranchFilter();
+  return DATA.classes.filter(c => bf === '*' || !c.branch || c.branch === bf);
+}
+function schCanEdit() { return SESSION && ['Owner','Manager','Staff','Trainer'].includes(SESSION.role); }
+
+function renderClassSchedule(root) {
+  const canEdit = schCanEdit();
+  const list = schClasses();
+  const branchFilter = effectiveBranchFilter();
+  const branchTag = branchFilter === '*' ? '(ทุกสาขา)' : `(สาขา ${_h(branchFilter)})`;
+
+  const sw = SCH_VIEWS.map(v =>
+    `<button class="${SCHEDULE_VIEW === v.id ? 'active' : ''}" onclick="setScheduleView('${v.id}')">
+       <span class="ico">${v.icon}</span><span class="lbl">${v.label}</span>
+     </button>`).join('');
+
+  const toolbar = document.createElement('div');
+  toolbar.className = 'sch-toolbar';
+  toolbar.innerHTML = `
+    <div class="sch-title">
+      <h2>ตารางคลาส <small class="muted">${branchTag} · ${list.length} คลาส</small></h2>
+    </div>
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+      <div class="sch-viewsw">${sw}</div>
+      ${SCHEDULE_VIEW === 'poster' ? '<button class="btn secondary" onclick="window.print()">🖨️ พิมพ์/บันทึก</button>' : ''}
+      ${canEdit ? '<button class="btn" onclick="openClassModal()">+ เพิ่มคลาส</button>' : ''}
+    </div>
+  `;
+  root.appendChild(toolbar);
+
+  const body = document.createElement('div');
+  if (!list.length) {
+    body.className = 'card';
+    body.innerHTML = `<div class="muted center" style="padding:34px 12px;">
+      ยังไม่มีคลาสในตาราง${canEdit ? ' — กด <strong>“+ เพิ่มคลาส”</strong> เพื่อเริ่มสร้าง' : ''}
+    </div>`;
+    root.appendChild(body);
+    return;
+  }
+
+  if (SCHEDULE_VIEW === 'board')         body.innerHTML = schBoardHTML(list);
+  else if (SCHEDULE_VIEW === 'timeline') body.innerHTML = schTimelineHTML(list);
+  else if (SCHEDULE_VIEW === 'cards')    body.innerHTML = schCardsHTML(list);
+  else if (SCHEDULE_VIEW === 'poster')   body.innerHTML = schPosterHTML(list, branchFilter);
+  root.appendChild(body);
+}
+
+function setScheduleView(v) {
+  SCHEDULE_VIEW = v;
+  if (CURRENT_VIEW === 'schedule') navigate('schedule');
+}
+
+function schByDay(list) {
+  const days = Array.from({ length: 7 }, () => []);
+  list.forEach(c => { const d = Number(c.day); if (d >= 0 && d <= 6) days[d].push(c); });
+  days.forEach(arr => arr.sort((a, b) => schMinutes(a.start) - schMinutes(b.start)));
+  return days;
+}
+
+function schChipHTML(c) {
+  const lvl = c.level && c.level !== 'ทั่วไป' ? `<span class="lvl">${_h(c.level)}</span>` : '';
+  const meta = [];
+  if (c.trainer) meta.push(`👤 ${_h(c.trainer)}`);
+  if (c.room) meta.push(`📍 ${_h(c.room)}`);
+  if (c.capacity) meta.push(`👥 ${Number(c.capacity)}`);
+  const edit = schCanEdit() ? `onclick="openClassModal('${_h(c.id)}')"` : '';
+  return `<div class="sch-chip" style="background:${_h(c.color || '#FF5C00')}" ${edit}>
+    ${lvl}
+    <div class="t">${_h(c.name)}</div>
+    <div class="time">🕒 ${schFmt(c.start)}${c.end ? ' – ' + schFmt(c.end) : ''}</div>
+    ${meta.length ? `<div class="meta">${meta.join('')}</div>` : ''}
+  </div>`;
+}
+
+function schBoardHTML(list) {
+  const days = schByDay(list);
+  const today = schTodayIdx();
+  const cols = days.map((arr, i) => `
+    <div class="sch-col ${i === today ? 'is-today' : ''}">
+      <div class="sch-colhead"><span>${SCH_DAYS[i]}</span><span class="cnt">${arr.length}</span></div>
+      <div class="sch-collist">
+        ${arr.length ? arr.map(schChipHTML).join('') : '<div class="empty">— ว่าง —</div>'}
+      </div>
+    </div>`).join('');
+  return `<div class="sch-board">${cols}</div>`;
+}
+
+function schTimelineHTML(list) {
+  const days = schByDay(list);
+  const today = schTodayIdx();
+  const all = list.map(c => schMinutes(c.start)).concat(list.map(c => schMinutes(c.end || c.start)));
+  let minH = Math.floor(Math.min(...all) / 60);
+  let maxH = Math.ceil(Math.max(...all) / 60);
+  if (!isFinite(minH)) minH = 8;
+  if (!isFinite(maxH)) maxH = 21;
+  minH = Math.max(0, Math.min(minH, 22));
+  maxH = Math.min(24, Math.max(maxH, minH + 1));
+  const PX = 56; // px ต่อชั่วโมง
+  const totalH = (maxH - minH) * PX;
+
+  const axisRows = [];
+  for (let h = minH; h <= maxH; h++) {
+    axisRows.push(`<div class="sch-tl-hr" style="height:${PX}px">${String(h).padStart(2, '0')}:00</div>`);
+  }
+  const heads = SCH_DAYS_SHORT.map((d, i) => `<div class="sch-tl-dh ${i === today ? 'is-today' : ''}">${d}</div>`).join('');
+
+  const dayCols = days.map((arr, i) => {
+    const lines = [];
+    for (let h = minH; h < maxH; h++) lines.push(`<div class="hr-line" style="height:${PX}px"></div>`);
+    const blocks = arr.map(c => {
+      const s = schMinutes(c.start), e = Math.max(schMinutes(c.end || c.start), s + 30);
+      const top = ((s - minH * 60) / 60) * PX;
+      const hgt = Math.max(22, ((e - s) / 60) * PX - 3);
+      const edit = schCanEdit() ? `onclick="openClassModal('${_h(c.id)}')"` : '';
+      return `<div class="sch-tl-block" style="top:${top}px; height:${hgt}px; background:${_h(c.color || '#FF5C00')}" ${edit} title="${_h(c.name)}">
+        <div class="t">${_h(c.name)}</div><div class="time">${schFmt(c.start)}${c.end ? '–' + schFmt(c.end) : ''}</div>
+      </div>`;
+    }).join('');
+    return `<div class="sch-tl-day" style="height:${totalH}px">${lines.join('')}${blocks}</div>`;
+  }).join('');
+
+  return `<div class="sch-timeline">
+    <div class="sch-tl-corner"></div>${heads}
+    <div class="sch-tl-axis">${axisRows.join('')}</div>${dayCols}
+  </div>`;
+}
+
+function schCardsHTML(list) {
+  const sorted = list.slice().sort((a, b) => (Number(a.day) - Number(b.day)) || (schMinutes(a.start) - schMinutes(b.start)));
+  const cards = sorted.map(c => {
+    const col = c.color || '#FF5C00';
+    const edit = schCanEdit() ? `onclick="openClassModal('${_h(c.id)}')"` : '';
+    const rows = [];
+    rows.push(`<div class="row"><span class="k">🕒</span><span>${schFmt(c.start)}${c.end ? ' – ' + schFmt(c.end) : ''}</span></div>`);
+    if (c.trainer) rows.push(`<div class="row"><span class="k">👤</span><span>${_h(c.trainer)}</span></div>`);
+    if (c.room) rows.push(`<div class="row"><span class="k">📍</span><span>${_h(c.room)}</span></div>`);
+    if (c.capacity) rows.push(`<div class="row"><span class="k">👥</span><span>รับ ${Number(c.capacity)} คน</span></div>`);
+    if (c.note) rows.push(`<div class="row"><span class="k">📝</span><span class="muted">${_h(c.note)}</span></div>`);
+    return `<div class="sch-card" ${edit}>
+      <div class="bar" style="background:${_h(col)}"></div>
+      <div class="body">
+        <span class="daytag" style="background:${_h(col)}">${SCH_DAYS[Number(c.day)] || '-'}</span>
+        ${c.level && c.level !== 'ทั่วไป' ? `<span class="badge gray" style="margin-left:6px;">${_h(c.level)}</span>` : ''}
+        <h3>${_h(c.name)}</h3>
+        ${rows.join('')}
+      </div>
+    </div>`;
+  }).join('');
+  return `<div class="sch-cards">${cards}</div>`;
+}
+
+function schPosterHTML(list, branchFilter) {
+  const days = schByDay(list);
+  const gymName = (DATA.settings && DATA.settings.gymName) || 'FITSTATION 24';
+  const branchTxt = branchFilter === '*' ? 'ทุกสาขา' : 'สาขา ' + branchFilter;
+  const cols = days.map((arr, i) => {
+    const items = arr.length ? arr.map(c => `
+      <div class="pitem">
+        <div class="dot" style="background:${_h(c.color || '#FF5C00')}"></div>
+        <div class="ptime">${schFmt(c.start)}</div>
+        <div style="flex:1;">
+          <div class="pname">${_h(c.name)}</div>
+          ${(c.trainer || c.room) ? `<div class="pmeta">${[c.trainer ? _h(c.trainer) : '', c.room ? '· ' + _h(c.room) : ''].join(' ')}</div>` : ''}
+        </div>
+      </div>`).join('') : '<div class="pempty">— ไม่มีคลาส —</div>';
+    return `<div class="pday"><h4>${SCH_DAYS[i]}</h4>${items}</div>`;
+  }).join('');
+  return `<div class="sch-poster">
+    <div class="ph">
+      <div><div class="big">CLASS <span>SCHEDULE</span></div><div class="sub">${_h(gymName)} · ${_h(branchTxt)}</div></div>
+      <div class="sub">ตารางคลาสประจำสัปดาห์</div>
+    </div>
+    <div class="pgrid">${cols}</div>
+  </div>`;
+}
+
+function openClassModal(id) {
+  if (!Array.isArray(DATA.classes)) DATA.classes = [];
+  const isNew = !id;
+  const defaultBranch = canSeeAllBranches()
+    ? (CURRENT_BRANCH && CURRENT_BRANCH !== '*' ? CURRENT_BRANCH : ((DATA.branches[0] || {}).code || ''))
+    : SESSION.branch;
+  const c = isNew
+    ? { id: nid(), name: '', day: schTodayIdx(), start: '18:00', end: '19:00', trainer: '', room: '', capacity: '', level: 'ทั่วไป', color: SCH_COLORS[0], note: '', branch: defaultBranch }
+    : DATA.classes.find(x => x.id === id);
+  if (!c) { toast('ไม่พบคลาส', 'bad'); return; }
+
+  const dayOpts = SCH_DAYS.map((d, i) => `<option value="${i}" ${Number(c.day) === i ? 'selected' : ''}>${d}</option>`).join('');
+  const lvlOpts = SCH_LEVELS.map(l => `<option value="${_h(l)}" ${c.level === l ? 'selected' : ''}>${_h(l)}</option>`).join('');
+  const swatches = SCH_COLORS.map(col =>
+    `<div class="sch-swatch ${(''+c.color).toLowerCase() === col.toLowerCase() ? 'sel' : ''}" style="background:${col}" data-col="${col}" onclick="schPickColor(this)"></div>`).join('');
+
+  // trainer list from employees (position Trainer) in scope
+  const trainers = (DATA.employees || [])
+    .filter(e => normalizePosition(e.position) === 'Trainer' && (e.status !== 'Inactive'))
+    .filter(e => canSeeAllBranches() || e.branch === SESSION.branch)
+    .map(e => `${e.name || ''} ${e.surname || ''}`.trim());
+  const trainerList = Array.from(new Set(trainers));
+  const trainerDatalist = trainerList.map(t => `<option value="${_h(t)}"></option>`).join('');
+
+  const canPickBranch = canSeeAllBranches();
+  const currentBranch = c.branch || defaultBranch || '';
+  const branchOpts = (DATA.branches || [])
+    .map(b => `<option value="${_h(b.code)}" ${b.code === currentBranch ? 'selected' : ''}>${_h(b.code)} · ${_h(b.name)}</option>`).join('');
+  const branchField = canPickBranch
+    ? `<div class="field"><label>สาขา *</label><select id="cl-branch" required>${branchOpts}</select></div>`
+    : `<div class="field"><label>สาขา</label><input value="${_h(currentBranch)}" disabled><input type="hidden" id="cl-branch" value="${_h(currentBranch)}"></div>`;
+
+  showModal(`
+    <h3>${isNew ? 'เพิ่มคลาสใหม่' : 'แก้ไขคลาส ' + _h(c.name)}</h3>
+    <form id="class-form" onsubmit="saveClass(event, '${_h(c.id)}', ${isNew})">
+      <div class="form-grid">
+        <div class="field full"><label>ชื่อคลาส *</label><input id="cl-name" required value="${_h(c.name)}" placeholder="เช่น Yoga Flow, Muay Thai, HIIT"></div>
+        ${branchField}
+        <div class="field"><label>วัน *</label><select id="cl-day" required>${dayOpts}</select></div>
+        <div class="field"><label>เวลาเริ่ม *</label><input id="cl-start" type="time" required value="${_h(c.start)}"></div>
+        <div class="field"><label>เวลาจบ</label><input id="cl-end" type="time" value="${_h(c.end || '')}"></div>
+        <div class="field"><label>เทรนเนอร์/ผู้สอน</label><input id="cl-trainer" list="cl-trainers" value="${_h(c.trainer || '')}" placeholder="ชื่อผู้สอน"><datalist id="cl-trainers">${trainerDatalist}</datalist></div>
+        <div class="field"><label>ห้อง/โซน</label><input id="cl-room" value="${_h(c.room || '')}" placeholder="เช่น Studio A"></div>
+        <div class="field"><label>รับสูงสุด (คน)</label><input id="cl-capacity" type="number" min="0" step="1" value="${c.capacity || ''}" placeholder="เช่น 15"></div>
+        <div class="field"><label>ระดับ</label><select id="cl-level">${lvlOpts}</select></div>
+        <div class="field full"><label>สีคลาส (เลือกแบบได้)</label>
+          <div class="sch-swatches" id="cl-swatches">${swatches}</div>
+          <input type="hidden" id="cl-color" value="${_h(c.color || SCH_COLORS[0])}">
+        </div>
+        <div class="field full"><label>หมายเหตุ</label><input id="cl-note" value="${_h(c.note || '')}" placeholder="รายละเอียดเพิ่มเติม"></div>
+      </div>
+      <div class="actions">
+        ${!isNew ? `<button type="button" class="btn danger" onclick="deleteClass('${_h(c.id)}')">ลบ</button>` : ''}
+        <button type="button" class="btn secondary" onclick="closeModal()">ยกเลิก</button>
+        <button type="submit" class="btn">บันทึก</button>
+      </div>
+    </form>
+  `);
+}
+
+function schPickColor(el) {
+  document.querySelectorAll('#cl-swatches .sch-swatch').forEach(s => s.classList.remove('sel'));
+  el.classList.add('sel');
+  document.getElementById('cl-color').value = el.dataset.col;
+}
+
+function saveClass(e, id, isNew) {
+  if (e) e.preventDefault();
+  if (!Array.isArray(DATA.classes)) DATA.classes = [];
+  const branchEl = document.getElementById('cl-branch');
+  const start = document.getElementById('cl-start').value;
+  const end = document.getElementById('cl-end').value;
+  if (end && schMinutes(end) <= schMinutes(start)) { toast('เวลาจบต้องมากกว่าเวลาเริ่ม', 'bad'); return; }
+  const obj = {
+    id,
+    branch: (branchEl ? branchEl.value : '') || (SESSION && SESSION.branch !== '*' ? SESSION.branch : ''),
+    name: document.getElementById('cl-name').value.trim(),
+    day: Number(document.getElementById('cl-day').value),
+    start,
+    end,
+    trainer: document.getElementById('cl-trainer').value.trim(),
+    room: document.getElementById('cl-room').value.trim(),
+    capacity: Number(document.getElementById('cl-capacity').value || 0) || '',
+    level: document.getElementById('cl-level').value,
+    color: document.getElementById('cl-color').value || SCH_COLORS[0],
+    note: document.getElementById('cl-note').value.trim(),
+  };
+  if (!obj.name) { toast('กรุณากรอกชื่อคลาส', 'bad'); return; }
+  if (isNew) {
+    DATA.classes.push(obj);
+  } else {
+    const idx = DATA.classes.findIndex(x => x.id === id);
+    if (idx >= 0) DATA.classes[idx] = obj; else DATA.classes.push(obj);
+  }
+  saveData();
+  toast(isNew ? 'เพิ่มคลาสเรียบร้อย' : 'อัปเดตคลาสเรียบร้อย', 'ok');
+  closeModal();
+  if (CURRENT_VIEW === 'schedule') navigate('schedule');
+}
+
+function deleteClass(id) {
+  if (!confirm('ลบคลาสนี้?')) return;
+  DATA.classes = (DATA.classes || []).filter(x => x.id !== id);
+  saveData();
+  closeModal();
+  toast('ลบคลาสเรียบร้อย', 'ok');
+  if (CURRENT_VIEW === 'schedule') navigate('schedule');
+}
+
 function renderInvoices(root) {
   if (!Array.isArray(DATA.invoices)) DATA.invoices = [];
 
@@ -5496,6 +5897,7 @@ function closeModal() {
         const seed = defaultData();
         const preservedInvoices = Array.isArray(DATA.invoices) ? DATA.invoices : [];
         const preservedPackages = Array.isArray(DATA.packages) && DATA.packages.length ? DATA.packages : seed.packages;
+        const preservedClasses = Array.isArray(DATA.classes) ? DATA.classes : [];
         DATA = {
           settings:     remote.settings  || seed.settings,
           branches:     remote.branches.length ? remote.branches : DATA.branches,
@@ -5509,6 +5911,7 @@ function closeModal() {
           lastDailyRun: remote.lastDailyRun,
           invoices:     preservedInvoices,
           packages:     (remote.packages && remote.packages.length) ? remote.packages : preservedPackages,
+          classes:      preservedClasses,
         };
         localStorage.setItem(LS_KEY, JSON.stringify(DATA));
         if (CURRENT_VIEW) navigate(CURRENT_VIEW);

@@ -2,7 +2,7 @@
 # Stop hook: auto commit + push if there are uncommitted changes.
 # Silent on success; outputs systemMessage JSON on failure.
 set -u
-cd "C:/Users/aofwa/Desktop/FITSTATION24" || exit 0
+cd "C:/Users/aofwa/OneDrive/Desktop/FITSTATION24" || exit 0
 
 # Nothing to do if working tree is clean
 if [ -z "$(git status --porcelain 2>/dev/null)" ]; then

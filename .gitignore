@@ -12,3 +12,6 @@ desktop.ini
 
 # Claude local settings (keep settings.json shared, ignore local overrides)
 .claude/settings.local.json
+
+# Claude Code worktrees (were committed as broken gitlinks — never track)
+.claude/worktrees/
