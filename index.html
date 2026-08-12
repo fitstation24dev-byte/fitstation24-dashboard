@@ -4233,14 +4233,29 @@ function setScheduleView(v) {
 }
 
 async function downloadPosterPNG() {
-  const el = document.querySelector('.sch-poster');
-  if (!el) { toast('กรุณาเปิดมุมมองโปสเตอร์ก่อน', 'bad'); return; }
+  const src = document.querySelector('.sch-poster');
+  if (!src) { toast('กรุณาเปิดมุมมองโปสเตอร์ก่อน', 'bad'); return; }
   if (typeof html2canvas === 'undefined') { toast('โหลดตัวแปลงรูปภาพไม่สำเร็จ (ต้องเชื่อมต่ออินเทอร์เน็ต)', 'bad'); return; }
   const btns = Array.from(document.querySelectorAll('.sch-toolbar .btn'));
   btns.forEach(b => b.disabled = true);
   toast('กำลังสร้างรูปภาพ...', '');
+
+  // เรนเดอร์ที่ความกว้างคงที่เสมอ (ไม่ยืดตามจอ) โดยใช้สำเนานอกจอ → ได้สัดส่วนพอดีทุกครั้ง
+  const EXPORT_W = 1400;
+  const holder = document.createElement('div');
+  holder.style.cssText = `position:fixed; left:-100000px; top:0; width:${EXPORT_W}px; z-index:-1;`;
+  const clone = src.cloneNode(true);
+  clone.style.width = EXPORT_W + 'px';
+  clone.style.maxWidth = 'none';
+  clone.style.margin = '0';
+  holder.appendChild(clone);
+  document.body.appendChild(holder);
+
   try {
-    const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#0B132B', useCORS: true, logging: false });
+    const canvas = await html2canvas(clone, {
+      scale: 2, backgroundColor: '#0B132B', useCORS: true, logging: false,
+      width: EXPORT_W, windowWidth: EXPORT_W
+    });
     const branch = effectiveBranchFilter();
     const dstr = new Date().toISOString().slice(0, 10);
     const fname = `ตารางคลาส${branch && branch !== '*' ? '-' + branch : ''}-${dstr}.png`;
@@ -4257,6 +4272,7 @@ async function downloadPosterPNG() {
     console.error('downloadPosterPNG error', e);
     toast('สร้างรูปภาพไม่สำเร็จ', 'bad');
   } finally {
+    holder.remove();
     btns.forEach(b => b.disabled = false);
   }
 }
