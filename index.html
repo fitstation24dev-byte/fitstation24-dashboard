@@ -798,7 +798,13 @@ const db = {
 
       const out = {};
       for (const r of tableResults) {
-        if (r.error) throw r.error;
+        if (r.error) {
+          // ตารางยังไม่ถูกสร้างใน Supabase (เช่น app_classes ก่อนรัน migration) — ถือว่าว่าง ไม่ให้ล้มทั้งระบบ
+          const msg = (r.error.message || '') + ' ' + (r.error.details || '');
+          const missingTable = r.error.code === 'PGRST205' || r.error.code === '42P01' || /Could not find the table|does not exist/i.test(msg);
+          if (missingTable) { console.warn('[db] ตาราง ' + r.name + ' ยังไม่มีใน Supabase — ข้ามชั่วคราว'); out[r.name] = []; continue; }
+          throw r.error;
+        }
         out[r.name] = (r.data || []).map(row => this.toItem(r.name, row));
       }
       if (settingsResult.error) throw settingsResult.error;
@@ -841,8 +847,15 @@ const db = {
       if (typeof toast === 'function') toast('ซิงค์ฐานข้อมูลไม่สำเร็จ: ' + (e.message || 'unknown'), 'bad');
       return;
     }
-    const failures = [];
-    results.forEach((r, i) => { if (r && r.error) failures.push({ name: tableNames[i], error: r.error }); });
+    const isMissingTable = err => {
+      const m = (err && (err.message || '') + ' ' + (err && err.details || '')) || '';
+      return (err && (err.code === 'PGRST205' || err.code === '42P01')) || /Could not find the table|does not exist/i.test(m);
+    };
+    const allFailures = [];
+    results.forEach((r, i) => { if (r && r.error) allFailures.push({ name: tableNames[i], error: r.error }); });
+    // ข้าม error ประเภท "ยังไม่มีตารางใน Supabase" (เช่น app_classes ก่อนรัน migration) — ไม่ถือว่าซิงค์ล้ม
+    allFailures.filter(f => isMissingTable(f.error)).forEach(f => console.warn('[db] ตาราง ' + f.name + ' ยังไม่มีใน Supabase — ข้ามการซิงค์ชั่วคราว'));
+    const failures = allFailures.filter(f => !isMissingTable(f.error));
     if (failures.length === 0) {
       this.setStatus('online');
       return;
