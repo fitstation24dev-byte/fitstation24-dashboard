@@ -529,6 +529,8 @@
   }
   .sch-chip:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,.22); }
   .sch-chip .t { font-weight: 700; font-size: 13px; line-height: 1.25; }
+  .sch-chip .t .ci, .sch-card .body h3 .ci, .sch-tl-block .t .ci { font-size: 1em; margin-right: 1px; }
+  .sch-card .body h3 .ci { font-size: 18px; }
   .sch-chip .time { font-size: 11px; font-weight: 600; opacity: .95; display: flex; align-items: center; gap: 5px; margin-top: 3px; }
   .sch-chip .meta { font-size: 11px; opacity: .9; margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px 10px; }
   .sch-chip .lvl { position: absolute; top: 8px; right: 8px; font-size: 9px; font-weight: 700; letter-spacing: .5px; background: rgba(255,255,255,.25); padding: 1px 7px; border-radius: 10px; text-transform: uppercase; }
@@ -562,11 +564,22 @@
   .sch-card .daytag { display: inline-block; font-size: 11px; font-weight: 700; color: #fff; padding: 2px 10px; border-radius: 20px; margin-bottom: 8px; }
 
   /* Poster */
-  .sch-poster { background: radial-gradient(1200px 500px at 10% -10%, #1C2541 0%, #0B132B 55%, #060a17 100%); border-radius: 20px; padding: 28px 26px 30px; color: #fff; box-shadow: 0 20px 50px rgba(0,0,0,.3); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .sch-poster .ph { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 1px solid rgba(255,255,255,.14); padding-bottom: 16px; margin-bottom: 18px; flex-wrap: wrap; gap: 10px; }
+  .sch-poster {
+    --pt-bg: radial-gradient(1200px 500px at 10% -10%, #1C2541 0%, #0B132B 55%, #060a17 100%);
+    --pt-accent: #FF5C00;
+    --pt-head: #ffffff;
+    --pt-sub: #9fb0d0;
+    --pt-border: rgba(255,255,255,.14);
+    --pt-time-bg: rgba(148,163,184,.22);
+    --pt-time-text: #ffffff;
+    --pt-empty-bg: rgba(255,255,255,.04);
+    --pt-empty-border: rgba(255,255,255,.1);
+    --pt-dayth: rgba(255,255,255,.7);
+    background: var(--pt-bg); border-radius: 20px; padding: 28px 26px 30px; color: var(--pt-head); box-shadow: 0 20px 50px rgba(0,0,0,.3); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .sch-poster .ph { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 1px solid var(--pt-border); padding-bottom: 16px; margin-bottom: 18px; flex-wrap: wrap; gap: 10px; }
   .sch-poster .ph .big { font-size: 30px; font-weight: 800; letter-spacing: 1px; line-height: 1.05; }
-  .sch-poster .ph .big span { color: var(--accent); }
-  .sch-poster .ph .sub { color: #9fb0d0; font-size: 13px; margin-top: 4px; }
+  .sch-poster .ph .big span { color: var(--pt-accent); }
+  .sch-poster .ph .sub { color: var(--pt-sub); font-size: 13px; margin-top: 4px; }
   .sch-poster .pgrid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 16px; }
   .sch-poster .pday { }
   .sch-poster .pday h4 { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.5px; color: var(--teal); margin: 0 0 10px; padding-bottom: 6px; border-bottom: 1px dashed rgba(255,255,255,.14); }
@@ -578,27 +591,42 @@
   .sch-poster .pempty { color: #5a6b8c; font-size: 12px; font-style: italic; }
 
   /* Poster — grid matrix (เวลา × วัน) */
-  .sch-poster-grid .pg-month { font-size: 30px; font-weight: 800; color: var(--accent); letter-spacing: 1px; line-height: 1; }
+  .sch-poster-grid .pg-month { font-size: 30px; font-weight: 800; color: var(--pt-accent); letter-spacing: 1px; line-height: 1; }
   .sch-poster-grid .pg-scroll { overflow-x: auto; }
   .pg-table { width: 100%; border-collapse: separate; border-spacing: 6px; table-layout: fixed; }
   .pg-table th, .pg-table td { padding: 0; }
   .pg-table thead th { vertical-align: middle; }
-  .pg-timehead { width: 11%; color: var(--accent); font-weight: 800; font-size: 14px; letter-spacing: 1px; text-align: center; }
-  .pg-dayhead { color: #fff; font-weight: 800; font-size: 13px; letter-spacing: .5px; text-align: center; padding: 4px 2px; }
-  .pg-dayhead .pg-dayth { font-size: 10px; font-weight: 600; color: rgba(255,255,255,.7); letter-spacing: 0; margin-top: 2px; }
-  .pg-time { background: rgba(148,163,184,.22); color: #fff; font-weight: 700; font-size: 12px; text-align: center; border-radius: 9px; white-space: nowrap; font-variant-numeric: tabular-nums; line-height: 1.25; padding: 0 4px; }
+  .pg-timehead { width: 11%; color: var(--pt-accent); font-weight: 800; font-size: 14px; letter-spacing: 1px; text-align: center; }
+  .pg-dayhead { color: var(--pt-head); font-weight: 800; font-size: 13px; letter-spacing: .5px; text-align: center; padding: 4px 2px; }
+  .pg-dayhead .pg-dayth { font-size: 10px; font-weight: 600; color: var(--pt-dayth); letter-spacing: 0; margin-top: 2px; }
+  .pg-time { background: var(--pt-time-bg); color: var(--pt-time-text); font-weight: 700; font-size: 12px; text-align: center; border-radius: 9px; white-space: nowrap; font-variant-numeric: tabular-nums; line-height: 1.25; padding: 0 4px; }
   .pg-table tbody td { height: 64px; vertical-align: stretch; }
   .pg-cell { height: 100%; min-height: 58px; border-radius: 9px; padding: 7px 6px; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; box-shadow: 0 2px 8px rgba(0,0,0,.22); }
   .pg-cell + .pg-cell { margin-top: 5px; }
+  .pg-ci { font-size: 20px; line-height: 1; margin-bottom: 3px; filter: drop-shadow(0 1px 1px rgba(0,0,0,.28)); }
   .pg-cn { font-weight: 800; font-size: 11.5px; line-height: 1.15; text-transform: uppercase; word-break: break-word; }
   .pg-ct { font-size: 10px; font-weight: 600; opacity: .92; margin-top: 3px; }
-  .pg-empty { height: 100%; min-height: 58px; border-radius: 9px; background: rgba(255,255,255,.04); border: 1px dashed rgba(255,255,255,.1); }
+  .pg-empty { height: 100%; min-height: 58px; border-radius: 9px; background: var(--pt-empty-bg); border: 1px dashed var(--pt-empty-border); }
+
+  /* Poster theme picker */
+  .pt-picker { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 9px 12px; margin-bottom: 14px; }
+  .pt-picker .pt-lbl { font-size: 12px; font-weight: 700; color: var(--muted); margin-right: 2px; }
+  .pt-swatch { width: 26px; height: 26px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; box-shadow: inset 0 0 0 2px rgba(255,255,255,.25); transition: transform .1s; position: relative; }
+  .pt-swatch:hover { transform: scale(1.14); }
+  .pt-swatch.sel { border-color: var(--accent); }
+  .pt-swatch.sel::after { content: '✓'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: 900; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
 
   /* colour picker in modal */
   .sch-swatches { display: flex; gap: 8px; flex-wrap: wrap; }
   .sch-swatch { width: 30px; height: 30px; border-radius: 9px; cursor: pointer; border: 2px solid transparent; transition: transform .1s; }
   .sch-swatch:hover { transform: scale(1.12); }
   .sch-swatch.sel { border-color: var(--text); box-shadow: 0 0 0 2px #fff inset; }
+
+  /* icon picker in modal */
+  .sch-icons { display: flex; gap: 6px; flex-wrap: wrap; }
+  .sch-ico { width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; font-size: 20px; border-radius: 10px; cursor: pointer; background: var(--surface2, rgba(148,163,184,.12)); border: 2px solid transparent; transition: transform .1s, border-color .1s; }
+  .sch-ico:hover { transform: scale(1.1); }
+  .sch-ico.sel { border-color: var(--accent); background: rgba(255,92,0,.14); }
 
   @media (max-width: 720px) {
     .sch-board { grid-template-columns: repeat(7, 78vw); }
@@ -614,7 +642,7 @@
     .app { display: block !important; }
     .sch-poster {
       box-shadow: none;
-      border: 3px solid var(--accent);
+      border: 3px solid var(--pt-accent);
       outline: 1px solid rgba(255,255,255,.15);
       outline-offset: -9px;
       padding: 26px 24px 28px;
@@ -4174,6 +4202,44 @@ const SCH_VIEWS = [
 ];
 let SCHEDULE_VIEW = 'board';
 
+// ---- โปสเตอร์: ธีมสี ----
+const POSTER_THEMES = [
+  { id: 'midnight', label: 'Midnight', vars: { '--pt-bg': 'radial-gradient(1200px 500px at 10% -10%, #1C2541 0%, #0B132B 55%, #060a17 100%)', '--pt-accent': '#FF5C00', '--pt-head': '#ffffff', '--pt-sub': '#9fb0d0', '--pt-border': 'rgba(255,255,255,.14)', '--pt-time-bg': 'rgba(148,163,184,.22)', '--pt-time-text': '#ffffff', '--pt-empty-bg': 'rgba(255,255,255,.04)', '--pt-empty-border': 'rgba(255,255,255,.1)', '--pt-dayth': 'rgba(255,255,255,.7)' }, solid: '#0B132B', swatch: 'linear-gradient(135deg,#1C2541,#0B132B)' },
+  { id: 'charcoal', label: 'Charcoal', vars: { '--pt-bg': 'radial-gradient(1200px 500px at 10% -10%, #2b2b30 0%, #161618 55%, #0a0a0b 100%)', '--pt-accent': '#FF6A2B', '--pt-head': '#ffffff', '--pt-sub': '#b8b8be', '--pt-border': 'rgba(255,255,255,.14)', '--pt-time-bg': 'rgba(255,255,255,.1)', '--pt-time-text': '#ffffff', '--pt-empty-bg': 'rgba(255,255,255,.04)', '--pt-empty-border': 'rgba(255,255,255,.1)', '--pt-dayth': 'rgba(255,255,255,.65)' }, solid: '#161618', swatch: 'linear-gradient(135deg,#2b2b30,#0a0a0b)' },
+  { id: 'ocean', label: 'Ocean', vars: { '--pt-bg': 'radial-gradient(1200px 500px at 10% -10%, #0c4a6e 0%, #082f49 55%, #041b2b 100%)', '--pt-accent': '#38BDF8', '--pt-head': '#ffffff', '--pt-sub': '#a5c9df', '--pt-border': 'rgba(255,255,255,.14)', '--pt-time-bg': 'rgba(56,189,248,.18)', '--pt-time-text': '#ffffff', '--pt-empty-bg': 'rgba(255,255,255,.04)', '--pt-empty-border': 'rgba(255,255,255,.1)', '--pt-dayth': 'rgba(255,255,255,.7)' }, solid: '#082f49', swatch: 'linear-gradient(135deg,#0c4a6e,#041b2b)' },
+  { id: 'purple', label: 'Purple', vars: { '--pt-bg': 'radial-gradient(1200px 500px at 10% -10%, #4c1d95 0%, #2e1065 55%, #1a0838 100%)', '--pt-accent': '#C084FC', '--pt-head': '#ffffff', '--pt-sub': '#c4b5e8', '--pt-border': 'rgba(255,255,255,.14)', '--pt-time-bg': 'rgba(192,132,252,.2)', '--pt-time-text': '#ffffff', '--pt-empty-bg': 'rgba(255,255,255,.04)', '--pt-empty-border': 'rgba(255,255,255,.1)', '--pt-dayth': 'rgba(255,255,255,.7)' }, solid: '#2e1065', swatch: 'linear-gradient(135deg,#4c1d95,#1a0838)' },
+  { id: 'forest', label: 'Forest', vars: { '--pt-bg': 'radial-gradient(1200px 500px at 10% -10%, #14532d 0%, #052e16 55%, #021a0d 100%)', '--pt-accent': '#4ADE80', '--pt-head': '#ffffff', '--pt-sub': '#a7d7b6', '--pt-border': 'rgba(255,255,255,.14)', '--pt-time-bg': 'rgba(74,222,128,.18)', '--pt-time-text': '#ffffff', '--pt-empty-bg': 'rgba(255,255,255,.04)', '--pt-empty-border': 'rgba(255,255,255,.1)', '--pt-dayth': 'rgba(255,255,255,.7)' }, solid: '#052e16', swatch: 'linear-gradient(135deg,#14532d,#021a0d)' },
+  { id: 'crimson', label: 'Crimson', vars: { '--pt-bg': 'radial-gradient(1200px 500px at 10% -10%, #7f1d1d 0%, #450a0a 55%, #260404 100%)', '--pt-accent': '#FB7185', '--pt-head': '#ffffff', '--pt-sub': '#e6b0b0', '--pt-border': 'rgba(255,255,255,.14)', '--pt-time-bg': 'rgba(251,113,133,.2)', '--pt-time-text': '#ffffff', '--pt-empty-bg': 'rgba(255,255,255,.04)', '--pt-empty-border': 'rgba(255,255,255,.1)', '--pt-dayth': 'rgba(255,255,255,.7)' }, solid: '#450a0a', swatch: 'linear-gradient(135deg,#7f1d1d,#260404)' },
+  { id: 'sunset', label: 'Sunset', vars: { '--pt-bg': 'linear-gradient(135deg, #7c2d12 0%, #b45309 45%, #1f1300 100%)', '--pt-accent': '#FDE047', '--pt-head': '#ffffff', '--pt-sub': '#f2d5a8', '--pt-border': 'rgba(255,255,255,.16)', '--pt-time-bg': 'rgba(253,224,71,.2)', '--pt-time-text': '#ffffff', '--pt-empty-bg': 'rgba(255,255,255,.05)', '--pt-empty-border': 'rgba(255,255,255,.12)', '--pt-dayth': 'rgba(255,255,255,.75)' }, solid: '#7c2d12', swatch: 'linear-gradient(135deg,#b45309,#7c2d12)' },
+  { id: 'light', label: 'Light', vars: { '--pt-bg': 'linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%)', '--pt-accent': '#FF5C00', '--pt-head': '#0B132B', '--pt-sub': '#64748b', '--pt-border': 'rgba(15,23,42,.12)', '--pt-time-bg': 'rgba(15,23,42,.07)', '--pt-time-text': '#0B132B', '--pt-empty-bg': 'rgba(15,23,42,.03)', '--pt-empty-border': 'rgba(15,23,42,.12)', '--pt-dayth': 'rgba(15,23,42,.5)' }, solid: '#ffffff', swatch: 'linear-gradient(135deg,#ffffff,#e2e8f0)' },
+];
+let POSTER_THEME = (function () { try { return localStorage.getItem('fs_poster_theme') || 'midnight'; } catch { return 'midnight'; } })();
+function posterTheme() { return POSTER_THEMES.find(t => t.id === POSTER_THEME) || POSTER_THEMES[0]; }
+function posterThemeStyle() { const t = posterTheme(); return Object.entries(t.vars).map(([k, v]) => `${k}:${v}`).join(';'); }
+function setPosterTheme(id) {
+  POSTER_THEME = id;
+  try { localStorage.setItem('fs_poster_theme', id); } catch {}
+  if (CURRENT_VIEW === 'schedule' && SCHEDULE_VIEW === 'poster') navigate('schedule');
+}
+
+// ---- ไอคอนประจำคลาส ----
+const CLASS_ICONS = ['🏋️','💪','🧘','🥊','🔥','🚴','🏃','💃','🤸','🤾','🏊','⚽','🏀','🎯','🧗','🎵','❤️','⭐','🧎','🥇'];
+const ICON_KEYWORDS = [
+  [/yoga|โยคะ/i, '🧘'], [/pilates|พิลาทิส/i, '🤸'], [/stretch|ยืด|flex/i, '🧎'],
+  [/muay|boxing|มวย|ต่อย|kick|fight/i, '🥊'], [/hiit|tabata|เบิร์น|burn|cardio|คาร์ดิโอ/i, '🔥'],
+  [/spin|cycle|cycling|ปั่น|จักรยาน/i, '🚴'], [/run|วิ่ง|jog|treadmill/i, '🏃'],
+  [/zumba|dance|เต้น|แดนซ์/i, '💃'], [/swim|ว่ายน้ำ|aqua/i, '🏊'],
+  [/weight|strength|เวท|กล้าม|body ?pump|lift|crossfit|ฟังก์ชัน|functional/i, '💪'],
+  [/football|soccer|ฟุตบอล/i, '⚽'], [/basket|บาส/i, '🏀'], [/climb|ปีน/i, '🧗'],
+  [/music|ดนตรี|rhythm/i, '🎵'], [/heart|หัวใจ|health|สุขภาพ/i, '❤️'], [/target|เป้าหมาย/i, '🎯'],
+];
+function schAutoIcon(name) {
+  const n = String(name || '');
+  for (const [re, ic] of ICON_KEYWORDS) if (re.test(n)) return ic;
+  return '🏋️';
+}
+function schIcon(c) { return (c && c.icon) ? c.icon : schAutoIcon(c && c.name); }
+
 // วันของสัปดาห์แบบ Mon=0 ... Sun=6
 function schTodayIdx() { return (new Date().getDay() + 6) % 7; }
 function schMinutes(t) { const [h, m] = String(t || '0:0').split(':').map(Number); return (h || 0) * 60 + (m || 0); }
@@ -4253,7 +4319,7 @@ async function downloadPosterPNG() {
 
   try {
     const canvas = await html2canvas(clone, {
-      scale: 2, backgroundColor: '#0B132B', useCORS: true, logging: false,
+      scale: 2, backgroundColor: posterTheme().solid, useCORS: true, logging: false,
       width: EXPORT_W, windowWidth: EXPORT_W
     });
     const branch = effectiveBranchFilter();
@@ -4293,7 +4359,7 @@ function schChipHTML(c) {
   const edit = schCanEdit() ? `onclick="openClassModal('${_h(c.id)}')"` : '';
   return `<div class="sch-chip" style="background:${_h(c.color || '#FF5C00')}" ${edit}>
     ${lvl}
-    <div class="t">${_h(c.name)}</div>
+    <div class="t"><span class="ci">${schIcon(c)}</span> ${_h(c.name)}</div>
     <div class="time">🕒 ${schFmt(c.start)}${c.end ? ' – ' + schFmt(c.end) : ''}</div>
     ${meta.length ? `<div class="meta">${meta.join('')}</div>` : ''}
   </div>`;
@@ -4340,7 +4406,7 @@ function schTimelineHTML(list) {
       const hgt = Math.max(22, ((e - s) / 60) * PX - 3);
       const edit = schCanEdit() ? `onclick="openClassModal('${_h(c.id)}')"` : '';
       return `<div class="sch-tl-block" style="top:${top}px; height:${hgt}px; background:${_h(c.color || '#FF5C00')}" ${edit} title="${_h(c.name)}">
-        <div class="t">${_h(c.name)}</div><div class="time">${schFmt(c.start)}${c.end ? '–' + schFmt(c.end) : ''}</div>
+        <div class="t"><span class="ci">${schIcon(c)}</span> ${_h(c.name)}</div><div class="time">${schFmt(c.start)}${c.end ? '–' + schFmt(c.end) : ''}</div>
       </div>`;
     }).join('');
     return `<div class="sch-tl-day" style="height:${totalH}px">${lines.join('')}${blocks}</div>`;
@@ -4368,7 +4434,7 @@ function schCardsHTML(list) {
       <div class="body">
         <span class="daytag" style="background:${_h(col)}">${SCH_DAYS[Number(c.day)] || '-'}</span>
         ${c.level && c.level !== 'ทั่วไป' ? `<span class="badge gray" style="margin-left:6px;">${_h(c.level)}</span>` : ''}
-        <h3>${_h(c.name)}</h3>
+        <h3><span class="ci">${schIcon(c)}</span> ${_h(c.name)}</h3>
         ${rows.join('')}
       </div>
     </div>`;
@@ -4410,6 +4476,7 @@ function schPosterHTML(list, branchFilter) {
       if (arr.length) {
         cells.push(`<td>${arr.map(c => `
           <div class="pg-cell" style="background:${_h(c.color || '#FF5C00')}">
+            <div class="pg-ci">${schIcon(c)}</div>
             <div class="pg-cn">${_h(c.name)}</div>
             ${c.trainer ? `<div class="pg-ct">${_h(c.trainer)}</div>` : ''}
           </div>`).join('')}</td>`);
@@ -4420,7 +4487,13 @@ function schPosterHTML(list, branchFilter) {
     return `<tr><th class="pg-time">${_h(s.label)}</th>${cells.join('')}</tr>`;
   }).join('');
 
-  return `<div class="sch-poster sch-poster-grid">
+  const themeSwatches = POSTER_THEMES.map(t =>
+    `<div class="pt-swatch ${t.id === POSTER_THEME ? 'sel' : ''}" style="background:${t.swatch}" title="${t.label}" onclick="setPosterTheme('${t.id}')"></div>`).join('');
+
+  return `<div class="pt-picker no-export">
+    <span class="pt-lbl">🎨 ธีมสีโปสเตอร์:</span>${themeSwatches}
+  </div>
+  <div class="sch-poster sch-poster-grid" style="${posterThemeStyle()}">
     <div class="ph">
       <div><div class="big">GYM <span>CLASS</span></div><div class="sub">${_h(gymName)} · ${_h(branchTxt)}</div></div>
       <div class="pg-month">${_h(monthTxt)}</div>
@@ -4441,7 +4514,7 @@ function openClassModal(id) {
     ? (CURRENT_BRANCH && CURRENT_BRANCH !== '*' ? CURRENT_BRANCH : ((DATA.branches[0] || {}).code || ''))
     : SESSION.branch;
   const c = isNew
-    ? { id: nid(), name: '', day: schTodayIdx(), start: '18:00', end: '19:00', trainer: '', room: '', capacity: '', level: 'ทั่วไป', color: SCH_COLORS[0], note: '', branch: defaultBranch }
+    ? { id: nid(), name: '', day: schTodayIdx(), start: '18:00', end: '19:00', trainer: '', room: '', capacity: '', level: 'ทั่วไป', color: SCH_COLORS[0], icon: '', note: '', branch: defaultBranch }
     : DATA.classes.find(x => x.id === id);
   if (!c) { toast('ไม่พบคลาส', 'bad'); return; }
 
@@ -4449,6 +4522,11 @@ function openClassModal(id) {
   const lvlOpts = SCH_LEVELS.map(l => `<option value="${_h(l)}" ${c.level === l ? 'selected' : ''}>${_h(l)}</option>`).join('');
   const swatches = SCH_COLORS.map(col =>
     `<div class="sch-swatch ${(''+c.color).toLowerCase() === col.toLowerCase() ? 'sel' : ''}" style="background:${col}" data-col="${col}" onclick="schPickColor(this)"></div>`).join('');
+
+  const curIcon = c.icon || '';
+  const iconChips = [`<div class="sch-ico ${curIcon === '' ? 'sel' : ''}" data-ico="" title="อัตโนมัติตามชื่อคลาส" onclick="schPickIcon(this)">✨</div>`]
+    .concat(CLASS_ICONS.map(ic =>
+      `<div class="sch-ico ${curIcon === ic ? 'sel' : ''}" data-ico="${ic}" onclick="schPickIcon(this)">${ic}</div>`)).join('');
 
   // trainer list from employees (position Trainer) in scope
   const trainers = (DATA.employees || [])
@@ -4483,6 +4561,10 @@ function openClassModal(id) {
           <div class="sch-swatches" id="cl-swatches">${swatches}</div>
           <input type="hidden" id="cl-color" value="${_h(c.color || SCH_COLORS[0])}">
         </div>
+        <div class="field full"><label>ไอคอนคลาส <small class="muted">(✨ = อัตโนมัติตามชื่อคลาส)</small></label>
+          <div class="sch-icons" id="cl-icons">${iconChips}</div>
+          <input type="hidden" id="cl-icon" value="${_h(curIcon)}">
+        </div>
         <div class="field full"><label>หมายเหตุ</label><input id="cl-note" value="${_h(c.note || '')}" placeholder="รายละเอียดเพิ่มเติม"></div>
       </div>
       <div class="actions">
@@ -4498,6 +4580,12 @@ function schPickColor(el) {
   document.querySelectorAll('#cl-swatches .sch-swatch').forEach(s => s.classList.remove('sel'));
   el.classList.add('sel');
   document.getElementById('cl-color').value = el.dataset.col;
+}
+
+function schPickIcon(el) {
+  document.querySelectorAll('#cl-icons .sch-ico').forEach(s => s.classList.remove('sel'));
+  el.classList.add('sel');
+  document.getElementById('cl-icon').value = el.dataset.ico || '';
 }
 
 function saveClass(e, id, isNew) {
@@ -4519,6 +4607,7 @@ function saveClass(e, id, isNew) {
     capacity: Number(document.getElementById('cl-capacity').value || 0) || '',
     level: document.getElementById('cl-level').value,
     color: document.getElementById('cl-color').value || SCH_COLORS[0],
+    icon: (document.getElementById('cl-icon') || {}).value || '',
     note: document.getElementById('cl-note').value.trim(),
   };
   if (!obj.name) { toast('กรุณากรอกชื่อคลาส', 'bad'); return; }
