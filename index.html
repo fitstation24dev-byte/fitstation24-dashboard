@@ -316,6 +316,7 @@
   .emp-card .estat { flex: 1; }
   .emp-card .estat-label { font-size: 10px; color: var(--muted); }
   .emp-card .estat-value { font-size: 13px; font-weight: 600; color: var(--text); margin-top: 2px; }
+  .emp-card .estat-sub { font-size: 10px; color: var(--muted); margin-top: 2px; }
   .emp-card .eactions { margin-top: 14px; display: flex; gap: 6px; width: 100%; }
   .emp-card .eactions button { flex: 1; }
 
@@ -1020,6 +1021,10 @@ let SALES_LOG_DATE_FROM = '';
 let SALES_LOG_DATE_TO = '';
 let TRAININGS_DATE_FROM = '';
 let TRAININGS_DATE_TO = '';
+// พนักงาน: ช่วงวันที่ของยอดขาย/ยอดเทรน — reset เป็นวันปัจจุบันทุกครั้งที่เข้าเมนู
+let EMP_DATE_FROM = '';
+let EMP_DATE_TO = '';
+let EMP_DATE_INIT = false;   // false = ยังไม่เคยตั้งค่า -> เปิดหน้าครั้งแรกให้เป็นวันนี้
 let TRAIN_GATE_VERIFIED = false;   // ใส่รหัสครั้งเดียวต่อ session, reset ตอน logout
 
 // ---------- PAGINATION ----------
@@ -1307,6 +1312,12 @@ function fmtTimeShort(iso) {
   return d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 function todayStart() { const d = new Date(); d.setHours(0,0,0,0); return d; }
+// YYYY-MM-DD ตามเวลาเครื่อง (ห้ามใช้ toISOString เพราะไทย UTC+7 จะเพี้ยนเป็นเมื่อวาน)
+function isoLocal(d) {
+  const x = (d instanceof Date) ? d : new Date();
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`;
+}
+function todayISO() { return isoLocal(new Date()); }
 function isSameDay(iso, refDate) {
   const d = new Date(iso);
   return d.getFullYear() === refDate.getFullYear() && d.getMonth() === refDate.getMonth() && d.getDate() === refDate.getDate();
@@ -1497,6 +1508,9 @@ function navigate(view) {
   if (SESSION && !canAccessView(SESSION.role, view)) {
     view = canAccessView(SESSION.role, 'dashboard') ? 'dashboard' : (NAV_ITEMS.find(i => canAccessView(SESSION.role, i.id)) || {}).id || 'dashboard';
   }
+  // เข้าเมนูพนักงานจากเมนูอื่น = เด้งกลับเป็นวันปัจจุบันเสมอ
+  // (ถ้าอยู่ในเมนูอยู่แล้ว เช่น หลังกดแก้/ลบ จะคงวันที่ที่ผู้ใช้เลือกไว้)
+  if (view === 'employees' && CURRENT_VIEW !== 'employees') empSetRange('today');
   CURRENT_VIEW = view;
   try { sessionStorage.setItem('fs24_view', view); } catch {}
   document.querySelectorAll('#nav button').forEach(b => {
@@ -5252,8 +5266,52 @@ function renderAlerts(root) {
 }
 
 // ============ EMPLOYEES ============
+// ---- ตัวกรองวันที่ของเมนูพนักงาน ----
+function empShiftDays(n) {
+  const d = todayStart(); d.setDate(d.getDate() + n); return isoLocal(d);
+}
+function empMonthStart() {
+  const d = new Date(); return isoLocal(new Date(d.getFullYear(), d.getMonth(), 1));
+}
+function empSetRange(key) {
+  const t = todayISO();
+  if (key === 'today')          { EMP_DATE_FROM = t;                EMP_DATE_TO = t; }
+  else if (key === 'yesterday') { EMP_DATE_FROM = empShiftDays(-1);  EMP_DATE_TO = EMP_DATE_FROM; }
+  else if (key === '7d')        { EMP_DATE_FROM = empShiftDays(-6);  EMP_DATE_TO = t; }
+  else if (key === 'month')     { EMP_DATE_FROM = empMonthStart();   EMP_DATE_TO = t; }
+  else                          { EMP_DATE_FROM = '';                EMP_DATE_TO = ''; }
+  EMP_DATE_INIT = true;
+}
+function empActivePreset() {
+  if (!EMP_DATE_FROM && !EMP_DATE_TO) return 'all';
+  const t = todayISO();
+  if (EMP_DATE_FROM === t && EMP_DATE_TO === t) return 'today';
+  const y = empShiftDays(-1);
+  if (EMP_DATE_FROM === y && EMP_DATE_TO === y) return 'yesterday';
+  if (EMP_DATE_FROM === empShiftDays(-6) && EMP_DATE_TO === t) return '7d';
+  if (EMP_DATE_FROM === empMonthStart() && EMP_DATE_TO === t) return 'month';
+  return 'custom';
+}
+function empRerender() {
+  const c = document.getElementById('content');
+  if (!c) return;
+  c.innerHTML = '';
+  renderEmployees(c);
+}
+function empSetDate(which, val) {
+  if (which === 'from') EMP_DATE_FROM = val; else EMP_DATE_TO = val;
+  // กรอกกลับด้าน (เริ่ม > สิ้นสุด) ให้ดันอีกฝั่งตามอัตโนมัติ
+  if (EMP_DATE_FROM && EMP_DATE_TO && EMP_DATE_FROM > EMP_DATE_TO) {
+    if (which === 'from') EMP_DATE_TO = EMP_DATE_FROM; else EMP_DATE_FROM = EMP_DATE_TO;
+  }
+  EMP_DATE_INIT = true;
+  empRerender();
+}
+
 function renderEmployees(root) {
   const canEdit = isManagerOrAbove();
+  // เปิดหน้านี้ครั้งแรกในเซสชัน = วันปัจจุบัน
+  if (!EMP_DATE_INIT) empSetRange('today');
   const tb = document.createElement('div');
   tb.className = 'toolbar';
   const exportBtn = `<button class="btn secondary" onclick="exportCSV('employees')">Export CSV</button>`;
@@ -5261,6 +5319,43 @@ function renderEmployees(root) {
     ? `<div class="muted">สิทธิ์: ${SESSION.role} · เพิ่ม/แก้/ลบ ได้</div><div style="display:flex;gap:8px;">${exportBtn}<button class="btn" onclick="openEmployeeModal()">+ เพิ่มพนักงาน</button></div>`
     : `<div class="muted">โหมดดูอย่างเดียว · เฉพาะ Admin/Manager เท่านั้นที่เพิ่ม/ลบพนักงานได้</div>${exportBtn}`;
   root.appendChild(tb);
+
+  // ---- แถบเลือกวันที่ ----
+  const hasEmpFilter = !!(EMP_DATE_FROM || EMP_DATE_TO);
+  const _todayISO = todayISO();
+  const preset = empActivePreset();
+  const pbtn = (key, label) =>
+    `<button class="btn small ${preset === key ? '' : 'secondary'}" onclick="empSetRange('${key}');empRerender()">${label}</button>`;
+  const rangeLabel = !hasEmpFilter
+    ? 'ทั้งหมด (ทุกช่วงเวลา)'
+    : (EMP_DATE_FROM && EMP_DATE_FROM === EMP_DATE_TO)
+      ? fmtDate(EMP_DATE_FROM) + (EMP_DATE_FROM === _todayISO ? ' (วันนี้)' : '')
+      : `${EMP_DATE_FROM ? fmtDate(EMP_DATE_FROM) : 'เริ่มต้น'} – ${EMP_DATE_TO ? fmtDate(EMP_DATE_TO) : 'ล่าสุด'}`;
+  const db = document.createElement('div');
+  db.className = 'toolbar';
+  db.innerHTML = `
+    <div class="filters">
+      <label class="muted small">📅 จาก:</label>
+      <input type="date" id="emp-from" value="${EMP_DATE_FROM}" max="${_todayISO}" onchange="empSetDate('from', this.value)">
+      <label class="muted small">ถึง:</label>
+      <input type="date" id="emp-to" value="${EMP_DATE_TO}" max="${_todayISO}" onchange="empSetDate('to', this.value)">
+      <span class="muted small">· แสดง: <strong>${_h(rangeLabel)}</strong></span>
+    </div>
+    <div class="filters">
+      ${pbtn('today','วันนี้')}${pbtn('yesterday','เมื่อวาน')}${pbtn('7d','7 วัน')}${pbtn('month','เดือนนี้')}${pbtn('all','ทั้งหมด')}
+    </div>`;
+  root.appendChild(db);
+
+  const _empFrom = EMP_DATE_FROM ? new Date(EMP_DATE_FROM + 'T00:00:00') : null;
+  const _empTo   = EMP_DATE_TO   ? new Date(EMP_DATE_TO   + 'T23:59:59') : null;
+  const inEmpRange = (iso) => {
+    if (!_empFrom && !_empTo) return true;
+    if (!iso) return false;
+    const t = new Date(iso);
+    if (_empFrom && t < _empFrom) return false;
+    if (_empTo && t > _empTo) return false;
+    return true;
+  };
 
   const list = filterByBranch(DATA.employees);
   if (list.length === 0) {
@@ -5279,28 +5374,31 @@ function renderEmployees(root) {
     const avatar = e.photo
       ? `<img class="emp-avatar" src="${e.photo}" alt="">`
       : `<div class="emp-avatar">${initial}</div>`;
-    const salesAmount = DATA.sales
-      .filter(s => s.type === 'MEM' || s.type === 'PT' || s.type === 'MEM+PT')
-      .reduce((sum, s) => {
-        if (Array.isArray(s.splits) && s.splits.length > 0) {
-          return sum + s.splits.filter(sp => sp.empId === e.id).reduce((a, sp) => a + (Number(sp.amount) || 0), 0);
-        }
-        return s.empId === e.id ? sum + (Number(s.amount) || 0) : sum;
-      }, 0);
+    const empShare = (s) => {
+      if (Array.isArray(s.splits) && s.splits.length > 0) {
+        return s.splits.filter(sp => sp.empId === e.id).reduce((a, sp) => a + (Number(sp.amount) || 0), 0);
+      }
+      return s.empId === e.id ? (Number(s.amount) || 0) : 0;
+    };
+    const salesRows = DATA.sales.filter(s => s.type === 'MEM' || s.type === 'PT' || s.type === 'MEM+PT');
+    const salesAmount = salesRows.filter(s => inEmpRange(s.ts)).reduce((sum, s) => sum + empShare(s), 0);
+    const salesAll = hasEmpFilter ? salesRows.reduce((sum, s) => sum + empShare(s), 0) : salesAmount;
     const isTrainer = normalizePosition(e.position) === 'Trainer';
-    const trainCount = isTrainer
-      ? DATA.trainings.filter(t => t.trainerId === e.id && t.verified).length
-      : 0;
+    const trainRows = isTrainer ? DATA.trainings.filter(t => t.trainerId === e.id && t.verified) : [];
+    const trainCount = trainRows.filter(t => inEmpRange(t.ts)).length;
+    const trainAll = hasEmpFilter ? trainRows.length : trainCount;
     const stats = `
       <div class="estats">
         <div class="estat">
-          <div class="estat-label">ยอดขาย</div>
+          <div class="estat-label">ยอดขาย${hasEmpFilter ? ' (ช่วงที่เลือก)' : ''}</div>
           <div class="estat-value">${thb(salesAmount)}</div>
+          ${hasEmpFilter ? `<div class="estat-sub">สะสม ${thb(salesAll)}</div>` : ''}
         </div>
         ${isTrainer ? `
         <div class="estat">
-          <div class="estat-label">เทรนสะสม</div>
+          <div class="estat-label">${hasEmpFilter ? 'เทรน (ช่วงที่เลือก)' : 'เทรนสะสม'}</div>
           <div class="estat-value">${trainCount} ครั้ง</div>
+          ${hasEmpFilter ? `<div class="estat-sub">สะสม ${trainAll} ครั้ง</div>` : ''}
         </div>` : ''}
       </div>`;
     const actions = canEdit ? `
