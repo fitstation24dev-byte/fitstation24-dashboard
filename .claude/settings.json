@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"C:/Users/aofwa/Desktop/FITSTATION24/.claude/auto-push.sh\"",
+            "command": "bash \"C:/Users/aofwa/OneDrive/Desktop/FITSTATION24/.claude/auto-push.sh\"",
             "shell": "bash",
             "timeout": 60,
             "statusMessage": "Auto-pushing changes to GitHub..."
