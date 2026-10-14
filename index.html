@@ -634,6 +634,9 @@
   }
 
   /* ====== TRAINER SELF-LOG (บันทึกการเทรนแบบรหัสส่วนตัว) ====== */
+  .card .filters input, .card .filters select {
+    padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: white; font-size: 13px;
+  }
   .emp-card .btn.block { width: 100%; margin-top: 12px; }
   button.btn.big { padding: 14px 16px; font-size: 16px; border-radius: 12px; }
   .tr-self-grid { grid-template-columns: minmax(0, 360px); justify-content: center; }
@@ -1101,6 +1104,7 @@ let SALES_LOG_DATE_FROM = '';
 let SALES_LOG_DATE_TO = '';
 let TRAININGS_DATE_FROM = '';
 let TRAININGS_DATE_TO = '';
+let TRAININGS_TRAINER = '';   // กรองตารางการเทรนเฉพาะเทรนเนอร์คนเดียว ('' = ทุกคน)
 // พนักงาน: ช่วงวันที่ของยอดขาย/ยอดเทรน — reset เป็นวันปัจจุบันทุกครั้งที่เข้าเมนู
 let EMP_DATE_FROM = '';
 let EMP_DATE_TO = '';
@@ -3143,8 +3147,12 @@ function renderRecentTrainingsContent(card) {
     const to = new Date(TRAININGS_DATE_TO + 'T23:59:59');
     trainings = trainings.filter(t => new Date(t.ts) <= to);
   }
+  if (TRAININGS_TRAINER) trainings = trainings.filter(t => t.trainerId === TRAININGS_TRAINER);
   const hasDateFilter = !!(TRAININGS_DATE_FROM || TRAININGS_DATE_TO);
   const total = trainings.length;
+  const trainerOpts = filterByBranch(DATA.employees)
+    .filter(e => normalizePosition(e.position) === 'Trainer')
+    .map(e => `<option value="${_h(e.id)}" ${e.id === TRAININGS_TRAINER ? 'selected' : ''}>${_h(e.name)} ${_h(e.surname)}${e.status !== 'Active' ? ' (Inactive)' : ''}</option>`).join('');
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   if (TRAININGS_PAGE > totalPages) TRAININGS_PAGE = totalPages;
@@ -3170,13 +3178,17 @@ function renderRecentTrainingsContent(card) {
   if (rows === '') rows = `<tr><td colspan="${colspan}" class="muted center" style="padding: 16px;">ไม่พบการเทรน</td></tr>`;
 
   const rangeLabel = total > 0
-    ? `แสดง ${pageStart + 1}–${Math.min(pageStart + PAGE_SIZE, total)} จาก ${total} รายการ${hasDateFilter ? ' (ในช่วงที่เลือก)' : ''}`
+    ? `แสดง ${pageStart + 1}–${Math.min(pageStart + PAGE_SIZE, total)} จาก ${total} รายการ${hasDateFilter ? ' (ในช่วงที่เลือก)' : ''}${TRAININGS_TRAINER ? ' · เฉพาะเทรนเนอร์ที่เลือก' : ''}`
     : `${total} รายการ`;
 
   card.innerHTML = `
     <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 12px;">
       <h2 style="margin: 0;">การเทรน <small>${rangeLabel}</small></h2>
       <div class="filters" style="align-items: center;">
+        <label class="muted small">เทรนเนอร์:</label>
+        <select onchange="TRAININGS_TRAINER=this.value;TRAININGS_PAGE=1;renderRecentTrainingsContent(document.getElementById('recent-trainings-card'))">
+          <option value="">ทุกคน</option>${trainerOpts}
+        </select>
         <label class="muted small">จาก:</label>
         <input type="date" value="${TRAININGS_DATE_FROM}" onchange="TRAININGS_DATE_FROM=this.value;TRAININGS_PAGE=1;renderRecentTrainingsContent(document.getElementById('recent-trainings-card'))">
         <label class="muted small">ถึง:</label>
