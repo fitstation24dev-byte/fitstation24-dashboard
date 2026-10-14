@@ -637,7 +637,12 @@
   .card .filters input, .card .filters select {
     padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: white; font-size: 13px;
   }
-  .emp-card .btn.block { width: 100%; margin-top: 12px; }
+  .emp-card .btn.block { width: 100%; margin-top: auto; }
+  .emp-card .card-spacer { flex: 1; min-height: 12px; }
+  .qty { display: inline-flex; align-items: center; gap: 6px; }
+  .qty button { width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--border); background: white; font-size: 18px; font-weight: 700; color: var(--text); }
+  .qty input { width: 64px; height: 38px; text-align: center; font-size: 18px; font-weight: 700; border: 2px solid var(--border); border-radius: 10px; }
+  .qty input:focus { outline: none; border-color: var(--accent); }
   button.btn.big { padding: 14px 16px; font-size: 16px; border-radius: 12px; }
   .tr-self-grid { grid-template-columns: minmax(0, 360px); justify-content: center; }
   .tr-list { display: flex; flex-direction: column; gap: 8px; }
@@ -2958,7 +2963,7 @@ function renderTrainerSelfPage(root, me) {
       ${empCardHTML(me, {
         inRange: range.inRange, hasFilter: true, canEdit: false, periodLabel: ` (${range.label})`,
         cumSince: todayISO().slice(0, 8) + '01', cumLabel: 'สะสมเดือนนี้',
-        extra: `<button class="btn big block" onclick="confirmTraining('${_h(me.id)}')">＋ บันทึกการเทรน 1 ครั้ง</button>`,
+        extra: `<button class="btn big block" onclick="confirmTraining('${_h(me.id)}')">＋ บันทึกการเทรน</button>`,
       })}
     </div>`;
   root.appendChild(card);
@@ -3031,7 +3036,14 @@ function confirmTraining(empId) {
     <div class="tr-confirm">
       <div class="line"><span class="k">เทรนเนอร์</span><span class="v">${_h(e.name)} ${_h(e.surname)}<br><small class="muted">${_h(e.id)} · สาขา ${_h(e.branch)}</small></span></div>
       <div class="line"><span class="k">เวลา</span><span class="v">${fmtTime(new Date().toISOString())}</span></div>
-      <div class="line"><span class="k">จำนวน</span><span class="v big">1 ครั้ง</span></div>
+      <div class="line" style="align-items: center;"><span class="k">จำนวนเทรน</span>
+        <span class="qty">
+          <button type="button" onclick="trQtyStep(-1)" aria-label="ลด">−</button>
+          <input id="tr-qty" type="number" inputmode="numeric" min="1" max="${TRAIN_MAX_QTY}" value="1" onfocus="this.select()">
+          <button type="button" onclick="trQtyStep(1)" aria-label="เพิ่ม">＋</button>
+          <span class="muted">ครั้ง</span>
+        </span>
+      </div>
     </div>
     <div class="actions">
       <button type="button" class="btn secondary" onclick="closeModal()">ยกเลิก</button>
@@ -3039,14 +3051,28 @@ function confirmTraining(empId) {
     </div>`);
 }
 
+const TRAIN_MAX_QTY = 20;
+function trQtyRead() {
+  const el = document.getElementById('tr-qty');
+  const n = Math.floor(Number(el ? el.value : 1));
+  return Number.isFinite(n) ? n : 0;
+}
+function trQtyStep(d) {
+  const el = document.getElementById('tr-qty');
+  if (el) el.value = Math.min(TRAIN_MAX_QTY, Math.max(1, (trQtyRead() || 1) + d));
+}
+
 function doTraining(empId) {
   const btn = document.getElementById('tr-confirm-btn');
-  if (btn) { if (btn.disabled) return; btn.disabled = true; }
+  if (btn && btn.disabled) return;
+  const qty = trQtyRead();
+  if (qty < 1 || qty > TRAIN_MAX_QTY) { toast('จำนวนเทรนต้องอยู่ระหว่าง 1–' + TRAIN_MAX_QTY + ' ครั้ง', 'bad'); return; }
+  if (btn) btn.disabled = true;
   closeModal();
   const allowed = isTrainerSelf() ? empId === SESSION.empId : canRecordForOthers();
   if (!allowed) { toast('ไม่มีสิทธิ์บันทึกให้เทรนเนอร์คนนี้', 'bad'); return; }
   const trainer = DATA.employees.find(e => e.id === empId);
-  if (trainer && recordTraining({ branch: trainer.branch, member: null, trainer, note: isTrainerSelf() ? 'บันทึกโดยเทรนเนอร์' : 'บันทึกโดยผู้จัดการ' })) {
+  if (trainer && recordTraining({ branch: trainer.branch, member: null, trainer, count: qty, note: isTrainerSelf() ? 'บันทึกโดยเทรนเนอร์' : 'บันทึกโดยผู้จัดการ' })) {
     navigate('trainings');
   }
 }
@@ -3204,11 +3230,12 @@ function renderRecentTrainingsContent(card) {
 }
 
 // บันทึกการเทรน (ไม่หักชั่วโมงสมาชิก) — ใช้ร่วมกันทั้งโหมดผู้จัดการและโหมดเทรนเนอร์
-function recordTraining({ branch, member, trainer, note }) {
+function recordTraining({ branch, member, trainer, note, count = 1 }) {
   const br = DATA.branches.find(b => b.code === branch);
   if (!trainer || !br) {
     toast('ข้อมูลไม่ครบ', 'bad'); return false;
   }
+  for (let i = 0; i < count; i++) {
   DATA.trainings.unshift({
     id: nid(), ts: new Date().toISOString(), branch,
     memberId: member ? member.id : '',
@@ -3222,8 +3249,9 @@ function recordTraining({ branch, member, trainer, note }) {
     type: 'Train', memberId: member ? member.id : '', memberName: member ? member.name + ' ' + member.surname : '',
     amount: 0, slip: '', note: 'บันทึกเทรน', notify: '—',
   });
+  }
   saveData();
-  toast('บันทึกการเทรนเรียบร้อย', 'ok');
+  toast('บันทึกการเทรน ' + count + ' ครั้งเรียบร้อย', 'ok');
   return true;
 }
 
@@ -5605,7 +5633,7 @@ function empCardHTML(e, { inRange, hasFilter, canEdit, periodLabel = ' (ช่�
       ${isTrainer && canEdit ? `<div class="emeta">${getTrainerPin(e.id) ? '<span class="badge ok">🔑 มีรหัสส่วนตัว</span>' : '<span class="badge warn">ยังไม่มีรหัสส่วนตัว</span>'}</div>` : ''}
       ${stats}
       ${actions}
-      ${extra}
+      ${extra ? '<div class="card-spacer"></div>' + extra : ''}
     </div>`;
 }
 
