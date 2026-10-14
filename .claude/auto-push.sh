@@ -4,14 +4,22 @@
 set -u
 cd "C:/Users/aofwa/OneDrive/Desktop/FITSTATION24" || exit 0
 
-# Nothing to do if working tree is clean
-if [ -z "$(git status --porcelain 2>/dev/null)" ]; then
+dirty=$(git status --porcelain 2>/dev/null)
+ahead=$(git rev-list --count @{u}..HEAD 2>/dev/null || echo 0)
+
+# Nothing to do if working tree is clean and every commit is already pushed
+if [ -z "$dirty" ] && [ "$ahead" = "0" ]; then
   exit 0
 fi
 
-out=$( { git add -A && \
-         git commit -m "Auto-commit from Claude Code session" && \
-         git push; } 2>&1 )
+if [ -n "$dirty" ]; then
+  out=$( { git add -A && \
+           git commit -m "Auto-commit from Claude Code session" && \
+           git push; } 2>&1 )
+else
+  # commit ไว้แล้วแต่ยังไม่ได้ push (เช่น Claude commit เองพร้อมข้อความ)
+  out=$(git push 2>&1)
+fi
 rc=$?
 
 if [ $rc -ne 0 ]; then
