@@ -1107,6 +1107,8 @@ let DASHBOARD_DATE = '';      // empty = today
 let DASH_PERIOD = { type: 'today', from: null, to: null };
 let SALES_LOG_DATE_FROM = '';
 let SALES_LOG_DATE_TO = '';
+let SALES_LOG_TYPE = '';     // ตัวกรองประเภท (เก็บไว้เอง — หน้าถูกล้างก่อน render จึงอ่านจาก DOM ไม่ได้)
+let SALES_LOG_NOTIFY = '';
 let TRAININGS_DATE_FROM = '';
 let TRAININGS_DATE_TO = '';
 let TRAININGS_TRAINER = '';   // กรองตารางการเทรนเฉพาะเทรนเนอร์คนเดียว ('' = ทุกคน)
@@ -2685,37 +2687,9 @@ async function sendDailySalesSummaryToGroup() {
 
     const empMap = {};
     brSales.forEach(s => {
-      const saleTotal = Number(s.amount) || 0;
-      // สำหรับ MEM+PT ให้แยกสัดส่วน MEM/PT จาก memAmount/ptAmount
-      let memShare = 0, ptShare = 0, planShare = 0, otherShare = 0;
-      if (s.type === 'MEM') memShare = saleTotal;
-      else if (s.type === 'PT') ptShare = saleTotal;
-      else if (s.type === 'MEM+PT') {
-        memShare = s.memAmount != null ? Number(s.memAmount) : saleTotal / 2;
-        ptShare  = s.ptAmount  != null ? Number(s.ptAmount)  : saleTotal / 2;
-      }
-      else if (s.type === 'Plan') planShare = saleTotal;
-      else otherShare = saleTotal;
-      const ratio = saleTotal > 0 ? 1 / saleTotal : 0;
-
-      const contributions = (Array.isArray(s.splits) && s.splits.length > 0)
-        ? s.splits.map(sp => ({ empId: sp.empId, amount: Number(sp.amount) || 0, splitType: sp.type }))
-        : (s.empId ? [{ empId: s.empId, amount: saleTotal }] : []);
-      contributions.forEach(c => {
-        if (!c.empId) return;
+      saleEmpShares(s).forEach(c => {
         const e = empMap[c.empId] = empMap[c.empId] || { mem:0, pt:0, plan:0, other:0, train:0 };
-        // MEM+PT + split มี type ของตัวเอง → ใช้ตรง ๆ
-        if (s.type === 'MEM+PT' && (c.splitType === 'MEM' || c.splitType === 'PT')) {
-          if (c.splitType === 'MEM') e.mem += c.amount;
-          else e.pt += c.amount;
-          return;
-        }
-        // ไม่มี → กระจายสัดส่วนตามยอด split / ยอดเต็มของรายการ
-        const w = c.amount * ratio;
-        e.mem   += memShare   * w;
-        e.pt    += ptShare    * w;
-        e.plan  += planShare  * w;
-        e.other += otherShare * w;
+        e.mem += c.mem; e.pt += c.pt; e.plan += c.plan; e.other += c.other;
       });
     });
     brTrains.forEach(t => {
@@ -4157,17 +4131,13 @@ function renderSalesLog(root) {
   tb.className = 'toolbar';
   tb.innerHTML = `
     <div class="filters" style="align-items: center; flex-wrap: wrap;">
-      <select id="sl-type" onchange="SALES_LOG_PAGE=1;renderSalesLog(document.getElementById('content'))">
+      <select id="sl-type" onchange="SALES_LOG_TYPE=this.value;SALES_LOG_PAGE=1;renderSalesLog(document.getElementById('content'))">
         <option value="">ทุกประเภท</option>
-        <option value="MEM" ${document.getElementById('sl-type')?.value==='MEM'?'selected':''}>MEM</option>
-        <option value="PT" ${document.getElementById('sl-type')?.value==='PT'?'selected':''}>PT</option>
-        <option value="MEM+PT" ${document.getElementById('sl-type')?.value==='MEM+PT'?'selected':''}>MEM+PT</option>
+        ${['MEM','PT','MEM+PT'].map(t => `<option value="${t}" ${SALES_LOG_TYPE===t?'selected':''}>${t}</option>`).join('')}
       </select>
-      <select id="sl-notify" onchange="SALES_LOG_PAGE=1;renderSalesLog(document.getElementById('content'))">
+      <select id="sl-notify" onchange="SALES_LOG_NOTIFY=this.value;SALES_LOG_PAGE=1;renderSalesLog(document.getElementById('content'))">
         <option value="">ทุกสถานะ LINE</option>
-        <option value="Sent" ${document.getElementById('sl-notify')?.value==='Sent'?'selected':''}>Sent</option>
-        <option value="Pending" ${document.getElementById('sl-notify')?.value==='Pending'?'selected':''}>Pending</option>
-        <option value="Failed" ${document.getElementById('sl-notify')?.value==='Failed'?'selected':''}>Failed</option>
+        ${['Sent','Pending','Failed'].map(t => `<option value="${t}" ${SALES_LOG_NOTIFY===t?'selected':''}>${t}</option>`).join('')}
       </select>
       <label class="muted small">จาก:</label>
       <input type="date" id="sl-from" value="${SALES_LOG_DATE_FROM}" onchange="SALES_LOG_DATE_FROM=this.value;SALES_LOG_PAGE=1;renderSalesLog(document.getElementById('content'))">
@@ -4175,12 +4145,15 @@ function renderSalesLog(root) {
       <input type="date" id="sl-to" value="${SALES_LOG_DATE_TO}" onchange="SALES_LOG_DATE_TO=this.value;SALES_LOG_PAGE=1;renderSalesLog(document.getElementById('content'))">
       ${(SALES_LOG_DATE_FROM || SALES_LOG_DATE_TO) ? '<button class="btn small secondary" onclick="SALES_LOG_DATE_FROM=\'\';SALES_LOG_DATE_TO=\'\';SALES_LOG_PAGE=1;renderSalesLog(document.getElementById(\'content\'))">ล้างวันที่</button>' : ''}
     </div>
-    <button class="btn secondary" onclick="exportCSV('sales')">Export CSV</button>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+      <button class="btn secondary" onclick="exportCSV('sales')">Export CSV</button>
+      <button class="btn" onclick="openPersonSalesExport()">📊 Excel รายบุคคล</button>
+    </div>
   `;
   root.appendChild(tb);
 
-  const fType = document.getElementById('sl-type') ? document.getElementById('sl-type').value : '';
-  const fNotify = document.getElementById('sl-notify') ? document.getElementById('sl-notify').value : '';
+  const fType = SALES_LOG_TYPE;
+  const fNotify = SALES_LOG_NOTIFY;
 
   let list = filterByBranch(DATA.sales).filter(s => s.type !== 'Train').slice().sort((a,b) => new Date(b.ts) - new Date(a.ts));
   if (fType) list = list.filter(s => s.type === fType);
@@ -6467,6 +6440,202 @@ async function renderBackupHistory() {
     </table>
   `;
 }
+// แยกยอดของรายการขาย 1 รายการให้พนักงานแต่ละคน เป็นส่วน MEM / PT / Plan / อื่น ๆ
+// MEM+PT แยกตาม memAmount/ptAmount (ไม่มี = ครึ่ง ๆ); มี splits → split ที่ระบุ type ใช้ตรง ๆ ไม่งั้นกระจายตามสัดส่วนยอด
+function saleEmpShares(s) {
+  const total = Number(s.amount) || 0;
+  let mem = 0, pt = 0, plan = 0, other = 0;
+  if (s.type === 'MEM') mem = total;
+  else if (s.type === 'PT') pt = total;
+  else if (s.type === 'MEM+PT') {
+    mem = s.memAmount != null ? Number(s.memAmount) : total / 2;
+    pt  = s.ptAmount  != null ? Number(s.ptAmount)  : total / 2;
+  }
+  else if (s.type === 'Plan') plan = total;
+  else other = total;
+  const ratio = total > 0 ? 1 / total : 0;
+  const contributions = (Array.isArray(s.splits) && s.splits.length > 0)
+    ? s.splits.map(sp => ({ empId: sp.empId, amount: Number(sp.amount) || 0, splitType: sp.type }))
+    : (s.empId ? [{ empId: s.empId, amount: total }] : []);
+  return contributions.filter(c => c.empId).map(c => {
+    if (s.type === 'MEM+PT' && (c.splitType === 'MEM' || c.splitType === 'PT')) {
+      return { empId: c.empId, mem: c.splitType === 'MEM' ? c.amount : 0, pt: c.splitType === 'PT' ? c.amount : 0, plan: 0, other: 0 };
+    }
+    const w = c.amount * ratio;
+    return { empId: c.empId, mem: mem * w, pt: pt * w, plan: plan * w, other: other * w };
+  });
+}
+
+// ============ EXCEL ยอดขายรายบุคคล ============
+// 1 ชีตต่อ 1 คน: ยอดขายรายวัน + สรุปรายเดือน (คอลัมน์เทรนเนอร์ PT / เมมเบอร์ MEM ใส่เฉพาะที่คนนั้นมี)
+// + ชีต "สรุป" รวมทุกคน
+function openPersonSalesExport() {
+  const thisMonth = todayISO().slice(0, 7);
+  showModal(`
+    <h3>📊 Excel ยอดขายรายบุคคล</h3>
+    <div class="muted small" style="margin-bottom: 12px;">แยกชีต (แท็บด้านล่าง) ตามชื่อพนักงาน · ยอดขายรายวัน + สรุปรายเดือน · เทรนเนอร์มีจำนวนเทรนด้วย · สาขาตามที่เลือกด้านบน</div>
+    <div class="form-grid">
+      <div class="field"><label>จากเดือน</label><input type="month" id="pse-from" value="${thisMonth}" max="${thisMonth}"></div>
+      <div class="field"><label>ถึงเดือน</label><input type="month" id="pse-to" value="${thisMonth}" max="${thisMonth}"></div>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn secondary" onclick="closeModal()">ยกเลิก</button>
+      <button type="button" class="btn" onclick="exportPersonSalesXlsx()">ดาวน์โหลด Excel</button>
+    </div>`);
+}
+
+function exportPersonSalesXlsx() {
+  if (typeof XLSX === 'undefined') { toast('โหลดตัวสร้าง Excel ไม่สำเร็จ — ลองรีเฟรชหน้า', 'bad'); return; }
+  let from = (document.getElementById('pse-from') || {}).value || todayISO().slice(0, 7);
+  let to   = (document.getElementById('pse-to')   || {}).value || from;
+  if (from > to) [from, to] = [to, from];
+
+  const fromDay = from + '-01';
+  const [ty, tm] = to.split('-').map(Number);
+  const toDay = isoLocal(new Date(ty, tm, 0));   // วันสุดท้ายของเดือน "ถึง"
+  const lastDay = toDay < todayISO() ? toDay : todayISO();
+
+  // รวมยอดรายวันต่อคน: per[empId].days[YYYY-MM-DD] = { pt, mem, n (รายการขาย), tr (จำนวนเทรน) }
+  const per = {};
+  const slot = (empId, day) => {
+    const p = per[empId] = per[empId] || { days: {} };
+    return p.days[day] = p.days[day] || { pt: 0, mem: 0, n: 0, tr: 0 };
+  };
+  filterByBranch(DATA.sales).forEach(s => {
+    if (!['MEM', 'PT', 'MEM+PT'].includes(s.type) || !s.ts) return;
+    const day = isoLocal(new Date(s.ts));
+    if (day < fromDay || day > toDay) return;
+    saleEmpShares(s).forEach(c => {
+      if (c.mem <= 0 && c.pt <= 0) return;
+      const d = slot(c.empId, day);
+      d.pt += c.pt; d.mem += c.mem; d.n += 1;
+    });
+  });
+  filterByBranch(DATA.trainings).forEach(t => {
+    if (!t.verified || !t.trainerId || !t.ts) return;
+    const day = isoLocal(new Date(t.ts));
+    if (day < fromDay || day > toDay) return;
+    slot(t.trainerId, day).tr += 1;
+  });
+  const empIds = Object.keys(per);
+  if (empIds.length === 0) { toast('ไม่มียอดขายหรือการเทรนในช่วงเดือนที่เลือก', 'bad'); return; }
+
+  const r2 = n => Math.round(n * 100) / 100;
+  const parseDay = iso => { const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d); };
+  const dayLabel = iso => parseDay(iso).toLocaleDateString('th-TH', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+  const monthLabel = ym => parseDay(ym + '-01').toLocaleDateString('th-TH', { month: 'long', year: 'numeric' });
+  const rangeLabel = from === to ? monthLabel(from) : `${monthLabel(from)} – ${monthLabel(to)}`;
+  const months = [];
+  for (let d = parseDay(fromDay); isoLocal(d) <= toDay; d.setMonth(d.getMonth() + 1)) months.push(isoLocal(d).slice(0, 7));
+
+  const people = empIds.map(id => {
+    const e = DATA.employees.find(x => x.id === id);
+    const days = per[id].days;
+    const sum = (key, filter) => Object.keys(days).filter(filter).reduce((a, k) => a + days[k][key], 0);
+    const pt = sum('pt', () => true), mem = sum('mem', () => true), n = sum('n', () => true), tr = sum('tr', () => true);
+    const isTrainer = (e && normalizePosition(e.position) === 'Trainer') || tr > 0;
+    return {
+      id, days, pt, mem, n, tr, isTrainer,
+      name: e ? `${e.name} ${e.surname}`.trim() : id,
+      position: e ? normalizePosition(e.position) : '',
+      branch: e ? e.branch : '',
+      hasPt: pt > 0, hasMem: mem > 0,
+      monthSum: ym => ({
+        pt: sum('pt', k => k.startsWith(ym)), mem: sum('mem', k => k.startsWith(ym)), n: sum('n', k => k.startsWith(ym)), tr: sum('tr', k => k.startsWith(ym)),
+      }),
+    };
+  }).sort((a, b) => (b.pt + b.mem) - (a.pt + a.mem) || b.tr - a.tr);
+
+  const NUM = '#,##0.00';
+  const setNumFmt = (ws, rowIdx0, colFrom, colTo) => {
+    for (let c = colFrom; c <= colTo; c++) {
+      const cell = ws[XLSX.utils.encode_cell({ r: rowIdx0, c })];
+      if (cell && typeof cell.v === 'number') cell.z = NUM;
+    }
+  };
+  const makeSheet = (aoa, numRows, widths) => {
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    numRows.forEach(([r, c1, c2]) => setNumFmt(ws, r, c1, c2));
+    ws['!cols'] = widths.map(w => ({ wch: w }));
+    return ws;
+  };
+
+  const wb = XLSX.utils.book_new();
+
+  // ---- ชีตสรุป ----
+  {
+    const aoa = [[`สรุปยอดขายรายบุคคล · ${rangeLabel}`], [], ['ชื่อ', 'EmpID', 'ตำแหน่ง', 'สาขา', 'ยอดขายเทรนเนอร์ (PT)', 'ยอดขายเมมเบอร์ (MEM)', 'รวม', 'จำนวนรายการ', 'จำนวนเทรน (ครั้ง)']];
+    const nums = [];
+    people.forEach(p => { nums.push([aoa.length, 4, 6]); aoa.push([p.name, p.id, p.position, p.branch, r2(p.pt), r2(p.mem), r2(p.pt + p.mem), p.n, p.isTrainer ? p.tr : '']); });
+    const tPt = people.reduce((a, p) => a + p.pt, 0), tMem = people.reduce((a, p) => a + p.mem, 0);
+    nums.push([aoa.length, 4, 6]);
+    aoa.push(['รวมทั้งหมด', '', '', '', r2(tPt), r2(tMem), r2(tPt + tMem), people.reduce((a, p) => a + p.n, 0), people.reduce((a, p) => a + p.tr, 0)]);
+    if (months.length > 1) {
+      aoa.push([], ['สรุปรายเดือน'], ['เดือน', 'ชื่อ', 'ยอดขายเทรนเนอร์ (PT)', 'ยอดขายเมมเบอร์ (MEM)', 'รวม', 'จำนวนรายการ', 'จำนวนเทรน (ครั้ง)']);
+      months.forEach(ym => people.forEach(p => {
+        const m = p.monthSum(ym);
+        if (m.n === 0 && m.tr === 0) return;
+        nums.push([aoa.length, 2, 4]);
+        aoa.push([monthLabel(ym), p.name, r2(m.pt), r2(m.mem), r2(m.pt + m.mem), m.n, p.isTrainer ? m.tr : '']);
+      }));
+    }
+    XLSX.utils.book_append_sheet(wb, makeSheet(aoa, nums, [26, 10, 10, 8, 22, 22, 14, 13, 16]), 'สรุป');
+  }
+
+  // ---- ชีตรายบุคคล ----
+  const usedNames = new Set(['สรุป']);
+  const sheetName = (raw) => {
+    let base = String(raw).replace(/[\[\]:*?\/\\]/g, ' ').trim().slice(0, 28) || 'พนักงาน';
+    let name = base, i = 2;
+    while (usedNames.has(name)) name = `${base.slice(0, 26)} ${i++}`;
+    usedNames.add(name);
+    return name;
+  };
+  people.forEach(p => {
+    const cols = [];
+    if (p.hasPt) cols.push(['ยอดขายเทรนเนอร์ (PT)', 'pt']);
+    if (p.hasMem) cols.push(['ยอดขายเมมเบอร์ (MEM)', 'mem']);
+    const showTotal = cols.length > 1;
+    const hasSales = cols.length > 0;
+    const head = (first) => [first, ...cols.map(c => c[0]), ...(showTotal ? ['รวม'] : []),
+      ...(hasSales ? ['จำนวนรายการ'] : []), ...(p.isTrainer ? ['จำนวนเทรน (ครั้ง)'] : [])];
+    const vals = (o) => [...cols.map(c => r2(o[c[1]])), ...(showTotal ? [r2(o.pt + o.mem)] : [])];
+    const counts = (o) => [...(hasSales ? [o.n] : []), ...(p.isTrainer ? [o.tr] : [])];
+    const lastNumCol = cols.length + (showTotal ? 1 : 0);
+
+    const aoa = [
+      [`${p.name} (${p.id})${p.position ? ' · ' + p.position : ''}${p.branch ? ' · สาขา ' + p.branch : ''}`],
+      [`ช่วงเวลา: ${rangeLabel}`],
+      [],
+      ['ยอดขายรายวัน'],
+      head('วันที่'),
+    ];
+    const nums = [];
+    for (let d = parseDay(fromDay); isoLocal(d) <= lastDay; d.setDate(d.getDate() + 1)) {
+      const iso = isoLocal(d);
+      const o = p.days[iso] || { pt: 0, mem: 0, n: 0, tr: 0 };
+      nums.push([aoa.length, 1, lastNumCol]);
+      aoa.push([dayLabel(iso), ...vals(o), ...counts(o)]);
+    }
+    nums.push([aoa.length, 1, lastNumCol]);
+    aoa.push(['รวม', ...vals(p), ...counts(p)]);
+
+    aoa.push([], ['สรุปรายเดือน'], head('เดือน'));
+    months.forEach(ym => {
+      const m = p.monthSum(ym);
+      nums.push([aoa.length, 1, lastNumCol]);
+      aoa.push([monthLabel(ym), ...vals(m), ...counts(m)]);
+    });
+    const widths = [24, ...cols.map(() => 22), ...(showTotal ? [14] : []), ...(hasSales ? [13] : []), ...(p.isTrainer ? [16] : [])];
+    XLSX.utils.book_append_sheet(wb, makeSheet(aoa, nums, widths), sheetName(p.name));
+  });
+
+  const fileName = `ยอดขายรายบุคคล-${from === to ? from : from + '_ถึง_' + to}.xlsx`;
+  XLSX.writeFile(wb, fileName);
+  closeModal();
+  toast(`ดาวน์โหลด ${fileName} (${people.length} คน)`, 'ok');
+}
+
 function exportCSV(kind) {
   let rows = [];
   if (kind === 'sales') {
