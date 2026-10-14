@@ -2953,6 +2953,7 @@ function renderTrainerSelfPage(root, me) {
     <div class="emp-grid tr-self-grid">
       ${empCardHTML(me, {
         inRange: range.inRange, hasFilter: true, canEdit: false, periodLabel: ` (${range.label})`,
+        cumSince: todayISO().slice(0, 8) + '01', cumLabel: 'สะสมเดือนนี้',
         extra: `<button class="btn big block" onclick="confirmTraining('${_h(me.id)}')">＋ บันทึกการเทรน 1 ครั้ง</button>`,
       })}
     </div>`;
@@ -2998,6 +2999,7 @@ function renderTrainingsBoard(root) {
   const trainers = trainScopeTrainers();
   const cards = trainers.map(e => empCardHTML(e, {
     inRange: range.inRange, hasFilter: true, canEdit: false, periodLabel: ` (${range.label})`,
+        cumSince: todayISO().slice(0, 8) + '01', cumLabel: 'สะสมเดือนนี้',
     extra: canRecord ? `<button class="btn block" onclick="confirmTraining('${_h(e.id)}')">＋ บันทึกเทรน</button>` : '',
   })).join('');
   const card = document.createElement('div');
@@ -5542,7 +5544,9 @@ function empSetDate(which, val) {
 
 // การ์ดข้อมูลพนักงาน — ใช้ทั้งเมนูพนักงานและเมนูบันทึกการเทรน
 // opts: inRange(iso) ช่วงเวลาที่นับ, hasFilter แสดงยอดสะสมด้วย, canEdit ปุ่มแก้/ลบ, periodLabel ข้อความช่วงเวลา, extra HTML ท้ายการ์ด
-function empCardHTML(e, { inRange, hasFilter, canEdit, periodLabel = ' (ช่วงที่เลือก)', extra = '' }) {
+// cumSince: ISO วันที่เริ่มนับยอด "สะสม" (ไม่ระบุ = นับทั้งหมด), cumLabel: ข้อความแทนคำว่า "สะสม"
+function empCardHTML(e, { inRange, hasFilter, canEdit, periodLabel = ' (ช่วงที่เลือก)', extra = '', cumSince = '', cumLabel = 'สะสม' }) {
+  const inCum = (iso) => !cumSince || (!!iso && isoLocal(new Date(iso)) >= cumSince);
   const initial = _h((e.name || '?').charAt(0));
   const avatar = e.photo
     ? `<img class="emp-avatar" src="${_h(e.photo)}" alt="">`
@@ -5555,23 +5559,23 @@ function empCardHTML(e, { inRange, hasFilter, canEdit, periodLabel = ' (ช่�
   };
   const salesRows = DATA.sales.filter(s => s.type === 'MEM' || s.type === 'PT' || s.type === 'MEM+PT');
   const salesAmount = salesRows.filter(s => inRange(s.ts)).reduce((sum, s) => sum + empShare(s), 0);
-  const salesAll = hasFilter ? salesRows.reduce((sum, s) => sum + empShare(s), 0) : salesAmount;
+  const salesAll = hasFilter ? salesRows.filter(s => inCum(s.ts)).reduce((sum, s) => sum + empShare(s), 0) : salesAmount;
   const isTrainer = normalizePosition(e.position) === 'Trainer';
   const trainRows = isTrainer ? DATA.trainings.filter(t => t.trainerId === e.id && t.verified) : [];
   const trainCount = trainRows.filter(t => inRange(t.ts)).length;
-  const trainAll = hasFilter ? trainRows.length : trainCount;
+  const trainAll = hasFilter ? trainRows.filter(t => inCum(t.ts)).length : trainCount;
   const stats = `
     <div class="estats">
       <div class="estat">
         <div class="estat-label">ยอดขาย${hasFilter ? periodLabel : ''}</div>
         <div class="estat-value">${thb(salesAmount)}</div>
-        ${hasFilter ? `<div class="estat-sub">สะสม ${thb(salesAll)}</div>` : ''}
+        ${hasFilter ? `<div class="estat-sub">${cumLabel} ${thb(salesAll)}</div>` : ''}
       </div>
       ${isTrainer ? `
       <div class="estat">
         <div class="estat-label">${hasFilter ? 'เทรน' + periodLabel : 'เทรนสะสม'}</div>
         <div class="estat-value">${trainCount} ครั้ง</div>
-        ${hasFilter ? `<div class="estat-sub">สะสม ${trainAll} ครั้ง</div>` : ''}
+        ${hasFilter ? `<div class="estat-sub">${cumLabel} ${trainAll} ครั้ง</div>` : ''}
       </div>` : ''}
     </div>`;
   const actions = canEdit ? `
