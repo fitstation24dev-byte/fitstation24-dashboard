@@ -780,6 +780,7 @@
     <input id="login-pwd" type="password" placeholder="••••••••" autocomplete="current-password">
     <div id="login-err" class="err">Username หรือ Password ไม่ถูกต้อง</div>
     <button class="primary" onclick="doLogin()">เข้าสู่ระบบ</button>
+    <div style="margin-top: 14px; font-size: 11px; color: #6B7280; text-align: center;">เทรนเนอร์: Username = รหัสพนักงาน (เช่น E003) · Password = รหัสส่วนตัว 4 หลัก</div>
   </div>
 </div>
 
@@ -1299,12 +1300,31 @@ function saveSession(s) {
 function doLogin() {
   const email = document.getElementById('login-email').value.trim().toLowerCase();
   const pwd = document.getElementById('login-pwd').value;
-  const u = DATA.users.find(x => x.email.toLowerCase() === email && x.pwd === pwd);
+  let u = DATA.users.find(x => x.email.toLowerCase() === email && x.pwd === pwd);
+  // เทรนเนอร์ล็อกอินด้วย EmpID + รหัสส่วนตัว (ตั้งที่เมนูพนักงาน) → เห็นเฉพาะข้อมูลตัวเอง
+  if (!u) {
+    const f = LOGIN_FAILS[email] || { n: 0, until: 0 };
+    if (Date.now() < f.until) {
+      toast('ใส่รหัสผิดหลายครั้ง — ลองใหม่ใน ' + Math.ceil((f.until - Date.now()) / 1000) + ' วินาที', 'bad');
+      return;
+    }
+    const emp = DATA.employees.find(e => String(e.id).toLowerCase() === email
+      && normalizePosition(e.position) === 'Trainer' && e.status === 'Active');
+    if (emp && getTrainerPin(emp.id) && getTrainerPin(emp.id) === pwd) {
+      delete LOGIN_FAILS[email];
+      u = { email: emp.id, name: emp.name + ' ' + emp.surname, role: 'Trainer', branch: emp.branch, empId: emp.id };
+    } else {
+      f.n += 1;
+      if (f.n >= 5) { f.until = Date.now() + 60 * 1000; f.n = 0; }
+      LOGIN_FAILS[email] = f;
+    }
+  }
   if (!u) {
     document.getElementById('login-err').classList.add('show');
     return;
   }
   SESSION = { email: u.email, name: u.name, role: u.role, branch: u.branch, loginAt: new Date().toISOString() };
+  if (u.empId) SESSION.empId = u.empId;
   saveSession(SESSION);
   const logEntry = { ts: SESSION.loginAt, email: u.email, role: u.role, branch: u.branch, action: 'LOGIN' };
   DATA.loginLog.unshift(logEntry);
@@ -1401,7 +1421,13 @@ function getRolePermissions() {
   return out;
 }
 
+// เทรนเนอร์ที่ล็อกอินด้วย EmpID: เข้าได้แค่หน้าบันทึกการเทรนของตัวเอง + การ์ดพนักงานของตัวเอง
+const TRAINER_SELF_VIEWS = ['trainings', 'employees'];
+const LOGIN_FAILS = {};
+function isTrainerSelf() { return !!(SESSION && SESSION.empId); }
+
 function canAccessView(role, viewId) {
+  if (isTrainerSelf()) return TRAINER_SELF_VIEWS.includes(viewId);
   if (role === 'Owner') return true;
   const perms = getRolePermissions();
   return (perms[role] || []).includes(viewId);
@@ -1566,6 +1592,15 @@ function runDailyMaintenance() {
 
 // ---------- BOOT ----------
 function bootApp() {
+  // เทรนเนอร์ถูกปิดใช้งาน/เปลี่ยนตำแหน่ง/ลบรหัส ระหว่างที่ยังล็อกอินค้างอยู่ → ออกจากระบบ
+  if (isTrainerSelf()) {
+    const emp = DATA.employees.find(e => e.id === SESSION.empId);
+    if (!emp || emp.status !== 'Active' || normalizePosition(emp.position) !== 'Trainer' || !getTrainerPin(emp.id)) {
+      SESSION = null;
+      saveSession(null);
+      return;
+    }
+  }
   document.getElementById('login-screen').classList.add('hidden');
   document.getElementById('app').classList.remove('hidden');
   document.getElementById('user-name').textContent = SESSION.name;
@@ -1577,7 +1612,7 @@ function bootApp() {
   NAV_ITEMS.forEach(i => {
     if (!canAccessView(SESSION.role, i.id)) return;
     const b = document.createElement('button');
-    b.textContent = i.label;
+    b.textContent = isTrainerSelf() && i.id === 'employees' ? 'ข้อมูลของฉัน' : i.label;
     b.dataset.id = i.id;
     b.onclick = () => navigate(i.id);
     nav.appendChild(b);
@@ -1658,6 +1693,7 @@ function navigate(view) {
     'alerts': 'การแจ้งเตือน',
     'employees': 'พนักงาน', 'reports': 'รายงาน', 'settings': 'ตั้งค่าระบบ',
   };
+  if (isTrainerSelf()) titles.employees = 'ข้อมูลของฉัน';
   document.getElementById('page-title').textContent = titles[view] || view;
   const c = document.getElementById('content');
   c.innerHTML = '';
@@ -2920,7 +2956,7 @@ function trainScopeTrainers() {
 }
 function trainEligibleMembers() {
   return DATA.members
-    .filter(m => m.status === 'Active' && m.hours > 0)
+    .filter(m => m.status === 'Active')
     .filter(m => canSeeAllBranches() || m.branch === SESSION.branch);
 }
 function empAvatarHTML(e) {
@@ -2931,6 +2967,7 @@ function empAvatarHTML(e) {
 function trainSetView(v) { TRAIN_VIEW = v; navigate('trainings'); }
 
 function renderTrainingsEntry(root) {
+  if (isTrainerSelf()) { TRAIN_ME = SESSION.empId; TRAIN_ME_LAST = Date.now(); }
   if (TRAIN_ME && Date.now() - TRAIN_ME_LAST > TRAIN_IDLE_MS) TRAIN_ME = null;
   const me = TRAIN_ME ? DATA.employees.find(e => e.id === TRAIN_ME) : null;
   if (me) { renderTrainerSelfPage(root, me); return; }
@@ -3041,7 +3078,7 @@ document.addEventListener('keydown', (ev) => {
   if (TRAIN_ME) TRAIN_ME_LAST = Date.now();
 }, true));
 setInterval(() => {
-  if (!TRAIN_ME || Date.now() - TRAIN_ME_LAST <= TRAIN_IDLE_MS) return;
+  if (!TRAIN_ME || isTrainerSelf() || Date.now() - TRAIN_ME_LAST <= TRAIN_IDLE_MS) return;
   TRAIN_ME = null;
   TRAIN_SEARCH = '';
   closeModal();
@@ -3074,7 +3111,7 @@ function renderTrainerSelfPage(root, me) {
         <div class="muted small">${_h(me.id)} · สาขา ${_h(me.branch)}</div>
       </div>
       <div class="count"><div class="n">${mineToday.length}</div><div class="l">เทรนวันนี้</div></div>
-      <button class="btn secondary" onclick="trainerLogout()">ออก 🔒</button>
+      ${isTrainerSelf() ? "" : `<button class="btn secondary" onclick="trainerLogout()">ออก 🔒</button>`}
     </div>`;
   root.appendChild(head);
 
@@ -3095,7 +3132,6 @@ function renderTrainerSelfPage(root, me) {
         <div class="nm">${_h(t.memberName)}</div>
         <div class="sub">${fmtTime(t.ts)} · สาขา ${_h(t.branch)}</div>
       </div>
-      <div class="hrs">${t.hoursBefore} → ${t.hoursAfter}</div>
       <span class="badge ok">✓</span>
     </div>`).join('');
   const hist = document.createElement('div');
@@ -3133,18 +3169,16 @@ function renderTrainMemberList() {
     hint = 'ลูกเทรนของคุณ · พิมพ์ค้นหาเพื่อดูสมาชิกคนอื่น';
   }
   if (list.length === 0) {
-    box.innerHTML = '<div class="muted center" style="padding: 16px;">ไม่พบสมาชิกที่ยังมีชั่วโมงเทรน</div>';
+    box.innerHTML = '<div class="muted center" style="padding: 16px;">ไม่พบสมาชิก</div>';
     return;
   }
   const MAX = 30;
-  const warn = (DATA.settings && DATA.settings.trainerWarnHrs) || 0;
   const rows = list.slice(0, MAX).map(m => `
     <button class="tr-row" onclick="confirmTrainerTraining('${_h(m.id)}')">
       <div class="main-txt">
         <div class="nm">${_h(m.name)} ${_h(m.surname)}</div>
         <div class="sub">${_h(m.id)} · สาขา ${_h(m.branch)}</div>
       </div>
-      <div class="hrs ${m.hours <= warn ? 'hrs-low' : ''}">เหลือ ${m.hours}</div>
       <div class="go">บันทึก ›</div>
     </button>`).join('');
   box.innerHTML = (hint ? `<div class="muted small">${hint}</div>` : '') + rows +
@@ -3161,11 +3195,10 @@ function confirmTrainerTraining(memberId) {
       <div class="line"><span class="k">สมาชิก</span><span class="v">${_h(m.name)} ${_h(m.surname)}<br><small class="muted">${_h(m.id)}</small></span></div>
       <div class="line"><span class="k">เทรนเนอร์</span><span class="v">${_h(me.name)} ${_h(me.surname)}</span></div>
       <div class="line"><span class="k">เวลา</span><span class="v">${fmtTime(new Date().toISOString())}</span></div>
-      <div class="line"><span class="k">ชั่วโมงคงเหลือ</span><span class="v big">${m.hours} → ${Math.max(0, m.hours - 1)}</span></div>
     </div>
     <div class="actions">
       <button type="button" class="btn secondary" onclick="closeModal()">ยกเลิก</button>
-      <button type="button" class="btn" id="tr-confirm-btn" onclick="doTrainerTraining('${_h(m.id)}')">✓ ยืนยัน หัก 1 ครั้ง</button>
+      <button type="button" class="btn" id="tr-confirm-btn" onclick="doTrainerTraining('${_h(m.id)}')">✓ ยืนยันบันทึก</button>
     </div>`);
 }
 
@@ -3299,7 +3332,7 @@ function renderTrainingsManager(root) {
     .map(e => `<option value="${_h(e.id)}">${_h(e.id)} — ${_h(e.name)} ${_h(e.surname)}</option>`).join('');
 
   card.innerHTML = `
-    <h2>บันทึกการเทรน <small>หักชั่วโมง 1 ครั้งต่อการเทรน 1 รายการ</small></h2>
+    <h2>บันทึกการเทรน <small>บันทึกการเทรน (ไม่หักชั่วโมงสมาชิก)</small></h2>
     <form id="train-form" autocomplete="off" onsubmit="onSubmitTrain(event)">
       <div class="form-grid">
         <div class="field">
@@ -3325,7 +3358,7 @@ function renderTrainingsManager(root) {
           <input id="te-note" type="text" placeholder="">
         </div>
       </div>
-      <button type="submit" class="btn">ยืนยัน + หักชั่วโมง</button>
+      <button type="submit" class="btn">ยืนยันบันทึก</button>
     </form>
   `;
   root.appendChild(card);
@@ -3368,7 +3401,7 @@ function renderRecentTrainingsContent(card) {
       <td>${_h(t.branch)}</td>
       <td>${_h(t.memberName)}</td>
       <td>${_h(t.trainerName)}</td>
-      <td class="center">${t.hoursBefore} → <strong>${t.hoursAfter}</strong></td>
+      <td class="center">${t.hoursBefore === t.hoursAfter ? '<span class="muted">ไม่หัก</span>' : `${t.hoursBefore} → <strong>${t.hoursAfter}</strong>`}</td>
       <td class="center">${t.verified ? '<span class="badge ok">✓ Verified</span>' : '<span class="badge bad">✗ Invalid</span>'}</td>
       ${actions}
     </tr>`;
@@ -3426,27 +3459,17 @@ function onSubmitTrain(e) {
   if (recordTraining({ branch, member, trainer, note })) navigate('trainings');
 }
 
-// หักชั่วโมง 1 ครั้ง + บันทึกการเทรน (ใช้ร่วมกันทั้งโหมดผู้จัดการและโหมดเทรนเนอร์)
+// บันทึกการเทรน (ไม่หักชั่วโมงสมาชิก) — ใช้ร่วมกันทั้งโหมดผู้จัดการและโหมดเทรนเนอร์
 function recordTraining({ branch, member, trainer, note }) {
   const br = DATA.branches.find(b => b.code === branch);
   if (!member || !trainer || !br) {
     toast('ข้อมูลไม่ครบ', 'bad'); return false;
   }
-  if (member.hours <= 0) {
-    toast('สมาชิกนี้ไม่เหลือชั่วโมงเทรน', 'bad'); return false;
-  }
-  // Deduct
-  const hoursBefore = member.hours;
-  member.hours = Math.max(0, member.hours - 1);
-  // If member was above threshold and just crossed below, clear the notify flag so we re-alert
-  if (hoursBefore > DATA.settings.trainerWarnHrs && DATA.settings.hoursNotified) {
-    delete DATA.settings.hoursNotified[member.id];
-  }
   DATA.trainings.unshift({
     id: nid(), ts: new Date().toISOString(), branch, memberId: member.id,
     memberName: member.name + ' ' + member.surname,
     trainerId: trainer.id, trainerName: trainer.name,
-    verified: true, hoursBefore, hoursAfter: member.hours, note,
+    verified: true, hoursBefore: member.hours, hoursAfter: member.hours, note,
   });
   // Add as a "Train" sale row for tracking
   DATA.sales.unshift({
@@ -3454,20 +3477,8 @@ function recordTraining({ branch, member, trainer, note }) {
     type: 'Train', memberId: member.id, memberName: member.name + ' ' + member.surname,
     amount: 0, slip: '', note: 'บันทึกเทรน', notify: '—',
   });
-  // Alert if low hours
-  if (member.hours <= DATA.settings.trainerWarnHrs) {
-    DATA.alerts.unshift({
-      id: nid(), ts: new Date().toISOString(),
-      type: 'Trainer Hours Low', branch,
-      memberId: member.id, memberName: member.name + ' ' + member.surname,
-      value: member.hours + ' ครั้ง',
-      message: 'เหลือชั่วโมงเทรน ' + member.hours + ' ครั้ง',
-      status: member.lineUid ? 'Sent' : 'No LINE',
-    });
-  }
   saveData();
-  toast('หักชั่วโมงสำเร็จ — เหลือ ' + member.hours + ' ครั้ง', 'ok');
-  sendDailyHoursLowAlertsToGroup().catch(err => console.error('[hours-alert] post-train push failed', err));
+  toast('บันทึกการเทรนเรียบร้อย', 'ok');
   return true;
 }
 
@@ -5805,7 +5816,9 @@ function renderEmployees(root) {
   const tb = document.createElement('div');
   tb.className = 'toolbar';
   const exportBtn = `<button class="btn secondary" onclick="exportCSV('employees')">Export CSV</button>`;
-  tb.innerHTML = canEdit
+  tb.innerHTML = isTrainerSelf()
+    ? '<div class="muted">ข้อมูลของคุณ · ดูอย่างเดียว แก้ไขไม่ได้</div>'
+    : canEdit
     ? `<div class="muted">สิทธิ์: ${SESSION.role} · เพิ่ม/แก้/ลบ ได้</div><div style="display:flex;gap:8px;">${exportBtn}<button class="btn" onclick="openEmployeeModal()">+ เพิ่มพนักงาน</button></div>`
     : `<div class="muted">โหมดดูอย่างเดียว · เฉพาะ Admin/Manager เท่านั้นที่เพิ่ม/ลบพนักงานได้</div>${exportBtn}`;
   root.appendChild(tb);
@@ -5847,7 +5860,9 @@ function renderEmployees(root) {
     return true;
   };
 
-  const list = filterByBranch(DATA.employees);
+  const list = isTrainerSelf()
+    ? DATA.employees.filter(e => e.id === SESSION.empId)
+    : filterByBranch(DATA.employees);
   if (list.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'card';
@@ -5921,8 +5936,44 @@ function renderEmployees(root) {
     root.appendChild(section);
   };
 
+  if (isTrainerSelf()) {
+    renderSection('ข้อมูลของฉัน', list);
+    renderMySalesCard(root, list[0], inEmpRange, rangeLabel);
+    return;
+  }
   renderSection('Sale', sales);
   renderSection('Trainer', trainers);
+}
+
+// ยอดขายของเทรนเนอร์ที่ล็อกอินอยู่ — แสดงอย่างเดียว ไม่มีปุ่มแก้/ลบ
+function renderMySalesCard(root, me, inEmpRange, rangeLabel) {
+  if (!me) return;
+  const share = (s) => {
+    if (Array.isArray(s.splits) && s.splits.length > 0) {
+      return s.splits.filter(sp => sp.empId === me.id).reduce((a, sp) => a + (Number(sp.amount) || 0), 0);
+    }
+    return s.empId === me.id ? (Number(s.amount) || 0) : 0;
+  };
+  const rows = DATA.sales
+    .filter(s => (s.type === 'MEM' || s.type === 'PT' || s.type === 'MEM+PT') && inEmpRange(s.ts))
+    .map(s => ({ s, amt: share(s) }))
+    .filter(r => r.amt > 0)
+    .sort((a, b) => new Date(b.s.ts) - new Date(a.s.ts));
+  const total = rows.reduce((sum, r) => sum + r.amt, 0);
+  const list = rows.map(({ s, amt }) => `
+    <div class="tr-row static">
+      <div class="main-txt">
+        <div class="nm">${_h(s.memberName || '-')}</div>
+        <div class="sub">${fmtTime(s.ts)} · ${_h(s.type)} · สาขา ${_h(s.branch)}</div>
+      </div>
+      <div class="hrs">${thb(amt)}</div>
+    </div>`).join('');
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML = `
+    <h2>ยอดขายของฉัน <small>${_h(rangeLabel)} · ${rows.length} รายการ · รวม ${thb(total)}</small></h2>
+    ${list ? `<div class="tr-list">${list}</div>` : '<div class="muted center" style="padding: 16px;">ไม่มียอดขายในช่วงนี้</div>'}`;
+  root.appendChild(card);
 }
 
 function openEmployeeModal(id) {
@@ -5962,7 +6013,7 @@ function openEmployeeModal(id) {
           </select>
         </div>
         <div class="field full" id="ee-pin-field" style="${e && normalizePosition(e.position) === 'Trainer' ? '' : 'display: none;'}">
-          <label>🔑 รหัสส่วนตัว (${TRAIN_PIN_LEN} หลัก) <small class="muted">— เทรนเนอร์ใช้เข้าเมนูบันทึกการเทรน เว้นว่าง = ยังเข้าไม่ได้</small></label>
+          <label>🔑 รหัสส่วนตัว (${TRAIN_PIN_LEN} หลัก) <small class="muted">— ใช้ล็อกอินหน้าเว็บ: Username = EmpID, Password = รหัสนี้ · เว้นว่าง = ล็อกอินไม่ได้</small></label>
           <div style="display: flex; gap: 8px;">
             <input id="ee-pin" inputmode="numeric" autocomplete="off" maxlength="${TRAIN_PIN_LEN}" value="${e ? _h(getTrainerPin(e.id)) : ''}" placeholder="เช่น 4821" style="flex: 1; letter-spacing: 4px;">
             <button type="button" class="btn small secondary" onclick="document.getElementById('ee-pin').value = genTrainerPin()">🎲 สุ่มรหัส</button>
@@ -6424,7 +6475,7 @@ function rebuildNav() {
   NAV_ITEMS.forEach(i => {
     if (!canAccessView(SESSION.role, i.id)) return;
     const b = document.createElement('button');
-    b.textContent = i.label;
+    b.textContent = isTrainerSelf() && i.id === 'employees' ? 'ข้อมูลของฉัน' : i.label;
     b.dataset.id = i.id;
     b.classList.toggle('active', i.id === CURRENT_VIEW);
     b.onclick = () => navigate(i.id);
