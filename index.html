@@ -5924,7 +5924,10 @@ function renderSettings(root) {
           <input value="${_h(b.logoUrl || '')}" onchange="DATA.branches[${i}].logoUrl=this.value" style="flex: 1;" placeholder="/logo.png หรือ https://...">
         </div>
       </td>
-      <td class="row-actions"><button class="btn small danger" onclick="deleteBranch(${i})">ลบ</button></td>
+      <td class="row-actions">
+        <button class="btn small secondary" onclick="previewBranchDaily(${i})" title="ตัวอย่างสรุปรายวันที่ส่งเข้ากลุ่มสาขานี้">👁 รายวัน</button>
+        <button class="btn small danger" onclick="deleteBranch(${i})">ลบ</button>
+      </td>
     </tr>`;
   });
   card1.innerHTML = `
@@ -6126,6 +6129,48 @@ function previewExecReport(kind) {
       <button type="button" class="btn" ${ready ? '' : 'disabled title="ใส่ LINE Token และ Group ID ก่อน"'} onclick="testSendExecReport('${kind}')">▶ ส่งทดสอบเข้ากลุ่มผู้บริหาร</button>
     </div>`);
 }
+// ตัวอย่างสรุปผลรายวัน (เมื่อวาน) ของสาขาเดียว + ส่งทดสอบเข้ากลุ่ม LINE ของสาขานั้น
+function branchDailyText(b) {
+  const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+  return ExecReport.buildBranchDaily({
+    day: yesterday, branch: b, sales: DATA.sales, trainings: DATA.trainings,
+    employees: DATA.employees, currency: DATA.settings.currency,
+  });
+}
+function previewBranchDaily(i) {
+  const b = DATA.branches[i];
+  if (!b) return;
+  if (typeof ExecReport === 'undefined') { toast('โหลด exec-report.js ไม่สำเร็จ — ลองรีเฟรชหน้า', 'bad'); return; }
+  const text = branchDailyText(b);
+  const ready = b.lineToken && b.lineGroupId;
+  showModal(`
+    <h3>ตัวอย่างสรุปรายวัน — ${_h(b.code)} · ${_h(b.name)}</h3>
+    <div class="muted small" style="margin-bottom: 8px;">ยอดของเมื่อวาน · ส่งจริงอัตโนมัติทุกวัน 08:00 เข้ากลุ่ม LINE ของสาขานี้</div>
+    ${text
+      ? `<pre style="white-space: pre-wrap; font-family: inherit; font-size: 13px; background: var(--bg); border-radius: 10px; padding: 14px; margin: 0;">${_h(text)}</pre>`
+      : '<div class="muted center" style="padding: 20px;">เมื่อวานสาขานี้ไม่มียอดขายและไม่มีการเทรน — รอบ 08:00 จะไม่ส่งข้อความ</div>'}
+    <div class="actions">
+      <button type="button" class="btn secondary" onclick="closeModal()">ปิด</button>
+      ${text ? `<button type="button" class="btn" ${ready ? '' : 'disabled title="ใส่ LINE Token และ Group ID ของสาขานี้ก่อน"'} onclick="testSendBranchDaily(${i})">▶ ส่งทดสอบเข้ากลุ่มสาขานี้</button>` : ''}
+    </div>`);
+}
+async function testSendBranchDaily(i) {
+  if (!isOwner()) return;
+  const b = DATA.branches[i];
+  const text = b && branchDailyText(b);
+  if (!text) return;
+  if (!confirm('ส่งข้อความทดสอบเข้ากลุ่ม LINE ของสาขา ' + b.code + ' ตอนนี้?')) return;
+  closeModal();
+  toast('กำลังส่ง...', 'ok');
+  try {
+    await sendLineMessage('🧪 ทดสอบ\n' + text, null, b.code);
+    toast('ส่งสำเร็จ — เช็คในกลุ่ม LINE สาขา ' + b.code, 'ok');
+  } catch (err) {
+    console.error(err);
+    toast('ส่งไม่สำเร็จ: ' + (err.message || err), 'bad');
+  }
+}
+
 function previewBranchReport(kind) {
   if (typeof ExecReport === 'undefined') { toast('โหลด exec-report.js ไม่สำเร็จ — ลองรีเฟรชหน้า', 'bad'); return; }
   const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
