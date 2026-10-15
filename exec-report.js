@@ -1,5 +1,8 @@
 /*
- * FITSTATION 24 — รายงานผู้บริหารทาง LINE (รายวัน / รายสัปดาห์ / รายเดือน)
+ * FITSTATION 24 — รายงานสรุปยอดทาง LINE
+ *   รายงานผู้บริหาร (กลุ่มผู้บริหาร): รายวัน / รายสัปดาห์ / รายเดือน   → build()
+ *   กลุ่มสาขา: สรุปรายวัน (ยอดรายคน + เทรนของเมื่อวาน)               → buildBranchDaily()
+ *              สรุปรายเดือน (ยอด + ช่องทาง + จำนวนเทรน)              → buildBranchMonthly()
  * ใช้ร่วมกัน 2 ที่: หน้าเว็บ (index.html → ดูตัวอย่าง/ส่งทดสอบ) และสคริปต์ตั้งเวลา (scripts/send-exec-report.js)
  * วันที่ทั้งหมดคิดตามเวลาเครื่อง — สคริปต์ตั้ง TZ=Asia/Bangkok ไว้แล้ว
  */
@@ -15,10 +18,13 @@
   // ลำดับตามที่ผู้บริหารต้องการ: Walk-in, BR, Renew, Online
   const CHANNELS = [['Walk-In', 'Walk-in'], ['Br', 'BR'], ['Renew', 'Renew'], ['Online', 'Online']];
   const SALE_TYPES = ['MEM', 'PT', 'MEM+PT', 'Plan'];
+  const LINE = '━━━━━━━━━━━━━━';
 
   const pad = (n) => String(n).padStart(2, '0');
   const isoDay = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+  const moneyFn = (cur) => (n) => (cur || '฿') + Math.round(n).toLocaleString('en-US');
+  const inRange = (ts, start, end) => { if (!ts) return false; const t = new Date(ts); return t >= start && t < end; };
 
   // ช่วงเวลาของรายงานที่ "จบ" ในวัน ref (end ไม่รวม): วันนั้น / สัปดาห์จันทร์–อาทิตย์ / ทั้งเดือน
   function periodFor(kind, ref) {
@@ -37,33 +43,60 @@
     };
   }
 
-  // รายงานไหนถึงกำหนดส่งในวัน ref: รายวันทุกวัน, รายสัปดาห์วันอาทิตย์, รายเดือนวันสุดท้ายของเดือน
+  // รายงานผู้บริหารที่ถึงกำหนดในวัน ref: รายวันทุกวัน, รายสัปดาห์วันอาทิตย์, รายเดือนวันสุดท้ายของเดือน
   function dueKinds(ref) {
     const kinds = ['daily'];
     if (ref.getDay() === 0) kinds.push('weekly');
-    if (addDays(ref, 1).getDate() === 1) kinds.push('monthly');
+    if (isLastDayOfMonth(ref)) kinds.push('monthly');
     return kinds;
   }
+  const isLastDayOfMonth = (ref) => addDays(ref, 1).getDate() === 1;
 
-  const memPart = (s) => s.type === 'MEM' ? Number(s.amount) || 0
-    : s.type === 'MEM+PT' ? (s.memAmount != null ? Number(s.memAmount) : (Number(s.amount) || 0) / 2) : 0;
-  const ptPart = (s) => s.type === 'PT' ? Number(s.amount) || 0
-    : s.type === 'MEM+PT' ? (s.ptAmount != null ? Number(s.ptAmount) : (Number(s.amount) || 0) / 2) : 0;
-
-  function summarize(sales, start, end) {
-    const list = sales.filter(s => {
-      if (!SALE_TYPES.includes(s.type) || !s.ts) return false;
-      const t = new Date(s.ts);
-      return t >= start && t < end;
+  // แยกยอดของรายการขาย 1 รายการให้พนักงานแต่ละคน เป็นส่วน MEM / PT / Plan / อื่น ๆ
+  // MEM+PT: split ที่พนักงานเลือกประเภทไว้ใช้ตรง ๆ; ไม่งั้นใช้ memAmount/ptAmount (ไม่มี = ครึ่ง ๆ) กระจายตามสัดส่วนยอด
+  function saleEmpShares(s) {
+    const total = Number(s.amount) || 0;
+    let mem = 0, pt = 0, plan = 0, other = 0;
+    if (s.type === 'MEM') mem = total;
+    else if (s.type === 'PT') pt = total;
+    else if (s.type === 'MEM+PT') {
+      mem = s.memAmount != null ? Number(s.memAmount) : total / 2;
+      pt  = s.ptAmount  != null ? Number(s.ptAmount)  : total / 2;
+    }
+    else if (s.type === 'Plan') plan = total;
+    else other = total;
+    const ratio = total > 0 ? 1 / total : 0;
+    const contributions = (Array.isArray(s.splits) && s.splits.length > 0)
+      ? s.splits.map(sp => ({ empId: sp.empId, amount: Number(sp.amount) || 0, splitType: sp.type }))
+      : (s.empId ? [{ empId: s.empId, amount: total }] : []);
+    return contributions.filter(c => c.empId).map(c => {
+      if (s.type === 'MEM+PT' && (c.splitType === 'MEM' || c.splitType === 'PT')) {
+        return { empId: c.empId, mem: c.splitType === 'MEM' ? c.amount : 0, pt: c.splitType === 'PT' ? c.amount : 0, plan: 0, other: 0 };
+      }
+      const w = c.amount * ratio;
+      return { empId: c.empId, mem: mem * w, pt: pt * w, plan: plan * w, other: other * w };
     });
+  }
+
+  // ยอด MB / PT ของรายการขาย = ผลรวมส่วนของพนักงาน (ตรงกับยอดรายคน); ไม่มีผู้ขาย → คิดจากทั้งบิล
+  function saleParts(s) {
+    const shares = saleEmpShares(s);
+    if (shares.length) return shares.reduce((a, c) => ({ mem: a.mem + c.mem, pt: a.pt + c.pt }), { mem: 0, pt: 0 });
+    return saleEmpShares({ ...s, splits: [], empId: '_' })[0];
+  }
+
+  function summarize(sales, start, end, trainings) {
+    const list = (sales || []).filter(s => SALE_TYPES.includes(s.type) && inRange(s.ts, start, end));
     const sum = (arr, f) => arr.reduce((a, s) => a + f(s), 0);
+    const parts = list.map(s => ({ s, ...saleParts(s) }));
     const out = {
       total: sum(list, s => Number(s.amount) || 0),
       count: list.length,
-      mem: sum(list, memPart), memCount: list.filter(s => s.type === 'MEM' || s.type === 'MEM+PT').length,
-      pt: sum(list, ptPart), ptCount: list.filter(s => s.type === 'PT' || s.type === 'MEM+PT').length,
+      mem: sum(parts, p => p.mem), memCount: parts.filter(p => p.mem > 0).length,
+      pt: sum(parts, p => p.pt), ptCount: parts.filter(p => p.pt > 0).length,
       plan: sum(list.filter(s => s.type === 'Plan'), s => Number(s.amount) || 0),
       planCount: list.filter(s => s.type === 'Plan').length,
+      trainCount: (trainings || []).filter(t => t.verified !== false && inRange(t.ts, start, end)).length,
       channels: CHANNELS.map(([key, label]) => {
         const items = list.filter(s => s.channel === key);
         return { label, count: items.length, amount: sum(items, s => Number(s.amount) || 0) };
@@ -73,12 +106,27 @@
     const known = CHANNELS.map(c => c[0]);
     const other = list.filter(s => !known.includes(s.channel));
     if (other.length) out.channels.push({ label: 'อื่น ๆ', count: other.length, amount: sum(other, s => Number(s.amount) || 0) });
-    list.forEach(s => {
+    parts.forEach(({ s, mem, pt }) => {
       const b = out.branches[s.branch] = out.branches[s.branch] || { total: 0, mem: 0, pt: 0 };
-      b.total += Number(s.amount) || 0; b.mem += memPart(s); b.pt += ptPart(s);
+      b.total += Number(s.amount) || 0; b.mem += mem; b.pt += pt;
     });
     return out;
   }
+
+  function compareLine(now, prev, prevLabel, money) {
+    if (prev.total > 0) {
+      const pct = Math.round((now.total - prev.total) / prev.total * 100);
+      return `   ${pct >= 0 ? '▲' : '▼'} ${Math.abs(pct)}% จาก${prevLabel} (${money(prev.total)})`;
+    }
+    return `   ${prevLabel}: ${money(0)}`;
+  }
+  function moneyLines(now, money, withCounts) {
+    const c = (n) => withCounts ? ` (${n} รายการ)` : '';
+    const lines = [`ยอดขาย MB ${money(now.mem)}${c(now.memCount)}`, `ยอดขาย PT ${money(now.pt)}${c(now.ptCount)}`];
+    if (now.planCount > 0) lines.push(`ยอดขาย Plan ${money(now.plan)}${c(now.planCount)}`);
+    return lines;
+  }
+  const channelLines = (now, money) => now.channels.map(c => `• ${c.label} ${c.count} ราย · ${money(c.amount)}`);
 
   function dateLabel(kind, p) {
     const th = (d, o) => d.toLocaleDateString('th-TH', o);
@@ -89,40 +137,28 @@
   }
 
   /**
-   * สร้างข้อความรายงาน
+   * รายงานผู้บริหาร (รวมทุกสาขา)
    * @param {object} o { kind, ref (Date), sales, branches, currency, brand, partial (true = ช่วงยังไม่จบ เช่นดูตัวอย่าง) }
    */
   function build(o) {
     const kind = KINDS[o.kind] ? o.kind : 'daily';
-    const cur = o.currency || '฿';
-    const money = (n) => cur + Math.round(n).toLocaleString('en-US');
+    const money = moneyFn(o.currency);
     const p = periodFor(kind, o.ref || new Date());
-    const now = summarize(o.sales || [], p.start, p.end);
-    const prev = summarize(o.sales || [], p.prevStart, p.prevEnd);
-
-    let cmp;
-    if (prev.total > 0) {
-      const pct = Math.round((now.total - prev.total) / prev.total * 100);
-      cmp = `   ${pct >= 0 ? '▲' : '▼'} ${Math.abs(pct)}% จาก${KINDS[kind].prevLabel} (${money(prev.total)})`;
-    } else {
-      cmp = `   ${KINDS[kind].prevLabel}: ${money(0)}`;
-    }
+    const now = summarize(o.sales, p.start, p.end);
+    const prev = summarize(o.sales, p.prevStart, p.prevEnd);
 
     const lines = [
       `📊 รายงานผู้บริหาร · ${KINDS[kind].title}`,
       `🏢 ${o.brand || 'FITSTATION 24'}`,
       `📅 ${dateLabel(kind, p)}${o.partial ? ' (ถึงตอนนี้)' : ''}`,
-      '━━━━━━━━━━━━━━',
+      LINE,
       `💰 ยอดขายรวม ${money(now.total)}`,
-      cmp,
+      compareLine(now, prev, KINDS[kind].prevLabel, money),
       '',
-      `ยอดขาย MB ${money(now.mem)} (${now.memCount} รายการ)`,
-      `ยอดขาย PT ${money(now.pt)} (${now.ptCount} รายการ)`,
+      ...moneyLines(now, money, true),
+      '', '👥 ช่องทางลูกค้า',
+      ...channelLines(now, money),
     ];
-    if (now.planCount > 0) lines.push(`ยอดขาย Plan ${money(now.plan)} (${now.planCount} รายการ)`);
-
-    lines.push('', '👥 ช่องทางลูกค้า');
-    now.channels.forEach(c => lines.push(`• ${c.label} ${c.count} ราย · ${money(c.amount)}`));
 
     const brCodes = Object.keys(now.branches);
     if (brCodes.length > 1) {
@@ -138,9 +174,84 @@
       const days = Math.max(1, Math.round((p.end - p.start) / 86400000));
       lines.push('', `📈 เฉลี่ยต่อวัน ${money(now.total / days)}`);
     }
-    lines.push('━━━━━━━━━━━━━━');
+    lines.push(LINE);
     return lines.join('\n');
   }
 
-  return { KINDS, periodFor, dueKinds, summarize, build, isoDay, addDays };
+  /**
+   * สรุปรายเดือนของสาขา: ยอดรวม + MB / PT + ช่องทางลูกค้า + จำนวนเทรนทั้งหมด (ไม่แยกรายคน) · คืน null ถ้าไม่มีอะไรให้ส่ง
+   * @param {object} o { ref (Date ในเดือนนั้น), branch {code,name}, sales, trainings, currency, partial }
+   */
+  function buildBranchMonthly(o) {
+    const money = moneyFn(o.currency);
+    const p = periodFor('monthly', o.ref || new Date());
+    const code = o.branch.code;
+    const sales = (o.sales || []).filter(s => s.branch === code);
+    const trainings = (o.trainings || []).filter(t => t.branch === code);
+    const now = summarize(sales, p.start, p.end, trainings);
+    if (now.count === 0 && now.trainCount === 0) return null;   // สาขาที่ทั้งเดือนไม่มียอดและไม่มีเทรน — ไม่ต้องส่ง
+    const prev = summarize(sales, p.prevStart, p.prevEnd);
+    return [
+      `📊 สรุปยอดประจำเดือน — ${o.branch.name || code}`,
+      `📅 ${dateLabel('monthly', p)}${o.partial ? ' (ถึงตอนนี้)' : ''}`,
+      LINE,
+      `💰 ยอดขายรวม ${money(now.total)}`,
+      compareLine(now, prev, 'เดือนก่อน', money),
+      '',
+      ...moneyLines(now, money, false),
+      '', '👥 ช่องทางลูกค้า',
+      ...channelLines(now, money),
+      '', `🏋️ จำนวนเทรนทั้งหมด ${now.trainCount} ครั้ง`,
+      LINE,
+    ].join('\n');
+  }
+
+  /**
+   * สรุปผลรายวันของสาขา (รูปแบบเดิม): ยอดรายคน MEM / PT / เทรน ของวัน day
+   * คืน null ถ้าวันนั้นไม่มียอดขายและไม่มีการเทรน (ไม่ต้องส่ง)
+   * @param {object} o { day (Date), branch {code,name}, sales, trainings, employees, currency }
+   */
+  function buildBranchDaily(o) {
+    const cur = o.currency || '฿';
+    const fmt = (n) => Math.round(Number(n) || 0).toLocaleString('en-US');
+    const p = periodFor('daily', o.day);
+    const code = o.branch.code;
+    const sales = (o.sales || []).filter(s => s.branch === code && SALE_TYPES.includes(s.type) && inRange(s.ts, p.start, p.end));
+    const trains = (o.trainings || []).filter(t => t.branch === code && t.verified !== false && inRange(t.ts, p.start, p.end));
+
+    const per = {};
+    const slot = (id) => per[id] = per[id] || { mem: 0, pt: 0, train: 0 };
+    sales.forEach(s => saleEmpShares(s).forEach(c => { const e = slot(c.empId); e.mem += c.mem; e.pt += c.pt; }));
+    trains.forEach(t => { if (t.trainerId) slot(t.trainerId).train += 1; });
+    const ids = Object.keys(per).filter(id => per[id].mem > 0 || per[id].pt > 0 || per[id].train > 0);
+    if (ids.length === 0) return null;
+    ids.sort((a, b) => (per[b].mem + per[b].pt) - (per[a].mem + per[a].pt) || per[b].train - per[a].train);
+
+    const name = (id) => {
+      const e = (o.employees || []).find(x => x.id === id);
+      return e ? `${e.name || ''} ${e.surname || ''}`.trim() || id : id;
+    };
+    const parts = sales.map(saleParts);
+    const totalMem = parts.reduce((a, x) => a + x.mem, 0);
+    const totalPt = parts.reduce((a, x) => a + x.pt, 0);
+    const totalAll = sales.reduce((a, s) => a + (Number(s.amount) || 0), 0);
+    const dateStr = p.start.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+    return [
+      `📊 สรุปผลรายวัน — ${o.branch.name || code}`,
+      `วันที่ ${dateStr}`,
+      '',
+      ...ids.map((id, i) => `${i + 1}. ${name(id)} — MEM ${fmt(per[id].mem)} / PT ${fmt(per[id].pt)} / เทรน ${per[id].train}`),
+      '',
+      '──────────',
+      `ยอดรวม: ${cur}${fmt(totalAll)}`,
+      `MEM: ${cur}${fmt(totalMem)} · PT: ${cur}${fmt(totalPt)}`,
+      `เทรนทั้งหมด: ${trains.length} ครั้ง`,
+    ].join('\n');
+  }
+
+  return {
+    KINDS, periodFor, dueKinds, isLastDayOfMonth, summarize, saleEmpShares,
+    build, buildBranchMonthly, buildBranchDaily, isoDay, addDays,
+  };
 });

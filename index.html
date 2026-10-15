@@ -1995,7 +1995,7 @@ function renderSalesEntry(root) {
     .map(m => `<option value="${_h(m.name)} ${_h(m.surname)}" data-id="${_h(m.id)}">${_h(m.id)} · สาขา ${_h(m.branch)}</option>`).join('');
 
   card.innerHTML = `
-    <h2>บันทึกยอดขายใหม่ <small>MEM/PT จะส่ง LINE Group เมื่อแนบสลิป</small></h2>
+    <h2>บันทึกยอดขายใหม่ <small>สรุปยอดส่ง LINE กลุ่มสาขาทุกเช้า 08:00</small></h2>
     <form id="sales-form" onsubmit="onSubmitSale(event)">
       <div class="form-grid">
         <div class="field">
@@ -2570,30 +2570,6 @@ async function sendLineMessage(text, slipUrl, branchCode) {
   if (!res.ok || !result.ok) throw new Error(result.error || ('HTTP ' + res.status));
 }
 
-async function sendSaleToLine(sale, slipUrl) {
-  const branch = DATA.branches.find(b => b.code === sale.branch);
-  const cur = DATA.settings.currency;
-  let empLine;
-  if (Array.isArray(sale.splits) && sale.splits.length > 0) {
-    if (sale.splits.length === 1) {
-      empLine = sale.splits[0].empName || sale.splits[0].empId;
-    } else {
-      empLine = '\n' + sale.splits.map(sp => '  • ' + (sp.empName || sp.empId) + ' — ' + cur + Number(sp.amount).toLocaleString()).join('\n');
-    }
-  } else {
-    const emp = DATA.employees.find(e => e.id === sale.empId);
-    empLine = emp ? emp.name + ' ' + emp.surname : sale.empId;
-  }
-  const text = `🧾 ยอดใหม่ — ${branch ? branch.name : sale.branch}
-ประเภท: ${sale.type}
-ช่องทาง: ${sale.channel || '-'}
-สมาชิก: ${sale.memberName || '-'}
-ผู้ขาย: ${empLine}
-ยอดรวม: ${cur}${Number(sale.amount).toLocaleString()}${sale.note ? '\nหมายเหตุ: ' + sale.note : ''}
-เวลา: ${new Date(sale.ts).toLocaleString('th-TH')}`;
-  await sendLineMessage(text, slipUrl, sale.branch);
-}
-
 async function sendDailyHoursLowAlertsToGroup() {
   if (!DATA.settings.hoursNotified) DATA.settings.hoursNotified = {};
   const notified = DATA.settings.hoursNotified;
@@ -2701,7 +2677,6 @@ async function onSubmitSale(e) {
     if (!confirm('ประเภท ' + type + ' ปกติต้องแนบสลิป\nบันทึกโดยไม่มีสลิปจริงหรือ?')) return;
   }
 
-  const needsLine = (type === 'MEM' || type === 'PT' || type === 'MEM+PT');
   const tsInput = (document.getElementById('se-ts') || {}).value || '';
   const tsDate = tsInput ? new Date(tsInput) : new Date();
   if (isNaN(tsDate.getTime())) { toast('วันที่/เวลาไม่ถูกต้อง', 'bad'); return; }
@@ -2722,7 +2697,7 @@ async function onSubmitSale(e) {
   const sale = {
     id: nid(), ts: tsDate.toISOString(),
     branch, empId, splits, type, memberId, memberName, amount, channel, slip, note,
-    notify: needsLine ? 'Pending' : '—',
+    notify: '—',   // เลิกส่ง LINE ทุกรายการแล้ว — สรุปส่งรวมเป็นรายวัน/รายเดือนแทน
     ...(memAmount != null ? { memAmount, ptAmount } : {}),
   };
   DATA.sales.unshift(sale);
@@ -2741,28 +2716,17 @@ async function onSubmitSale(e) {
   toast('บันทึกยอดเรียบร้อย ' + thb(amount), 'ok');
   resetSaleForm();
 
-  if (!needsLine) return;
+  if (!slip) return;
 
-  // Send LINE notification asynchronously
+  // อัปโหลดสลิปขึ้น Storage แล้วเก็บเป็น URL (ไม่เก็บรูปทั้งก้อนในตารางยอดขาย)
   try {
-    let slipUrl = '';
-    if (slip) {
-      slipUrl = await uploadSlipToStorage(slip, sale.id);
-      // Replace data URL with public URL in DATA + DB
-      const idx = DATA.sales.findIndex(s => s.id === sale.id);
-      if (idx >= 0) DATA.sales[idx].slip = slipUrl;
-    }
-    await sendSaleToLine(sale, slipUrl);
+    const slipUrl = await uploadSlipToStorage(slip, sale.id);
     const idx = DATA.sales.findIndex(s => s.id === sale.id);
-    if (idx >= 0) DATA.sales[idx].notify = 'Sent';
+    if (idx >= 0) DATA.sales[idx].slip = slipUrl;
     saveData();
-    toast('ส่ง LINE Group แล้ว ✓', 'ok');
   } catch (err) {
-    console.error('LINE notify failed', err);
-    const idx = DATA.sales.findIndex(s => s.id === sale.id);
-    if (idx >= 0) DATA.sales[idx].notify = 'Failed';
-    saveData();
-    toast('บันทึกแล้ว แต่ส่ง LINE ไม่สำเร็จ: ' + (err.message || err), 'bad');
+    console.error('slip upload failed', err);
+    toast('บันทึกแล้ว แต่อัปโหลดสลิปไม่สำเร็จ: ' + (err.message || err), 'bad');
   }
 }
 
@@ -6023,6 +5987,22 @@ function renderSettings(root) {
     </div>`;
   root.appendChild(cardEx);
 
+  // สรุปยอดเข้ากลุ่ม LINE ของแต่ละสาขา — ส่งอัตโนมัติผ่าน GitHub Actions
+  const cardBr = document.createElement('div');
+  cardBr.className = 'card';
+  cardBr.innerHTML = `
+    <h2>สรุปยอดกลุ่มสาขา (LINE) <small>ใช้ LINE Token / Group ID ของแต่ละสาขาด้านบน</small></h2>
+    <div class="muted small" style="margin-bottom: 8px;">
+      • ทุกวัน 08:00 — สรุปผลรายวันของเมื่อวาน (ยอดรายคน MEM / PT / เทรน)<br>
+      • วันสิ้นเดือน 23:00 — สรุปรายเดือน (ยอดรวม · MB · PT · ช่องทางลูกค้า · จำนวนเทรนทั้งหมด)<br>
+      • สาขาที่ไม่มียอดและไม่มีเทรนในช่วงนั้นจะไม่ถูกส่ง · ยอดขายแต่ละรายการไม่ส่งเข้า LINE แล้ว
+    </div>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+      <button class="btn small secondary" onclick="previewBranchReport('daily')">👁 ตัวอย่าง: สรุปรายวัน (เมื่อวาน)</button>
+      <button class="btn small secondary" onclick="previewBranchReport('monthly')">👁 ตัวอย่าง: สรุปรายเดือน</button>
+    </div>`;
+  root.appendChild(cardBr);
+
   // Role permissions (menu access)
   const cardRP = document.createElement('div');
   cardRP.className = 'card';
@@ -6146,6 +6126,23 @@ function previewExecReport(kind) {
       <button type="button" class="btn" ${ready ? '' : 'disabled title="ใส่ LINE Token และ Group ID ก่อน"'} onclick="testSendExecReport('${kind}')">▶ ส่งทดสอบเข้ากลุ่มผู้บริหาร</button>
     </div>`);
 }
+function previewBranchReport(kind) {
+  if (typeof ExecReport === 'undefined') { toast('โหลด exec-report.js ไม่สำเร็จ — ลองรีเฟรชหน้า', 'bad'); return; }
+  const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+  const texts = DATA.branches.map(b => kind === 'daily'
+    ? ExecReport.buildBranchDaily({ day: yesterday, branch: b, sales: DATA.sales, trainings: DATA.trainings, employees: DATA.employees, currency: DATA.settings.currency })
+    : ExecReport.buildBranchMonthly({ ref: new Date(), branch: b, sales: DATA.sales, trainings: DATA.trainings, currency: DATA.settings.currency, partial: true })
+  ).filter(Boolean);
+  const body = texts.length
+    ? texts.map(t => `<pre style="white-space: pre-wrap; font-family: inherit; font-size: 13px; background: var(--bg); border-radius: 10px; padding: 14px; margin: 0 0 10px;">${_h(t)}</pre>`).join('')
+    : '<div class="muted center" style="padding: 20px;">ไม่มีสาขาที่มียอดหรือการเทรนในช่วงนี้ — รอบนี้จะไม่ส่ง</div>';
+  showModal(`
+    <h3>ตัวอย่าง${kind === 'daily' ? 'สรุปรายวัน (เมื่อวาน)' : 'สรุปรายเดือน'} — กลุ่มสาขา</h3>
+    <div class="muted small" style="margin-bottom: 8px;">${kind === 'daily' ? 'ส่งจริงทุกวัน 08:00' : 'ข้อมูลถึงตอนนี้ · ส่งจริงวันสิ้นเดือน 23:00 เป็นยอดเต็มเดือน'} · 1 กล่อง = 1 ข้อความต่อสาขา</div>
+    ${body}
+    <div class="actions"><button type="button" class="btn secondary" onclick="closeModal()">ปิด</button></div>`);
+}
+
 async function testSendExecReport(kind) {
   if (!isOwner()) return;
   const s = DATA.settings;
@@ -6400,31 +6397,8 @@ async function renderBackupHistory() {
     </table>
   `;
 }
-// แยกยอดของรายการขาย 1 รายการให้พนักงานแต่ละคน เป็นส่วน MEM / PT / Plan / อื่น ๆ
-// MEM+PT แยกตาม memAmount/ptAmount (ไม่มี = ครึ่ง ๆ); มี splits → split ที่ระบุ type ใช้ตรง ๆ ไม่งั้นกระจายตามสัดส่วนยอด
-function saleEmpShares(s) {
-  const total = Number(s.amount) || 0;
-  let mem = 0, pt = 0, plan = 0, other = 0;
-  if (s.type === 'MEM') mem = total;
-  else if (s.type === 'PT') pt = total;
-  else if (s.type === 'MEM+PT') {
-    mem = s.memAmount != null ? Number(s.memAmount) : total / 2;
-    pt  = s.ptAmount  != null ? Number(s.ptAmount)  : total / 2;
-  }
-  else if (s.type === 'Plan') plan = total;
-  else other = total;
-  const ratio = total > 0 ? 1 / total : 0;
-  const contributions = (Array.isArray(s.splits) && s.splits.length > 0)
-    ? s.splits.map(sp => ({ empId: sp.empId, amount: Number(sp.amount) || 0, splitType: sp.type }))
-    : (s.empId ? [{ empId: s.empId, amount: total }] : []);
-  return contributions.filter(c => c.empId).map(c => {
-    if (s.type === 'MEM+PT' && (c.splitType === 'MEM' || c.splitType === 'PT')) {
-      return { empId: c.empId, mem: c.splitType === 'MEM' ? c.amount : 0, pt: c.splitType === 'PT' ? c.amount : 0, plan: 0, other: 0 };
-    }
-    const w = c.amount * ratio;
-    return { empId: c.empId, mem: mem * w, pt: pt * w, plan: plan * w, other: other * w };
-  });
-}
+// แยกยอดของรายการขาย 1 รายการให้พนักงานแต่ละคน (MEM / PT / Plan / อื่น ๆ) — ตัวจริงอยู่ใน exec-report.js ใช้ร่วมกับรายงาน LINE
+function saleEmpShares(s) { return ExecReport.saleEmpShares(s); }
 
 // ============ EXCEL ยอดขายรายบุคคล ============
 // 1 ชีตต่อ 1 คน: ยอดขายรายวัน + สรุปรายเดือน (คอลัมน์เทรนเนอร์ PT / เมมเบอร์ MEM ใส่เฉพาะที่คนนั้นมี)

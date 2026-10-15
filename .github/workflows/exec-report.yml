@@ -1,14 +1,15 @@
-name: รายงานผู้บริหาร LINE
+name: รายงานสรุปยอด LINE
 
 on:
   schedule:
-    - cron: '0 16 * * *'   # 23:00 เวลาไทย (16:00 UTC) — GitHub อาจดีเลย์ได้บ้าง
+    - cron: '0 1 * * *'    # 08:00 เวลาไทย — สรุปผลรายวัน (เมื่อวาน) → กลุ่มสาขา
+    - cron: '0 16 * * *'   # 23:00 เวลาไทย — รายงานผู้บริหาร + สรุปรายเดือนสาขา (วันสิ้นเดือน)
   workflow_dispatch:
     inputs:
-      kind:
-        description: 'บังคับส่งรอบ (ว่าง = ตามกำหนดของวันนี้)'
+      report:
+        description: 'บังคับส่งรายงาน (ว่าง = ตามกำหนดของรอบปัจจุบัน)'
         type: choice
-        options: ['', daily, weekly, monthly]
+        options: ['', exec-daily, exec-weekly, exec-monthly, branch-daily, branch-monthly]
         default: ''
       dry_run:
         description: 'แค่แสดงข้อความ ไม่ส่ง LINE'
@@ -33,6 +34,7 @@ jobs:
       - name: ส่งรายงาน
         env:
           TZ: Asia/Bangkok
-          KIND: ${{ inputs.kind }}
+          JOB: ${{ github.event.schedule == '0 1 * * *' && 'morning' || (github.event.schedule == '0 16 * * *' && 'evening' || '') }}
+          REPORT: ${{ inputs.report }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: node scripts/send-exec-report.js
