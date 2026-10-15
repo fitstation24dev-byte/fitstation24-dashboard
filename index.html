@@ -1088,6 +1088,18 @@ function nid() { return Math.random().toString(36).slice(2, 10); }
 
 // Merge ฟิลด์เสริมของ members จาก local (companyAddress, nickname, gender, idCard, phone, email, ฯลฯ)
 // ที่ไม่ได้ sync ผ่าน Supabase กลับเข้า array ที่ load มาจาก remote
+let LAST_PENDING_TRAIN_PUSH = 0;
+// การเทรนที่ยังไม่ขึ้นคลาวด์ (เน็ตหลุด / ตารางบน Supabase มีปัญหา) — เก็บไว้แล้วซิงค์ใหม่ แทนที่จะโดนข้อมูลคลาวด์ทับหาย
+// รายการที่ถูกลบแล้ว (settings.deletedTrainingIds) จะไม่ถูกดึงกลับมา
+function mergeTrainings(remoteList, localList, settings) {
+  const remote = Array.isArray(remoteList) ? remoteList : [];
+  const dead = new Set((settings && settings.deletedTrainingIds) || []);
+  const have = new Set(remote.map(t => t.id));
+  const pending = (Array.isArray(localList) ? localList : []).filter(t => t && t.id && !have.has(t.id) && !dead.has(t.id));
+  if (pending.length) console.warn('[db] การเทรนที่ยังไม่ขึ้นคลาวด์ ' + pending.length + ' รายการ — จะซิงค์ใหม่');
+  return { list: remote.concat(pending).sort((a, b) => new Date(b.ts) - new Date(a.ts)), pending: pending.length };
+}
+
 function mergeMemberExtras(remoteMembers, localMembers) {
   if (!Array.isArray(remoteMembers)) return remoteMembers || [];
   if (!Array.isArray(localMembers) || localMembers.length === 0) return remoteMembers;
@@ -1204,6 +1216,7 @@ async function loadData() {
         await db.pushAll(DATA);
       } else {
         const seed = defaultData();
+        const tr = mergeTrainings(remote.trainings, localData && localData.trainings, remote.settings);
         DATA = {
           settings:      remote.settings  || seed.settings,
           branches:      remote.branches.length  ? remote.branches  : seed.branches,
@@ -1211,7 +1224,7 @@ async function loadData() {
           employees:     remote.employees,
           members:       mergeMemberExtras(remote.members, localData && localData.members),
           sales:         remote.sales,
-          trainings:     remote.trainings,
+          trainings:     tr.list,
           alerts:        remote.alerts,
           loginLog:      remote.loginLog,
           lastDailyRun:  remote.lastDailyRun,
@@ -1226,7 +1239,7 @@ async function loadData() {
           invoices:      (localData && Array.isArray(localData.invoices)) ? localData.invoices : [],
         };
         // ถ้า Supabase ยังว่างเรื่อง packages หรือ classes — push ข้อมูลปัจจุบันขึ้นไปครั้งแรก
-        if ((!remote.packages || remote.packages.length === 0) || (!remote.classes || remote.classes.length === 0)) {
+        if ((!remote.packages || remote.packages.length === 0) || (!remote.classes || remote.classes.length === 0) || tr.pending) {
           db.pushAllDebounced(DATA);
         }
       }
@@ -5711,8 +5724,19 @@ function deleteSale(id) {
 function deleteTraining(id) {
   if (!isOwner()) { toast('เฉพาะ Owner เท่านั้นที่ลบการเทรนได้', 'bad'); return; }
   if (!confirm('ลบรายการเทรนนี้?\nหมายเหตุ: ชั่วโมงสมาชิกจะไม่ถูกคืนอัตโนมัติ')) return;
-  DATA.trainings = DATA.trainings.filter(t => t.id !== id);
+  const t = DATA.trainings.find(x => x.id === id);
+  DATA.trainings = DATA.trainings.filter(x => x.id !== id);
   db.del('trainings', id);
+  // จำไว้ว่าลบแล้ว — เครื่องอื่นที่ยังมีรายการนี้ค้างอยู่จะไม่ส่งกลับขึ้นคลาวด์อีก
+  const dead = DATA.settings.deletedTrainingIds = DATA.settings.deletedTrainingIds || [];
+  dead.push(id);
+  if (dead.length > 1000) dead.splice(0, dead.length - 1000);
+  // ลบแถว "Train" ในยอดขายที่สร้างคู่กันตอนบันทึก (ผู้ฝึกคนเดียวกัน เวลาห่างไม่เกิน 5 วิ)
+  if (t) {
+    const pair = DATA.sales.find(s => s.type === 'Train' && s.empId === t.trainerId
+      && Math.abs(new Date(s.ts) - new Date(t.ts)) < 5000);
+    if (pair) { DATA.sales = DATA.sales.filter(s => s !== pair); db.del('sales', pair.id); }
+  }
   saveData(); toast('ลบเรียบร้อย', 'ok'); navigate('trainings');
 }
 
@@ -6644,6 +6668,7 @@ function closeModal() {
         const preservedInvoices = Array.isArray(DATA.invoices) ? DATA.invoices : [];
         const preservedPackages = Array.isArray(DATA.packages) && DATA.packages.length ? DATA.packages : seed.packages;
         const preservedClasses = Array.isArray(DATA.classes) ? DATA.classes : [];
+        const tr = mergeTrainings(remote.trainings, DATA.trainings, remote.settings);
         DATA = {
           settings:     remote.settings  || seed.settings,
           branches:     remote.branches.length ? remote.branches : DATA.branches,
@@ -6651,7 +6676,7 @@ function closeModal() {
           employees:    remote.employees,
           members:      mergeMemberExtras(remote.members, DATA.members),
           sales:        remote.sales,
-          trainings:    remote.trainings,
+          trainings:    tr.list,
           alerts:       remote.alerts,
           loginLog:     remote.loginLog,
           lastDailyRun: remote.lastDailyRun,
@@ -6660,6 +6685,11 @@ function closeModal() {
           classes:      (remote.classes && remote.classes.length) ? remote.classes : preservedClasses,
         };
         localStorage.setItem(LS_KEY, JSON.stringify(DATA));
+        // มีการเทรนค้างในเครื่อง → ซิงค์ซ้ำ (เว้นอย่างน้อย 1 นาที กันวนถ้าตารางบนคลาวด์ยังเขียนไม่ได้)
+        if (tr.pending && Date.now() - LAST_PENDING_TRAIN_PUSH > 60000) {
+          LAST_PENDING_TRAIN_PUSH = Date.now();
+          db.pushAllDebounced(DATA);
+        }
         if (CURRENT_VIEW) navigate(CURRENT_VIEW);
       }
     } finally { isReloading = false; }
