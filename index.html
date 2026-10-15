@@ -5991,11 +5991,18 @@ function renderSettings(root) {
           <span><strong>${label}</strong> <span class="muted">(${when})</span></span>
         </label>`).join('')}
     </div>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px;">
+      <span class="small" style="font-weight: 600;">วันที่ของรายงาน:</span>
+      <input type="date" id="exec-ref-date" value="${EXEC_REF_DATE || todayISO()}" max="${todayISO()}"
+             onchange="EXEC_REF_DATE=this.value;renderExecRefHint()" style="padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px;">
+      <button class="btn small secondary" onclick="EXEC_REF_DATE='';document.getElementById('exec-ref-date').value=todayISO();renderExecRefHint()">วันนี้</button>
+      <span class="muted small" id="exec-ref-hint" style="flex-basis: 100%;">${execRefHint()}</span>
+    </div>
     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
       <button class="btn small secondary" onclick="previewExecReport('daily')">👁 ตัวอย่าง: รายวัน</button>
       <button class="btn small secondary" onclick="previewExecReport('weekly')">👁 ตัวอย่าง: รายสัปดาห์</button>
       <button class="btn small secondary" onclick="previewExecReport('monthly')">👁 ตัวอย่าง: รายเดือน</button>
-      <button class="btn small" onclick="testSendExecChecked()" title="ส่งยอดจริงถึงตอนนี้ ของทุกรอบที่ติ๊กไว้ — 1 ข้อความต่อรอบ">▶ ส่งทดสอบ (ตามที่ติ๊ก)</button>
+      <button class="btn small" onclick="testSendExecChecked()" title="ส่งรายงานของวันที่ที่เลือก ทุกรอบที่ติ๊กไว้ — 1 ข้อความต่อรอบ">▶ ส่งรายงาน (ตามที่ติ๊ก)</button>
     </div>`;
   root.appendChild(cardEx);
 
@@ -6131,11 +6138,36 @@ function setExecKind(kind, on) {
   const label = { daily: 'รายวัน', weekly: 'รายสัปดาห์', monthly: 'รายเดือน' }[kind];
   toast((on ? 'เปิด' : 'ปิด') + 'ส่งอัตโนมัติ: รายงาน' + label, 'ok');
 }
+// วันที่ของรายงาน (ว่าง = วันนี้) — เลือกย้อนหลังได้: รายวัน = วันนั้น, รายสัปดาห์ = ช่วงวันที่ที่วันนั้นอยู่, รายเดือน = เดือนนั้น
+let EXEC_REF_DATE = '';
+function execRefDate() {
+  const iso = EXEC_REF_DATE || todayISO();
+  const [y, m, d] = iso.split('-').map(Number);
+  return iso === todayISO() ? new Date() : new Date(y, m - 1, d, 23, 59);
+}
+function execPeriodIsPartial(kind) {
+  return ExecReport.periodFor(kind, execRefDate()).end > new Date();
+}
+function execRefHint() {
+  if (typeof ExecReport === 'undefined') return '';
+  const ref = execRefDate();
+  const th = (d, o) => d.toLocaleDateString('th-TH', o);
+  const w = ExecReport.periodFor('weekly', ref);
+  const wLast = ExecReport.addDays(w.end, -1);
+  const tag = (k) => execPeriodIsPartial(k) ? ' (ถึงตอนนี้)' : '';
+  return `รายวัน: ${th(ref, { day: 'numeric', month: 'short', year: 'numeric' })}${tag('daily')}`
+    + ` · รายสัปดาห์: ${th(w.start, { day: 'numeric', month: 'short' })}–${th(wLast, { day: 'numeric', month: 'short' })}${tag('weekly')}`
+    + ` · รายเดือน: ${th(ref, { month: 'long', year: 'numeric' })}${tag('monthly')}`;
+}
+function renderExecRefHint() {
+  const el = document.getElementById('exec-ref-hint');
+  if (el) el.textContent = execRefHint();
+}
 function execReportText(kind) {
   if (typeof ExecReport === 'undefined') throw new Error('โหลด exec-report.js ไม่สำเร็จ — ลองรีเฟรชหน้า');
   return ExecReport.build({
-    kind, ref: new Date(), sales: DATA.sales, branches: DATA.branches,
-    currency: DATA.settings.currency, brand: DATA.settings.execBrand, partial: true,
+    kind, ref: execRefDate(), sales: DATA.sales, branches: DATA.branches,
+    currency: DATA.settings.currency, brand: DATA.settings.execBrand, partial: execPeriodIsPartial(kind),
   });
 }
 function previewExecReport(kind) {
@@ -6144,11 +6176,11 @@ function previewExecReport(kind) {
   const ready = DATA.settings.execLineToken && DATA.settings.execLineGroupId;
   showModal(`
     <h3>ตัวอย่างรายงานผู้บริหาร</h3>
-    <div class="muted small" style="margin-bottom: 8px;">ข้อมูลถึงตอนนี้ · ตอนส่งจริง 23:00 จะเป็นยอดเต็มช่วง</div>
+    <div class="muted small" style="margin-bottom: 8px;">${execPeriodIsPartial(kind) ? 'ช่วงนี้ยังไม่จบ — ยอดถึงตอนนี้ · ตอนส่งอัตโนมัติ 23:00 จะเป็นยอดเต็มช่วง' : 'รายงานย้อนหลัง — ยอดเต็มช่วงจากข้อมูลจริง'}</div>
     <pre style="white-space: pre-wrap; font-family: inherit; font-size: 13px; background: var(--bg); border-radius: 10px; padding: 14px; margin: 0;">${_h(text)}</pre>
     <div class="actions">
       <button type="button" class="btn secondary" onclick="closeModal()">ปิด</button>
-      <button type="button" class="btn" ${ready ? '' : 'disabled title="ใส่ LINE Token และ Group ID ก่อน"'} onclick="testSendExecReport('${kind}')">▶ ส่งทดสอบเข้ากลุ่มผู้บริหาร</button>
+      <button type="button" class="btn" ${ready ? '' : 'disabled title="ใส่ LINE Token และ Group ID ก่อน"'} onclick="testSendExecReport('${kind}')">▶ ส่งเข้ากลุ่มผู้บริหาร</button>
     </div>`);
 }
 // ตัวอย่างสรุปผลรายวัน (เมื่อวาน) ของสาขาเดียว + ส่งทดสอบเข้ากลุ่ม LINE ของสาขานั้น
@@ -6260,7 +6292,7 @@ async function testSendExecReport(kinds) {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: '🧪 ทดสอบ\n' + execReportText(kind),
+          message: (execPeriodIsPartial(kind) ? '🧪 ทดสอบ\n' : '🔁 รายงานย้อนหลัง\n') + execReportText(kind),
           branchCode: (DATA.branches[0] || {}).code || 'EXEC',
           lineToken: s.execLineToken,
           lineGroupId: s.execLineGroupId,
