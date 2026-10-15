@@ -149,13 +149,13 @@
 
   /**
    * รายงานผู้บริหาร (รวมทุกสาขา)
-   * @param {object} o { kind, ref (Date), sales, branches, currency, brand, partial (true = ช่วงยังไม่จบ เช่นดูตัวอย่าง) }
+   * @param {object} o { kind, ref (Date), sales, trainings, branches, currency, brand, partial (true = ช่วงยังไม่จบ เช่นดูตัวอย่าง) }
    */
   function build(o) {
     const kind = KINDS[o.kind] ? o.kind : 'daily';
     const money = moneyFn(o.currency);
     const p = periodFor(kind, o.ref || new Date());
-    const now = summarize(o.sales, p.start, p.end);
+    const now = summarize(o.sales, p.start, p.end, o.trainings);
     const prev = summarize(o.sales, p.prevStart, p.prevEnd);
 
     const lines = [
@@ -169,6 +169,7 @@
       ...moneyLines(now, money, true),
       '', '👥 ช่องทางลูกค้า',
       ...channelLines(now, money),
+      '', `🏋️ จำนวนเทรนทั้งหมด ${now.trainCount} ครั้ง`,
     ];
 
     const brCodes = Object.keys(now.branches);
@@ -194,7 +195,7 @@
 
   /**
    * รายงานผู้บริหารตามช่วงวันที่ที่เลือกเอง (เช่น ส่งย้อนหลัง 1–30 ก.ย.) — เทียบกับช่วงก่อนหน้าที่ยาวเท่ากัน
-   * @param {object} o { from (Date), to (Date, รวมวันนี้), sales, branches, currency, brand }
+   * @param {object} o { from (Date), to (Date, รวมวันนี้), sales, trainings, branches, currency, brand }
    */
   function buildRange(o) {
     const money = moneyFn(o.currency);
@@ -205,7 +206,7 @@
     // เทียบกับ: ทั้งเดือน → เดือนก่อนทั้งเดือน, อื่น ๆ → ช่วงก่อนหน้าที่ยาวเท่ากัน
     const prevStart = wholeMonth ? new Date(start.getFullYear(), start.getMonth() - 1, 1) : addDays(start, -days);
     const prevLabel = days === 1 ? 'วันก่อนหน้า' : wholeMonth ? 'เดือนก่อน' : ` ${days} วันก่อนหน้า`;
-    const now = summarize(o.sales, start, end);
+    const now = summarize(o.sales, start, end, o.trainings);
     const prev = summarize(o.sales, prevStart, start);
     const today = new Date(); const partial = end > today;
     const elapsed = partial ? Math.max(1, Math.round((addDays(today, 1) - start) / 86400000)) : days;
@@ -228,6 +229,7 @@
       ...moneyLines(now, money, true),
       '', '👥 ช่องทางลูกค้า',
       ...channelLines(now, money),
+      '', `🏋️ จำนวนเทรนทั้งหมด ${now.trainCount} ครั้ง`,
     ];
     const brCodes = Object.keys(now.branches);
     if (brCodes.length > 1) {

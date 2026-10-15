@@ -123,7 +123,7 @@ async function main() {
       }
       messages.push({
         key: `${kind}|${R.isoDay(evening)}`,   // รูปแบบ key เดิมของรายงานผู้บริหาร
-        text: R.build({ kind, ref: evening, sales, branches, currency: cur, brand: settings.execBrand }),
+        text: R.build({ kind, ref: evening, sales, trainings, branches, currency: cur, brand: settings.execBrand }),
         to: { branchCode: (branches[0] && branches[0].code) || 'EXEC', token: settings.execLineToken, group: settings.execLineGroupId, label: 'กลุ่มผู้บริหาร' },
       });
     } else {

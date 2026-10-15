@@ -6188,7 +6188,7 @@ function execRangeText() {
   if (typeof ExecReport === 'undefined') throw new Error('โหลด exec-report.js ไม่สำเร็จ — ลองรีเฟรชหน้า');
   const r = execRangeDates();
   return ExecReport.buildRange({
-    from: r.from, to: r.to, sales: DATA.sales, branches: DATA.branches,
+    from: r.from, to: r.to, sales: DATA.sales, trainings: DATA.trainings, branches: DATA.branches,
     currency: DATA.settings.currency, brand: DATA.settings.execBrand,
   });
 }
