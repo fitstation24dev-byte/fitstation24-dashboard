@@ -2,7 +2,8 @@
 /*
  * ส่งรายงานสรุปยอดเข้า LINE — รันโดย GitHub Actions (.github/workflows/exec-report.yml)
  *   JOB=morning (08:00): สรุปผลรายวันของเมื่อวาน → กลุ่ม LINE ของแต่ละสาขา (ยอดรายคน + เทรน)
- *   JOB=evening (23:00): รายงานผู้บริหาร → กลุ่มผู้บริหาร (รายวันทุกวัน · รายสัปดาห์วันอาทิตย์ · รายเดือนวันสิ้นเดือน)
+ *   JOB=evening (23:00): รายงานผู้บริหาร → กลุ่มผู้บริหาร (รายวันทุกวัน · รายสัปดาห์วันอาทิตย์ · รายเดือนวันสิ้นเดือน;
+ *                        เปิด/ปิดแต่ละรอบได้ที่ ตั้งค่าระบบ → settings.execKinds)
  *                        + วันสิ้นเดือน: สรุปรายเดือนของแต่ละสาขา → กลุ่มสาขา (ยอด + ช่องทาง + จำนวนเทรน)
  *
  * env (ไม่บังคับ):
@@ -115,6 +116,11 @@ async function main() {
   for (const id of plan) {
     if (id.startsWith('exec-')) {
       const kind = id.replace('exec-', '');
+      // ผู้ใช้ปิดรอบนี้ไว้ (ตั้งค่าระบบ → รายงานผู้บริหาร → ส่งอัตโนมัติ) — ยกเว้นสั่งส่งตรง ๆ ด้วย REPORT
+      if (!forced && settings.execKinds && settings.execKinds[kind] === false) {
+        console.log(`ข้าม exec-${kind} (ปิดการส่งอัตโนมัติไว้)`);
+        continue;
+      }
       messages.push({
         key: `${kind}|${R.isoDay(evening)}`,   // รูปแบบ key เดิมของรายงานผู้บริหาร
         text: R.build({ kind, ref: evening, sales, branches, currency: cur, brand: settings.execBrand }),

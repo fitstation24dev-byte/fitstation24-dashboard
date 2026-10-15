@@ -5983,6 +5983,14 @@ function renderSettings(root) {
       </div>
     </div>
     <div class="muted small" style="margin-bottom: 8px;">รวมทุกสาขา: ยอดขายรวม · ยอดขาย MB · ยอดขาย PT · ช่องทางลูกค้า (Walk-in / BR / Renew / Online) · เทียบช่วงก่อนหน้า</div>
+    <div style="display: flex; gap: 18px; flex-wrap: wrap; align-items: center; margin-bottom: 12px;">
+      <span class="small" style="font-weight: 600;">ส่งอัตโนมัติ:</span>
+      ${[['daily', 'รายวัน', 'ทุกวัน 23:00'], ['weekly', 'รายสัปดาห์', 'วันอาทิตย์ 23:00'], ['monthly', 'รายเดือน', 'วันสิ้นเดือน 23:00']].map(([k, label, when]) => `
+        <label class="small" style="display: inline-flex; gap: 6px; align-items: center; cursor: pointer;">
+          <input type="checkbox" ${execKindEnabled(k) ? 'checked' : ''} onchange="setExecKind('${k}', this.checked)" style="width: 18px; height: 18px;">
+          <span><strong>${label}</strong> <span class="muted">(${when})</span></span>
+        </label>`).join('')}
+    </div>
     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
       <button class="btn small secondary" onclick="previewExecReport('daily')">👁 ตัวอย่าง: รายวัน</button>
       <button class="btn small secondary" onclick="previewExecReport('weekly')">👁 ตัวอย่าง: รายสัปดาห์</button>
@@ -6111,7 +6119,18 @@ async function testSendHoursLowAlerts() {
   }
 }
 
-// ---------- รายงานผู้บริหาร: ดูตัวอย่าง / ส่งทดสอบ ----------
+// ---------- รายงานผู้บริหาร: เลือกรอบที่ส่ง / ดูตัวอย่าง / ส่งทดสอบ ----------
+// settings.execKinds = { daily, weekly, monthly } — ไม่ได้ตั้ง = ส่ง (สคริปต์ตั้งเวลาอ่านค่าเดียวกัน)
+function execKindEnabled(kind) {
+  const k = DATA.settings.execKinds || {};
+  return k[kind] !== false;
+}
+function setExecKind(kind, on) {
+  DATA.settings.execKinds = { ...(DATA.settings.execKinds || {}), [kind]: !!on };
+  saveData();
+  const label = { daily: 'รายวัน', weekly: 'รายสัปดาห์', monthly: 'รายเดือน' }[kind];
+  toast((on ? 'เปิด' : 'ปิด') + 'ส่งอัตโนมัติ: รายงาน' + label, 'ok');
+}
 function execReportText(kind) {
   if (typeof ExecReport === 'undefined') throw new Error('โหลด exec-report.js ไม่สำเร็จ — ลองรีเฟรชหน้า');
   return ExecReport.build({
