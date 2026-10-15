@@ -193,6 +193,56 @@
   }
 
   /**
+   * รายงานผู้บริหารตามช่วงวันที่ที่เลือกเอง (เช่น ส่งย้อนหลัง 1–30 ก.ย.) — เทียบกับช่วงก่อนหน้าที่ยาวเท่ากัน
+   * @param {object} o { from (Date), to (Date, รวมวันนี้), sales, branches, currency, brand }
+   */
+  function buildRange(o) {
+    const money = moneyFn(o.currency);
+    const start = new Date(o.from.getFullYear(), o.from.getMonth(), o.from.getDate());
+    const end = addDays(new Date(o.to.getFullYear(), o.to.getMonth(), o.to.getDate()), 1);
+    const days = Math.max(1, Math.round((end - start) / 86400000));
+    const wholeMonth = start.getDate() === 1 && end.getDate() === 1 && days >= 28 && days <= 31;
+    // เทียบกับ: ทั้งเดือน → เดือนก่อนทั้งเดือน, อื่น ๆ → ช่วงก่อนหน้าที่ยาวเท่ากัน
+    const prevStart = wholeMonth ? new Date(start.getFullYear(), start.getMonth() - 1, 1) : addDays(start, -days);
+    const prevLabel = days === 1 ? 'วันก่อนหน้า' : wholeMonth ? 'เดือนก่อน' : ` ${days} วันก่อนหน้า`;
+    const now = summarize(o.sales, start, end);
+    const prev = summarize(o.sales, prevStart, start);
+    const today = new Date(); const partial = end > today;
+    const elapsed = partial ? Math.max(1, Math.round((addDays(today, 1) - start) / 86400000)) : days;
+
+    const th = (d, opt) => d.toLocaleDateString('th-TH', opt);
+    const last = addDays(end, -1);
+    const title = days === 1 ? 'สรุปรายวัน' : wholeMonth ? 'สรุปรายเดือน' : 'สรุปตามช่วงวันที่';
+    const label = days === 1 ? th(start, { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })
+      : wholeMonth ? th(start, { month: 'long', year: 'numeric' })
+      : `${th(start, { day: 'numeric', month: 'short' })} – ${th(last, { day: 'numeric', month: 'short', year: 'numeric' })} (${days} วัน)`;
+
+    const lines = [
+      `📊 รายงานผู้บริหาร · ${title}`,
+      `🏢 ${o.brand || 'FITSTATION 24'}`,
+      `📅 ${label}${partial ? ' (ถึงตอนนี้)' : ''}`,
+      LINE,
+      `💰 ยอดขายรวม ${money(now.total)}`,
+      compareLine(now, prev, prevLabel, money),
+      '',
+      ...moneyLines(now, money, true),
+      '', '👥 ช่องทางลูกค้า',
+      ...channelLines(now, money),
+    ];
+    const brCodes = Object.keys(now.branches);
+    if (brCodes.length > 1) {
+      lines.push('', '🏬 แยกตามสาขา');
+      (o.branches || []).forEach(b => {
+        const x = now.branches[b.code];
+        if (x) lines.push(`• ${b.code} ${money(x.total)} (MB ${money(x.mem)} / PT ${money(x.pt)})`);
+      });
+    }
+    if (days > 1) lines.push('', `📈 เฉลี่ยต่อวัน ${money(now.total / elapsed)}`);
+    lines.push(LINE);
+    return lines.join('\n');
+  }
+
+  /**
    * สรุปรายเดือนของสาขา: ยอดรวม + MB / PT + ช่องทางลูกค้า + จำนวนเทรนทั้งหมด (ไม่แยกรายคน) · คืน null ถ้าไม่มีอะไรให้ส่ง
    * @param {object} o { ref (Date ในเดือนนั้น), branch {code,name}, sales, trainings, currency, partial }
    */
@@ -266,6 +316,6 @@
 
   return {
     KINDS, periodFor, dueKinds, isLastDayOfMonth, summarize, saleEmpShares,
-    build, buildBranchMonthly, buildBranchDaily, isoDay, addDays,
+    build, buildRange, buildBranchMonthly, buildBranchDaily, isoDay, addDays,
   };
 });

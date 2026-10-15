@@ -5973,7 +5973,7 @@ function renderSettings(root) {
   const cardEx = document.createElement('div');
   cardEx.className = 'card';
   cardEx.innerHTML = `
-    <h2>รายงานผู้บริหาร (LINE) <small>ส่งอัตโนมัติ 23:00 · สัปดาห์ = วันที่ 1–7 / 8–14 / 15–21 / 22–สิ้นเดือน</small></h2>
+    <h2>รายงานผู้บริหาร (LINE) <small>ส่งอัตโนมัติ 23:00 ตามที่ติ๊ก · สัปดาห์ = วันที่ 1–7 / 8–14 / 15–21 / 22–สิ้นเดือน</small></h2>
     <div class="form-grid">
       <div class="field"><label>LINE Token (กลุ่มผู้บริหาร)</label>
         <input type="password" autocomplete="off" value="${_h(DATA.settings.execLineToken || '')}" placeholder="Channel access token" onchange="DATA.settings.execLineToken=this.value.trim();saveData();">
@@ -5991,18 +5991,22 @@ function renderSettings(root) {
           <span><strong>${label}</strong> <span class="muted">(${when})</span></span>
         </label>`).join('')}
     </div>
-    <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px;">
-      <span class="small" style="font-weight: 600;">วันที่ของรายงาน:</span>
-      <input type="date" id="exec-ref-date" value="${EXEC_REF_DATE || todayISO()}" max="${todayISO()}"
-             onchange="EXEC_REF_DATE=this.value;renderExecRefHint()" style="padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px;">
-      <button class="btn small secondary" onclick="EXEC_REF_DATE='';document.getElementById('exec-ref-date').value=todayISO();renderExecRefHint()">วันนี้</button>
-      <span class="muted small" id="exec-ref-hint" style="flex-basis: 100%;">${execRefHint()}</span>
-    </div>
-    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-      <button class="btn small secondary" onclick="previewExecReport('daily')">👁 ตัวอย่าง: รายวัน</button>
-      <button class="btn small secondary" onclick="previewExecReport('weekly')">👁 ตัวอย่าง: รายสัปดาห์</button>
-      <button class="btn small secondary" onclick="previewExecReport('monthly')">👁 ตัวอย่าง: รายเดือน</button>
-      <button class="btn small" onclick="testSendExecChecked()" title="ส่งรายงานของวันที่ที่เลือก ทุกรอบที่ติ๊กไว้ — 1 ข้อความต่อรอบ">▶ ส่งรายงาน (ตามที่ติ๊ก)</button>
+    <div style="padding-top: 12px; border-top: 1px solid var(--border);">
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px;">
+        <span class="small" style="font-weight: 600;">ส่งรายงานตามช่วงวันที่:</span>
+        <input type="date" id="exec-from" value="${EXEC_RANGE.from}" max="${todayISO()}" onchange="setExecRangeDate('from', this.value)" style="padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px;">
+        <span class="muted small">ถึง</span>
+        <input type="date" id="exec-to" value="${EXEC_RANGE.to}" max="${todayISO()}" onchange="setExecRangeDate('to', this.value)" style="padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px;">
+      </div>
+      <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px;">
+        ${[['today', 'วันนี้'], ['yesterday', 'เมื่อวาน'], ['week', 'สัปดาห์นี้'], ['month', 'เดือนนี้'], ['lastMonth', 'เดือนที่แล้ว']]
+          .map(([k, l]) => `<button class="btn small secondary" onclick="setExecRangePreset('${k}')">${l}</button>`).join('')}
+      </div>
+      <div class="muted small" id="exec-range-hint" style="margin-bottom: 10px;">${execRangeHint()}</div>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <button class="btn small secondary" onclick="previewExecRange()">👁 ดูตัวอย่าง</button>
+        <button class="btn small" onclick="sendExecRange()">▶ ส่งรายงานช่วงนี้เข้ากลุ่มผู้บริหาร</button>
+      </div>
     </div>`;
   root.appendChild(cardEx);
 
@@ -6138,49 +6142,66 @@ function setExecKind(kind, on) {
   const label = { daily: 'รายวัน', weekly: 'รายสัปดาห์', monthly: 'รายเดือน' }[kind];
   toast((on ? 'เปิด' : 'ปิด') + 'ส่งอัตโนมัติ: รายงาน' + label, 'ok');
 }
-// วันที่ของรายงาน (ว่าง = วันนี้) — เลือกย้อนหลังได้: รายวัน = วันนั้น, รายสัปดาห์ = ช่วงวันที่ที่วันนั้นอยู่, รายเดือน = เดือนนั้น
-let EXEC_REF_DATE = '';
-function execRefDate() {
-  const iso = EXEC_REF_DATE || todayISO();
-  const [y, m, d] = iso.split('-').map(Number);
-  return iso === todayISO() ? new Date() : new Date(y, m - 1, d, 23, 59);
+// ช่วงวันที่ของรายงานที่จะส่งเอง (ส่งย้อนหลังได้) — ค่าเริ่มต้น = วันนี้
+const EXEC_RANGE = { from: '', to: '' };
+function execRangeDates() {
+  const parse = (iso) => { const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d); };
+  let from = EXEC_RANGE.from || todayISO(), to = EXEC_RANGE.to || todayISO();
+  if (from > to) [from, to] = [to, from];
+  return { from: parse(from), to: parse(to), fromISO: from, toISO: to };
 }
-function execPeriodIsPartial(kind) {
-  return ExecReport.periodFor(kind, execRefDate()).end > new Date();
+function syncExecRangeInputs() {
+  const r = execRangeDates();
+  const f = document.getElementById('exec-from'), t = document.getElementById('exec-to'), h = document.getElementById('exec-range-hint');
+  if (f) f.value = r.fromISO;
+  if (t) t.value = r.toISO;
+  if (h) h.textContent = execRangeHint();
 }
-function execRefHint() {
-  if (typeof ExecReport === 'undefined') return '';
-  const ref = execRefDate();
-  const th = (d, o) => d.toLocaleDateString('th-TH', o);
-  const w = ExecReport.periodFor('weekly', ref);
-  const wLast = ExecReport.addDays(w.end, -1);
-  const tag = (k) => execPeriodIsPartial(k) ? ' (ถึงตอนนี้)' : '';
-  return `รายวัน: ${th(ref, { day: 'numeric', month: 'short', year: 'numeric' })}${tag('daily')}`
-    + ` · รายสัปดาห์: ${th(w.start, { day: 'numeric', month: 'short' })}–${th(wLast, { day: 'numeric', month: 'short' })}${tag('weekly')}`
-    + ` · รายเดือน: ${th(ref, { month: 'long', year: 'numeric' })}${tag('monthly')}`;
+function setExecRangeDate(which, iso) {
+  EXEC_RANGE[which] = iso || todayISO();
+  // เลือกกลับด้าน (เริ่ม > สิ้นสุด) → ดันอีกฝั่งตาม
+  if (EXEC_RANGE.from && EXEC_RANGE.to && EXEC_RANGE.from > EXEC_RANGE.to) {
+    if (which === 'from') EXEC_RANGE.to = EXEC_RANGE.from; else EXEC_RANGE.from = EXEC_RANGE.to;
+  }
+  syncExecRangeInputs();
 }
-function renderExecRefHint() {
-  const el = document.getElementById('exec-ref-hint');
-  if (el) el.textContent = execRefHint();
+function setExecRangePreset(key) {
+  const now = new Date();
+  const iso = (d) => isoLocal(d);
+  const y = now.getFullYear(), m = now.getMonth();
+  if (key === 'today') { EXEC_RANGE.from = EXEC_RANGE.to = iso(now); }
+  else if (key === 'yesterday') { const d = new Date(y, m, now.getDate() - 1); EXEC_RANGE.from = EXEC_RANGE.to = iso(d); }
+  else if (key === 'week') { EXEC_RANGE.from = iso(ExecReport.periodFor('weekly', now).start); EXEC_RANGE.to = iso(now); }
+  else if (key === 'month') { EXEC_RANGE.from = iso(new Date(y, m, 1)); EXEC_RANGE.to = iso(now); }
+  else if (key === 'lastMonth') { EXEC_RANGE.from = iso(new Date(y, m - 1, 1)); EXEC_RANGE.to = iso(new Date(y, m, 0)); }
+  syncExecRangeInputs();
 }
-function execReportText(kind) {
+function execRangeHint() {
+  const r = execRangeDates();
+  const days = Math.round((r.to - r.from) / 86400000) + 1;
+  const th = (d) => d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+  const partial = r.toISO >= todayISO();
+  return (days === 1 ? `รวมยอดวันที่ ${th(r.from)}` : `รวมยอด ${th(r.from)} – ${th(r.to)} (${days} วัน)`)
+    + (partial ? ' · ถึงตอนนี้' : ' · ยอดเต็มช่วง') + ' · เทียบกับช่วงก่อนหน้า';
+}
+function execRangeText() {
   if (typeof ExecReport === 'undefined') throw new Error('โหลด exec-report.js ไม่สำเร็จ — ลองรีเฟรชหน้า');
-  return ExecReport.build({
-    kind, ref: execRefDate(), sales: DATA.sales, branches: DATA.branches,
-    currency: DATA.settings.currency, brand: DATA.settings.execBrand, partial: execPeriodIsPartial(kind),
+  const r = execRangeDates();
+  return ExecReport.buildRange({
+    from: r.from, to: r.to, sales: DATA.sales, branches: DATA.branches,
+    currency: DATA.settings.currency, brand: DATA.settings.execBrand,
   });
 }
-function previewExecReport(kind) {
+function previewExecRange() {
   let text;
-  try { text = execReportText(kind); } catch (err) { toast(err.message, 'bad'); return; }
-  const ready = DATA.settings.execLineToken && DATA.settings.execLineGroupId;
+  try { text = execRangeText(); } catch (err) { toast(err.message, 'bad'); return; }
   showModal(`
     <h3>ตัวอย่างรายงานผู้บริหาร</h3>
-    <div class="muted small" style="margin-bottom: 8px;">${execPeriodIsPartial(kind) ? 'ช่วงนี้ยังไม่จบ — ยอดถึงตอนนี้ · ตอนส่งอัตโนมัติ 23:00 จะเป็นยอดเต็มช่วง' : 'รายงานย้อนหลัง — ยอดเต็มช่วงจากข้อมูลจริง'}</div>
+    <div class="muted small" style="margin-bottom: 8px;">${_h(execRangeHint())}</div>
     <pre style="white-space: pre-wrap; font-family: inherit; font-size: 13px; background: var(--bg); border-radius: 10px; padding: 14px; margin: 0;">${_h(text)}</pre>
     <div class="actions">
       <button type="button" class="btn secondary" onclick="closeModal()">ปิด</button>
-      <button type="button" class="btn" ${ready ? '' : 'disabled title="ใส่ LINE Token และ Group ID ก่อน"'} onclick="testSendExecReport('${kind}')">▶ ส่งเข้ากลุ่มผู้บริหาร</button>
+      <button type="button" class="btn" onclick="sendExecRange()">▶ ส่งเข้ากลุ่มผู้บริหาร</button>
     </div>`);
 }
 // ตัวอย่างสรุปผลรายวัน (เมื่อวาน) ของสาขาเดียว + ส่งทดสอบเข้ากลุ่ม LINE ของสาขานั้น
@@ -6274,46 +6295,34 @@ function previewBranchReport(kind) {
     <div class="actions"><button type="button" class="btn secondary" onclick="closeModal()">ปิด</button></div>`);
 }
 
-const EXEC_KIND_LABEL = { daily: 'รายวัน', weekly: 'รายสัปดาห์', monthly: 'รายเดือน' };
-
-// ส่งทดสอบรายงานผู้บริหาร — ยอดจริงถึงตอนนี้: รายวัน = วันนี้, รายสัปดาห์ = ช่วงวันที่ที่วันนี้อยู่ (1–7 / 8–14 / 15–21 / 22–สิ้นเดือน),
-// รายเดือน = ทั้งเดือนนี้ · ส่ง 1 ข้อความต่อ 1 รอบ
-async function testSendExecReport(kinds) {
+// ส่งรายงานช่วงวันที่ที่เลือกเข้ากลุ่ม LINE ผู้บริหาร (ข้อความเดียว)
+async function sendExecRange() {
   if (!isOwner()) return;
-  const list = Array.isArray(kinds) ? kinds : [kinds];
   const s = DATA.settings;
   if (!s.execLineToken || !s.execLineGroupId) { toast('ใส่ LINE Token และ Group ID ของกลุ่มผู้บริหารก่อน', 'bad'); return; }
+  let text;
+  try { text = execRangeText(); } catch (err) { toast(err.message, 'bad'); return; }
+  if (!confirm('ส่งรายงานผู้บริหารเข้ากลุ่ม LINE ตอนนี้?\n' + execRangeHint())) return;
   closeModal();
   toast('กำลังส่ง...', 'ok');
-  const failed = [];
-  for (const kind of list) {
-    try {
-      const res = await fetch(LINE_FUNCTION_URL, {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: (execPeriodIsPartial(kind) ? '🧪 ทดสอบ\n' : '🔁 รายงานย้อนหลัง\n') + execReportText(kind),
-          branchCode: (DATA.branches[0] || {}).code || 'EXEC',
-          lineToken: s.execLineToken,
-          lineGroupId: s.execLineGroupId,
-        }),
-      });
-      const result = await res.json().catch(() => ({}));
-      if (!res.ok || !result.ok) throw new Error(result.error || ('HTTP ' + res.status));
-    } catch (err) {
-      console.error(err);
-      failed.push(EXEC_KIND_LABEL[kind] + ': ' + (err.message || err));
-    }
+  try {
+    const res = await fetch(LINE_FUNCTION_URL, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: text,
+        branchCode: (DATA.branches[0] || {}).code || 'EXEC',
+        lineToken: s.execLineToken,
+        lineGroupId: s.execLineGroupId,
+      }),
+    });
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok || !result.ok) throw new Error(result.error || ('HTTP ' + res.status));
+    toast('ส่งสำเร็จ — เช็คในกลุ่มผู้บริหาร', 'ok');
+  } catch (err) {
+    console.error(err);
+    toast('ส่งไม่สำเร็จ: ' + (err.message || err), 'bad');
   }
-  if (failed.length) toast('ส่งไม่สำเร็จ — ' + failed.join(' · '), 'bad');
-  else toast('ส่งสำเร็จ (' + list.map(k => EXEC_KIND_LABEL[k]).join(', ') + ') — เช็คในกลุ่มผู้บริหาร', 'ok');
-}
-
-// ปุ่มหลัก: ส่งทดสอบทุกรอบที่ติ๊ก "ส่งอัตโนมัติ" ไว้
-function testSendExecChecked() {
-  const kinds = ['daily', 'weekly', 'monthly'].filter(execKindEnabled);
-  if (!kinds.length) { toast('ยังไม่ได้ติ๊กรอบไหนเลย — ติ๊กรายวัน / รายสัปดาห์ / รายเดือน ก่อน', 'bad'); return; }
-  testSendExecReport(kinds);
 }
 
 function rebuildNav() {
