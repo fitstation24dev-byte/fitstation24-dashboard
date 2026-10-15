@@ -5987,6 +5987,7 @@ function renderSettings(root) {
       <button class="btn small secondary" onclick="previewExecReport('daily')">👁 ตัวอย่าง: รายวัน</button>
       <button class="btn small secondary" onclick="previewExecReport('weekly')">👁 ตัวอย่าง: รายสัปดาห์</button>
       <button class="btn small secondary" onclick="previewExecReport('monthly')">👁 ตัวอย่าง: รายเดือน</button>
+      <button class="btn small" onclick="testSendExecReport('daily')">▶ ส่งทดสอบเข้ากลุ่มผู้บริหาร</button>
     </div>`;
   root.appendChild(cardEx);
 
@@ -6003,6 +6004,8 @@ function renderSettings(root) {
     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
       <button class="btn small secondary" onclick="previewBranchReport('daily')">👁 ตัวอย่าง: สรุปรายวัน (เมื่อวาน)</button>
       <button class="btn small secondary" onclick="previewBranchReport('monthly')">👁 ตัวอย่าง: สรุปรายเดือน</button>
+      <button class="btn small" onclick="testSendBranchReports('daily')">▶ ส่งทดสอบ: สรุปรายวัน</button>
+      <button class="btn small" onclick="testSendBranchReports('monthly')">▶ ส่งทดสอบ: สรุปรายเดือน</button>
     </div>`;
   root.appendChild(cardBr);
 
@@ -6169,6 +6172,38 @@ async function testSendBranchDaily(i) {
     console.error(err);
     toast('ส่งไม่สำเร็จ: ' + (err.message || err), 'bad');
   }
+}
+
+// ส่งทดสอบสรุปเข้ากลุ่ม LINE ของทุกสาขาที่มีข้อมูลและตั้งค่า LINE ไว้แล้ว
+async function testSendBranchReports(kind) {
+  if (!isOwner()) return;
+  if (typeof ExecReport === 'undefined') { toast('โหลด exec-report.js ไม่สำเร็จ — ลองรีเฟรชหน้า', 'bad'); return; }
+  const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+  const items = DATA.branches.map(b => ({
+    b,
+    text: kind === 'daily'
+      ? ExecReport.buildBranchDaily({ day: yesterday, branch: b, sales: DATA.sales, trainings: DATA.trainings, employees: DATA.employees, currency: DATA.settings.currency })
+      : ExecReport.buildBranchMonthly({ ref: new Date(), branch: b, sales: DATA.sales, trainings: DATA.trainings, currency: DATA.settings.currency, partial: true }),
+  }));
+  const ready = items.filter(x => x.text && x.b.lineToken && x.b.lineGroupId);
+  const noData = items.filter(x => !x.text).map(x => x.b.code);
+  const noLine = items.filter(x => x.text && !(x.b.lineToken && x.b.lineGroupId)).map(x => x.b.code);
+  if (!ready.length) {
+    toast('ไม่มีสาขาที่ส่งได้' + (noData.length ? ' · ไม่มียอด: ' + noData.join(', ') : '') + (noLine.length ? ' · ยังไม่ตั้ง LINE: ' + noLine.join(', ') : ''), 'bad');
+    return;
+  }
+  const label = kind === 'daily' ? 'สรุปรายวัน (เมื่อวาน)' : 'สรุปรายเดือน (ถึงตอนนี้)';
+  if (!confirm(`ส่งทดสอบ ${label} เข้ากลุ่ม LINE สาขา: ${ready.map(x => x.b.code).join(', ')} ?`
+    + (noData.length ? `\n(ข้าม ${noData.join(', ')} — ไม่มียอด)` : '')
+    + (noLine.length ? `\n(ข้าม ${noLine.join(', ')} — ยังไม่ตั้ง LINE)` : ''))) return;
+  toast('กำลังส่ง...', 'ok');
+  const failed = [];
+  for (const x of ready) {
+    try { await sendLineMessage('🧪 ทดสอบ\n' + x.text, null, x.b.code); }
+    catch (err) { console.error(err); failed.push(x.b.code + ': ' + (err.message || err)); }
+  }
+  if (failed.length) toast('ส่งไม่สำเร็จ — ' + failed.join(' · '), 'bad');
+  else toast('ส่งสำเร็จ ' + ready.length + ' สาขา — เช็คในกลุ่ม LINE', 'ok');
 }
 
 function previewBranchReport(kind) {
