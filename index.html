@@ -8,6 +8,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="exec-report.js"></script>
 <style>
   :root {
     --brand: #0B132B;
@@ -1553,8 +1554,6 @@ function runDailyMaintenance() {
   // Fire-and-forget: notify branch LINE group about expiring members
   sendDailyExpiryAlertsToGroup().catch(err => console.error('[daily] expiry alert push failed', err));
   sendDailyHoursLowAlertsToGroup().catch(err => console.error('[daily] hours-low alert push failed', err));
-  // Fire-and-forget: per-branch daily sales summary (yesterday)
-  sendDailySalesSummaryToGroup().catch(err => console.error('[daily] sales summary push failed', err));
   // Fire-and-forget: snapshot DATA into Supabase (rolling 7-day backup)
   createDailyBackup().catch(err => console.error('[daily] backup failed', err));
 }
@@ -2652,113 +2651,6 @@ ${lines}
     } catch (err) {
       console.error('[expiry-alert] send failed for branch', code, err);
     }
-  }
-}
-
-async function sendDailySalesSummaryToGroup() {
-  const now = new Date();
-  const yest = new Date(now); yest.setDate(yest.getDate() - 1); yest.setHours(0,0,0,0);
-  const yestEnd = new Date(yest); yestEnd.setDate(yestEnd.getDate() + 1);
-  const yestKey = yest.toISOString().slice(0,10);
-
-  if (!DATA.settings.dailySummarySent) DATA.settings.dailySummarySent = {};
-  const sent = DATA.settings.dailySummarySent;
-
-  const inYesterday = (ts) => { const d = new Date(ts); return d >= yest && d < yestEnd; };
-  const salesY = DATA.sales.filter(s => inYesterday(s.ts));
-  const trainsY = DATA.trainings.filter(t => inYesterday(t.ts));
-
-  const branchCodes = [...new Set([
-    ...salesY.map(s => s.branch),
-    ...trainsY.map(t => t.branch),
-  ])];
-
-  const cur = DATA.settings.currency || '฿';
-  const fmt = n => Number(n||0).toLocaleString();
-
-  for (const code of branchCodes) {
-    const sentKey = yestKey + '|' + code;
-    if (sent[sentKey]) continue;
-    const br = DATA.branches.find(b => b.code === code);
-    if (!br || !br.lineToken || !br.lineGroupId) continue;
-
-    const brSales = salesY.filter(s => s.branch === code);
-    const brTrains = trainsY.filter(t => t.branch === code);
-
-    const empMap = {};
-    brSales.forEach(s => {
-      saleEmpShares(s).forEach(c => {
-        const e = empMap[c.empId] = empMap[c.empId] || { mem:0, pt:0, plan:0, other:0, train:0 };
-        e.mem += c.mem; e.pt += c.pt; e.plan += c.plan; e.other += c.other;
-      });
-    });
-    brTrains.forEach(t => {
-      if (!t.trainerId) return;
-      const e = empMap[t.trainerId] = empMap[t.trainerId] || { mem:0, pt:0, plan:0, other:0, train:0 };
-      e.train += 1;
-    });
-
-    const empIds = Object.keys(empMap).filter(id => {
-      const e = empMap[id];
-      return e.mem > 0 || e.pt > 0 || e.train > 0;
-    });
-    if (empIds.length === 0) continue;
-
-    empIds.sort((a, b) => {
-      const ta = empMap[a].mem + empMap[a].pt;
-      const tb = empMap[b].mem + empMap[b].pt;
-      return tb - ta;
-    });
-
-    const lines = empIds.map((id, i) => {
-      const emp = DATA.employees.find(e => e.id === id);
-      const nm = emp ? (emp.name + ' ' + emp.surname).trim() : id;
-      const e = empMap[id];
-      return `${i+1}. ${nm} — MEM ${fmt(e.mem)} / PT ${fmt(e.pt)} / เทรน ${e.train}`;
-    }).join('\n');
-
-    const memPart = s => {
-      if (s.type === 'MEM') return Number(s.amount) || 0;
-      if (s.type === 'MEM+PT') return s.memAmount != null ? Number(s.memAmount) : (Number(s.amount)||0) / 2;
-      return 0;
-    };
-    const ptPart = s => {
-      if (s.type === 'PT') return Number(s.amount) || 0;
-      if (s.type === 'MEM+PT') return s.ptAmount != null ? Number(s.ptAmount) : (Number(s.amount)||0) / 2;
-      return 0;
-    };
-    const totalMem = brSales.reduce((a,b) => a + memPart(b), 0);
-    const totalPt  = brSales.reduce((a,b) => a + ptPart(b), 0);
-    const totalAll = brSales.reduce((a,b) => a + (Number(b.amount)||0), 0);
-    const dateStr  = yest.toLocaleDateString('th-TH', { day:'2-digit', month:'2-digit', year:'numeric' });
-
-    const text = `📊 สรุปผลรายวัน — ${br.name}
-วันที่ ${dateStr}
-
-${lines}
-
-──────────
-ยอดรวม: ${cur}${fmt(totalAll)}
-MEM: ${cur}${fmt(totalMem)} · PT: ${cur}${fmt(totalPt)}
-เทรนทั้งหมด: ${brTrains.length} ครั้ง`;
-
-    try {
-      await sendLineMessage(text, null, code);
-      sent[sentKey] = true;
-      saveData();
-    } catch (err) {
-      console.error('[daily-summary] send failed for branch', code, err);
-    }
-  }
-
-  const sentKeys = Object.keys(sent);
-  if (sentKeys.length > 200) {
-    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
-    sentKeys.forEach(k => {
-      const dp = k.split('|')[0];
-      if (new Date(dp) < cutoff) delete sent[k];
-    });
-    saveData();
   }
 }
 
@@ -6081,11 +5973,31 @@ function renderSettings(root) {
       <div style="display: flex; gap: 8px; flex-wrap: wrap;">
         <button class="btn small secondary" onclick="testSendExpiryAlerts()">▶ ทดสอบ: สมาชิกใกล้หมดอายุ</button>
         <button class="btn small secondary" onclick="testSendHoursLowAlerts()">▶ ทดสอบ: ชั่วโมงเทรนเหลือน้อย</button>
-        <button class="btn small secondary" onclick="testSendDailySummary()">▶ ทดสอบ: สรุปยอดเมื่อวาน</button>
       </div>
     </div>
   `;
   root.appendChild(card2);
+
+  // รายงานผู้บริหาร (LINE กลุ่มผู้บริหาร) — ส่งอัตโนมัติ 23:00 ผ่าน GitHub Actions
+  const cardEx = document.createElement('div');
+  cardEx.className = 'card';
+  cardEx.innerHTML = `
+    <h2>รายงานผู้บริหาร (LINE) <small>ส่งอัตโนมัติทุกวัน 23:00 · รายสัปดาห์ทุกวันอาทิตย์ · รายเดือนวันสิ้นเดือน</small></h2>
+    <div class="form-grid">
+      <div class="field"><label>LINE Token (กลุ่มผู้บริหาร)</label>
+        <input type="password" autocomplete="off" value="${_h(DATA.settings.execLineToken || '')}" placeholder="Channel access token" onchange="DATA.settings.execLineToken=this.value.trim();saveData();">
+      </div>
+      <div class="field"><label>LINE Group ID (กลุ่มผู้บริหาร)</label>
+        <input autocomplete="off" value="${_h(DATA.settings.execLineGroupId || '')}" placeholder="C..." onchange="DATA.settings.execLineGroupId=this.value.trim();saveData();">
+      </div>
+    </div>
+    <div class="muted small" style="margin-bottom: 8px;">รวมทุกสาขา: ยอดขายรวม · ยอดขาย MB · ยอดขาย PT · ช่องทางลูกค้า (Walk-in / BR / Renew / Online) · เทียบช่วงก่อนหน้า</div>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+      <button class="btn small secondary" onclick="previewExecReport('daily')">👁 ตัวอย่าง: รายวัน</button>
+      <button class="btn small secondary" onclick="previewExecReport('weekly')">👁 ตัวอย่าง: รายสัปดาห์</button>
+      <button class="btn small secondary" onclick="previewExecReport('monthly')">👁 ตัวอย่าง: รายเดือน</button>
+    </div>`;
+  root.appendChild(cardEx);
 
   // Role permissions (menu access)
   const cardRP = document.createElement('div');
@@ -6189,23 +6101,47 @@ async function testSendHoursLowAlerts() {
   }
 }
 
-async function testSendDailySummary() {
+// ---------- รายงานผู้บริหาร: ดูตัวอย่าง / ส่งทดสอบ ----------
+function execReportText(kind) {
+  if (typeof ExecReport === 'undefined') throw new Error('โหลด exec-report.js ไม่สำเร็จ — ลองรีเฟรชหน้า');
+  return ExecReport.build({
+    kind, ref: new Date(), sales: DATA.sales, branches: DATA.branches,
+    currency: DATA.settings.currency, brand: DATA.settings.execBrand, partial: true,
+  });
+}
+function previewExecReport(kind) {
+  let text;
+  try { text = execReportText(kind); } catch (err) { toast(err.message, 'bad'); return; }
+  const ready = DATA.settings.execLineToken && DATA.settings.execLineGroupId;
+  showModal(`
+    <h3>ตัวอย่างรายงานผู้บริหาร</h3>
+    <div class="muted small" style="margin-bottom: 8px;">ข้อมูลถึงตอนนี้ · ตอนส่งจริง 23:00 จะเป็นยอดเต็มช่วง</div>
+    <pre style="white-space: pre-wrap; font-family: inherit; font-size: 13px; background: var(--bg); border-radius: 10px; padding: 14px; margin: 0;">${_h(text)}</pre>
+    <div class="actions">
+      <button type="button" class="btn secondary" onclick="closeModal()">ปิด</button>
+      <button type="button" class="btn" ${ready ? '' : 'disabled title="ใส่ LINE Token และ Group ID ก่อน"'} onclick="testSendExecReport('${kind}')">▶ ส่งทดสอบเข้ากลุ่มผู้บริหาร</button>
+    </div>`);
+}
+async function testSendExecReport(kind) {
   if (!isOwner()) return;
-  if (!confirm('ส่งสรุปยอดของเมื่อวานเข้า LINE Group ของแต่ละสาขาทันที?\n(รีเซ็ตการจดที่ส่งไปแล้วก่อน)')) return;
-  const yestKey = (() => {
-    const d = new Date(); d.setDate(d.getDate() - 1);
-    return d.toISOString().slice(0,10);
-  })();
-  if (DATA.settings.dailySummarySent) {
-    Object.keys(DATA.settings.dailySummarySent).forEach(k => {
-      if (k.startsWith(yestKey + '|')) delete DATA.settings.dailySummarySent[k];
-    });
-    saveData();
-  }
+  const s = DATA.settings;
+  if (!s.execLineToken || !s.execLineGroupId) { toast('ใส่ LINE Token และ Group ID ของกลุ่มผู้บริหารก่อน', 'bad'); return; }
+  closeModal();
   toast('กำลังส่ง...', 'ok');
   try {
-    await sendDailySalesSummaryToGroup();
-    toast('ส่งสำเร็จ — เช็คใน LINE Group', 'ok');
+    const res = await fetch(LINE_FUNCTION_URL, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: '🧪 ทดสอบ\n' + execReportText(kind),
+        branchCode: (DATA.branches[0] || {}).code || 'EXEC',
+        lineToken: s.execLineToken,
+        lineGroupId: s.execLineGroupId,
+      }),
+    });
+    const result = await res.json().catch(() => ({}));
+    if (!res.ok || !result.ok) throw new Error(result.error || ('HTTP ' + res.status));
+    toast('ส่งสำเร็จ — เช็คในกลุ่มผู้บริหาร', 'ok');
   } catch (err) {
     console.error(err);
     toast('ส่งไม่สำเร็จ: ' + (err.message || err), 'bad');

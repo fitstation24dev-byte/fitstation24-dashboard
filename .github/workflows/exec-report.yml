@@ -1,0 +1,38 @@
+name: รายงานผู้บริหาร LINE
+
+on:
+  schedule:
+    - cron: '0 16 * * *'   # 23:00 เวลาไทย (16:00 UTC) — GitHub อาจดีเลย์ได้บ้าง
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: 'บังคับส่งรอบ (ว่าง = ตามกำหนดของวันนี้)'
+        type: choice
+        options: ['', daily, weekly, monthly]
+        default: ''
+      dry_run:
+        description: 'แค่แสดงข้อความ ไม่ส่ง LINE'
+        type: boolean
+        default: true
+
+concurrency:
+  group: exec-report
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: ส่งรายงาน
+        env:
+          TZ: Asia/Bangkok
+          KIND: ${{ inputs.kind }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: node scripts/send-exec-report.js
