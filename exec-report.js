@@ -12,7 +12,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   const KINDS = {
     daily:   { title: 'สรุปรายวัน',     prevLabel: 'วันก่อนหน้า' },
-    weekly:  { title: 'สรุปรายสัปดาห์', prevLabel: 'สัปดาห์ก่อน' },
+    weekly:  { title: 'สรุปรายสัปดาห์', prevLabel: 'สัปดาห์ก่อน' },   // สัปดาห์ = ช่วงวันที่ 1–7 / 8–14 / 15–21 / 22–สิ้นเดือน
     monthly: { title: 'สรุปรายเดือน',   prevLabel: 'เดือนก่อน' },
   };
   // ลำดับตามที่ผู้บริหารต้องการ: Walk-in, BR, Renew, Online
@@ -26,15 +26,25 @@
   const moneyFn = (cur) => (n) => (cur || '฿') + Math.round(n).toLocaleString('en-US');
   const inRange = (ts, start, end) => { if (!ts) return false; const t = new Date(ts); return t >= start && t < end; };
 
-  // ช่วงเวลาของรายงานที่ "จบ" ในวัน ref (end ไม่รวม): วันนั้น / สัปดาห์จันทร์–อาทิตย์ / ทั้งเดือน
+  // สัปดาห์ของเดือน: เริ่มวันที่ 1 / 8 / 15 / 22 · ช่วงสุดท้าย (22–สิ้นเดือน) รวมวันที่เหลือทั้งหมด
+  function weekBlock(d) {
+    const y = d.getFullYear(), m = d.getMonth();
+    const startDay = Math.min(22, Math.floor((d.getDate() - 1) / 7) * 7 + 1);
+    const start = new Date(y, m, startDay);
+    const end = startDay === 22 ? new Date(y, m + 1, 1) : new Date(y, m, startDay + 7);
+    return { start, end };
+  }
+
+  // ช่วงเวลาของรายงานที่ครอบวัน ref (end ไม่รวม): วันนั้น / สัปดาห์ของเดือน (1–7, 8–14, 15–21, 22–สิ้นเดือน) / ทั้งเดือน
   function periodFor(kind, ref) {
     const d0 = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate());
     if (kind === 'daily') {
       return { start: d0, end: addDays(d0, 1), prevStart: addDays(d0, -1), prevEnd: d0 };
     }
     if (kind === 'weekly') {
-      const start = addDays(d0, -((d0.getDay() + 6) % 7));
-      return { start, end: addDays(start, 7), prevStart: addDays(start, -7), prevEnd: start };
+      const cur = weekBlock(d0);
+      const prev = weekBlock(addDays(cur.start, -1));
+      return { start: cur.start, end: cur.end, prevStart: prev.start, prevEnd: prev.end };
     }
     const start = new Date(d0.getFullYear(), d0.getMonth(), 1);
     return {
@@ -43,10 +53,11 @@
     };
   }
 
-  // รายงานผู้บริหารที่ถึงกำหนดในวัน ref: รายวันทุกวัน, รายสัปดาห์วันอาทิตย์, รายเดือนวันสุดท้ายของเดือน
+  // รายงานผู้บริหารที่ถึงกำหนดในวัน ref: รายวันทุกวัน, รายสัปดาห์วันสุดท้ายของแต่ละช่วง (7 / 14 / 21 / สิ้นเดือน),
+  // รายเดือนวันสุดท้ายของเดือน
   function dueKinds(ref) {
     const kinds = ['daily'];
-    if (ref.getDay() === 0) kinds.push('weekly');
+    if (addDays(weekBlock(ref).end, -1).getDate() === ref.getDate()) kinds.push('weekly');
     if (isLastDayOfMonth(ref)) kinds.push('monthly');
     return kinds;
   }
@@ -171,7 +182,10 @@
     }
 
     if (kind !== 'daily') {
-      const days = Math.max(1, Math.round((p.end - p.start) / 86400000));
+      // ช่วงยังไม่จบ (ดูตัวอย่าง/ส่งทดสอบ) → เฉลี่ยเฉพาะวันที่ผ่านมาแล้ว
+      const ref = o.ref || new Date();
+      const until = o.partial ? Math.min(p.end, addDays(ref, 1)) : p.end;
+      const days = Math.max(1, Math.round((until - p.start) / 86400000));
       lines.push('', `📈 เฉลี่ยต่อวัน ${money(now.total / days)}`);
     }
     lines.push(LINE);

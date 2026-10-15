@@ -5973,7 +5973,7 @@ function renderSettings(root) {
   const cardEx = document.createElement('div');
   cardEx.className = 'card';
   cardEx.innerHTML = `
-    <h2>รายงานผู้บริหาร (LINE) <small>ส่งอัตโนมัติทุกวัน 23:00 · รายสัปดาห์ทุกวันอาทิตย์ · รายเดือนวันสิ้นเดือน</small></h2>
+    <h2>รายงานผู้บริหาร (LINE) <small>ส่งอัตโนมัติ 23:00 · สัปดาห์ = วันที่ 1–7 / 8–14 / 15–21 / 22–สิ้นเดือน</small></h2>
     <div class="form-grid">
       <div class="field"><label>LINE Token (กลุ่มผู้บริหาร)</label>
         <input type="password" autocomplete="off" value="${_h(DATA.settings.execLineToken || '')}" placeholder="Channel access token" onchange="DATA.settings.execLineToken=this.value.trim();saveData();">
@@ -5985,7 +5985,7 @@ function renderSettings(root) {
     <div class="muted small" style="margin-bottom: 8px;">รวมทุกสาขา: ยอดขายรวม · ยอดขาย MB · ยอดขาย PT · ช่องทางลูกค้า (Walk-in / BR / Renew / Online) · เทียบช่วงก่อนหน้า</div>
     <div style="display: flex; gap: 18px; flex-wrap: wrap; align-items: center; margin-bottom: 12px;">
       <span class="small" style="font-weight: 600;">ส่งอัตโนมัติ:</span>
-      ${[['daily', 'รายวัน', 'ทุกวัน 23:00'], ['weekly', 'รายสัปดาห์', 'วันอาทิตย์ 23:00'], ['monthly', 'รายเดือน', 'วันสิ้นเดือน 23:00']].map(([k, label, when]) => `
+      ${[['daily', 'รายวัน', 'ทุกวัน 23:00'], ['weekly', 'รายสัปดาห์', 'วันที่ 7 / 14 / 21 / สิ้นเดือน'], ['monthly', 'รายเดือน', 'วันสิ้นเดือน 23:00']].map(([k, label, when]) => `
         <label class="small" style="display: inline-flex; gap: 6px; align-items: center; cursor: pointer;">
           <input type="checkbox" ${execKindEnabled(k) ? 'checked' : ''} onchange="setExecKind('${k}', this.checked)" style="width: 18px; height: 18px;">
           <span><strong>${label}</strong> <span class="muted">(${when})</span></span>
@@ -5995,7 +5995,7 @@ function renderSettings(root) {
       <button class="btn small secondary" onclick="previewExecReport('daily')">👁 ตัวอย่าง: รายวัน</button>
       <button class="btn small secondary" onclick="previewExecReport('weekly')">👁 ตัวอย่าง: รายสัปดาห์</button>
       <button class="btn small secondary" onclick="previewExecReport('monthly')">👁 ตัวอย่าง: รายเดือน</button>
-      <button class="btn small" onclick="testSendExecReport('daily')">▶ ส่งทดสอบเข้ากลุ่มผู้บริหาร</button>
+      <button class="btn small" onclick="testSendExecChecked()" title="ส่งยอดจริงถึงตอนนี้ ของทุกรอบที่ติ๊กไว้ — 1 ข้อความต่อรอบ">▶ ส่งทดสอบ (ตามที่ติ๊ก)</button>
     </div>`;
   root.appendChild(cardEx);
 
@@ -6242,30 +6242,46 @@ function previewBranchReport(kind) {
     <div class="actions"><button type="button" class="btn secondary" onclick="closeModal()">ปิด</button></div>`);
 }
 
-async function testSendExecReport(kind) {
+const EXEC_KIND_LABEL = { daily: 'รายวัน', weekly: 'รายสัปดาห์', monthly: 'รายเดือน' };
+
+// ส่งทดสอบรายงานผู้บริหาร — ยอดจริงถึงตอนนี้: รายวัน = วันนี้, รายสัปดาห์ = ช่วงวันที่ที่วันนี้อยู่ (1–7 / 8–14 / 15–21 / 22–สิ้นเดือน),
+// รายเดือน = ทั้งเดือนนี้ · ส่ง 1 ข้อความต่อ 1 รอบ
+async function testSendExecReport(kinds) {
   if (!isOwner()) return;
+  const list = Array.isArray(kinds) ? kinds : [kinds];
   const s = DATA.settings;
   if (!s.execLineToken || !s.execLineGroupId) { toast('ใส่ LINE Token และ Group ID ของกลุ่มผู้บริหารก่อน', 'bad'); return; }
   closeModal();
   toast('กำลังส่ง...', 'ok');
-  try {
-    const res = await fetch(LINE_FUNCTION_URL, {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: '🧪 ทดสอบ\n' + execReportText(kind),
-        branchCode: (DATA.branches[0] || {}).code || 'EXEC',
-        lineToken: s.execLineToken,
-        lineGroupId: s.execLineGroupId,
-      }),
-    });
-    const result = await res.json().catch(() => ({}));
-    if (!res.ok || !result.ok) throw new Error(result.error || ('HTTP ' + res.status));
-    toast('ส่งสำเร็จ — เช็คในกลุ่มผู้บริหาร', 'ok');
-  } catch (err) {
-    console.error(err);
-    toast('ส่งไม่สำเร็จ: ' + (err.message || err), 'bad');
+  const failed = [];
+  for (const kind of list) {
+    try {
+      const res = await fetch(LINE_FUNCTION_URL, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + SUPABASE_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: '🧪 ทดสอบ\n' + execReportText(kind),
+          branchCode: (DATA.branches[0] || {}).code || 'EXEC',
+          lineToken: s.execLineToken,
+          lineGroupId: s.execLineGroupId,
+        }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result.ok) throw new Error(result.error || ('HTTP ' + res.status));
+    } catch (err) {
+      console.error(err);
+      failed.push(EXEC_KIND_LABEL[kind] + ': ' + (err.message || err));
+    }
   }
+  if (failed.length) toast('ส่งไม่สำเร็จ — ' + failed.join(' · '), 'bad');
+  else toast('ส่งสำเร็จ (' + list.map(k => EXEC_KIND_LABEL[k]).join(', ') + ') — เช็คในกลุ่มผู้บริหาร', 'ok');
+}
+
+// ปุ่มหลัก: ส่งทดสอบทุกรอบที่ติ๊ก "ส่งอัตโนมัติ" ไว้
+function testSendExecChecked() {
+  const kinds = ['daily', 'weekly', 'monthly'].filter(execKindEnabled);
+  if (!kinds.length) { toast('ยังไม่ได้ติ๊กรอบไหนเลย — ติ๊กรายวัน / รายสัปดาห์ / รายเดือน ก่อน', 'bad'); return; }
+  testSendExecReport(kinds);
 }
 
 function rebuildNav() {
