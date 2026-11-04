@@ -2091,6 +2091,25 @@ function renderSalesEntry(root) {
   root.appendChild(card);
 
   // Show LINE preview area
+  // ส่งรายงานสรุปยอดเข้ากลุ่ม LINE สาขาเอง (ไม่ต้องรอรอบ 08:00)
+  const rep = document.createElement('div');
+  rep.className = 'card';
+  const repBranches = canSeeAllBranches()
+    ? DATA.branches.map(b => `<option value="${_h(b.code)}" ${b.code === SALE_REPORT.branch ? 'selected' : ''}>${_h(b.code)} · ${_h(b.name)}</option>`).join('')
+    : `<option value="${_h(SESSION.branch)}">${_h(SESSION.branch)}</option>`;
+  rep.innerHTML = `
+    <h2>ส่งรายงานยอดเข้ากลุ่ม LINE <small>ลงยอดเสร็จแล้วกดส่งสรุปได้เลย ไม่ต้องรอรอบ 08:00</small></h2>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+      <label class="muted small">สาขา:</label>
+      <select id="sr-branch" onchange="SALE_REPORT.branch=this.value">${repBranches}</select>
+      <label class="muted small">วันที่:</label>
+      <input type="date" id="sr-day" value="${SALE_REPORT.day || todayISO()}" max="${todayISO()}" onchange="SALE_REPORT.day=this.value">
+      <button type="button" class="btn small secondary" onclick="previewSaleReport()">👁 ดูตัวอย่าง</button>
+      <button type="button" class="btn small" onclick="sendSaleReport()">📤 ส่งรายงานเข้ากลุ่มสาขา</button>
+    </div>
+    <div class="muted small" style="margin-top: 8px;">สรุปยอดรายคน (MEM / PT) และจำนวนเทรนของวันที่เลือก — รูปแบบเดียวกับรายงาน 08:00</div>`;
+  root.appendChild(rep);
+
   const prev = document.createElement('div');
   prev.className = 'card';
   prev.innerHTML = `
@@ -2550,6 +2569,61 @@ async function uploadSlipToStorage(dataUrl, saleId) {
   if (error) throw error;
   const { data } = db.client.storage.from(SLIP_BUCKET).getPublicUrl(path);
   return data.publicUrl;
+}
+
+// ---------- ส่งรายงานสรุปยอดเองจากหน้าบันทึกยอดขาย ----------
+const SALE_REPORT = { branch: '', day: '' };
+function saleReportBuild() {
+  if (typeof ExecReport === 'undefined') throw new Error('โหลด exec-report.js ไม่สำเร็จ — ลองรีเฟรชหน้า');
+  const code = (document.getElementById('sr-branch') || {}).value || SESSION.branch;
+  const dayStr = (document.getElementById('sr-day') || {}).value || todayISO();
+  if (!canSeeAllBranches() && code !== SESSION.branch) throw new Error('ส่งได้เฉพาะสาขาของตัวเอง');
+  if (dayStr > todayISO()) throw new Error('เลือกวันในอนาคตไม่ได้');
+  const b = DATA.branches.find(x => x.code === code);
+  if (!b) throw new Error('ไม่พบสาขา: ' + code);
+  const day = new Date(dayStr + 'T12:00:00');
+  const text = ExecReport.buildBranchDaily({
+    day, branch: b, sales: DATA.sales, trainings: DATA.trainings,
+    employees: DATA.employees, currency: DATA.settings.currency,
+  });
+  const partial = dayStr === todayISO();
+  return { b, dayStr, partial, text: text && partial ? text + '\n(ยอด ณ ' + fmtTime(new Date().toISOString()) + ' — ยังไม่ปิดวัน)' : text };
+}
+function previewSaleReport() {
+  let r;
+  try { r = saleReportBuild(); } catch (err) { toast(err.message, 'bad'); return; }
+  const ready = r.b.lineToken && r.b.lineGroupId;
+  showModal(`
+    <h3>ตัวอย่างรายงาน — ${_h(r.b.code)} · ${_h(r.dayStr)}</h3>
+    ${r.text
+      ? `<pre style="white-space: pre-wrap; font-family: inherit; font-size: 13px; background: var(--bg); border-radius: 10px; padding: 14px; margin: 0;">${_h(r.text)}</pre>`
+      : '<div class="muted center" style="padding: 20px;">วันนี้สาขานี้ยังไม่มียอดขายและไม่มีการเทรน</div>'}
+    ${ready ? '' : '<div class="muted small" style="margin-top: 8px; color: var(--bad);">สาขานี้ยังไม่ได้ตั้งค่า LINE Token / Group ID — ให้ Owner ตั้งที่เมนูตั้งค่าระบบ</div>'}
+    <div class="actions">
+      <button type="button" class="btn secondary" onclick="closeModal()">ปิด</button>
+      ${r.text && ready ? '<button type="button" class="btn" onclick="sendSaleReport()">📤 ส่งเข้ากลุ่มสาขา</button>' : ''}
+    </div>`);
+}
+let SALE_REPORT_SENDING = false;
+async function sendSaleReport() {
+  if (SALE_REPORT_SENDING) return;
+  let r;
+  try { r = saleReportBuild(); } catch (err) { toast(err.message, 'bad'); return; }
+  if (!r.text) { toast('สาขา ' + r.b.code + ' ยังไม่มียอดขายหรือการเทรนในวันที่เลือก', 'bad'); return; }
+  if (!r.b.lineToken || !r.b.lineGroupId) { toast('สาขา ' + r.b.code + ' ยังไม่ได้ตั้งค่า LINE — ให้ Owner ตั้งที่เมนูตั้งค่าระบบ', 'bad'); return; }
+  if (!confirm('ส่งรายงานยอดวันที่ ' + r.dayStr + ' เข้ากลุ่ม LINE สาขา ' + r.b.code + ' ตอนนี้?')) return;
+  closeModal();
+  SALE_REPORT_SENDING = true;
+  toast('กำลังส่ง...', 'ok');
+  try {
+    await sendLineMessage(r.text, null, r.b.code);
+    toast('ส่งรายงานสำเร็จ — เช็คในกลุ่ม LINE สาขา ' + r.b.code, 'ok');
+  } catch (err) {
+    console.error(err);
+    toast('ส่งไม่สำเร็จ: ' + (err.message || err), 'bad');
+  } finally {
+    SALE_REPORT_SENDING = false;
+  }
 }
 
 async function sendLineMessage(text, slipUrl, branchCode) {
