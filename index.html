@@ -1536,6 +1536,21 @@ function toast(msg, kind) {
   setTimeout(() => t.remove(), 2800);
 }
 
+// สมาชิก Active ที่เลยวันหมดอายุแล้ว → เปลี่ยนเป็น Expired อัตโนมัติ (Frozen / Cancelled ไม่แตะ)
+// ต่ออายุผ่านการขายจะกลับเป็น Active เอง (ดู syncMemberFromSale)
+function expireOverdueMembers() {
+  const ref = todayStart();
+  let n = 0;
+  (DATA.members || []).forEach(m => {
+    if (m.status !== 'Active' || !m.endDate) return;
+    const d = new Date(m.endDate);
+    if (isNaN(d.getTime())) return;
+    if (daysBetween(m.endDate, ref) < 0) { m.status = 'Expired'; n++; }
+  });
+  if (n) saveData();
+  return n;
+}
+
 // ---------- DAILY DECREMENT (run on first load each day) ----------
 function runDailyMaintenance() {
   const today = new Date().toISOString().slice(0, 10);
@@ -1635,6 +1650,7 @@ function bootApp() {
   bf.value = CURRENT_BRANCH;
 
   migrateEmployeePositions();
+  expireOverdueMembers();
   runDailyMaintenance();
 
   // Restore view from sessionStorage if user still has access
@@ -1825,7 +1841,7 @@ function renderDashboard(root) {
     const pl  = bs.filter(x => x.type === 'Plan').reduce((a,b) => a + Number(b.amount || 0), 0);
     const tot = bs.filter(x => x.type !== 'Train').reduce((a,b) => a + Number(b.amount || 0), 0);
     const tr  = DATA.trainings.filter(t => t.branch === code && t.verified && inRange(t.ts, range)).length;
-    const overdue = DATA.members.filter(m => m.branch === code && m.status === 'Active' && new Date(m.endDate) < overdueRef).length;
+    const overdue = DATA.members.filter(m => m.branch === code && (m.status === 'Active' || m.status === 'Expired') && m.endDate && new Date(m.endDate) < overdueRef).length;
     totals.mem += mem; totals.pt += pt; totals.plan += pl; totals.all += tot; totals.train += tr; totals.overdue += overdue;
     rows += `
       <tr>
@@ -3234,6 +3250,7 @@ function renderMembers(root) {
 function renderMembersList() {
   const container = document.getElementById('members-list-container');
   if (!container) return;
+  expireOverdueMembers();
   const editable = ['Owner','Manager','Staff'].includes(SESSION.role);
   const card = document.createElement('div');
   card.className = 'card';
