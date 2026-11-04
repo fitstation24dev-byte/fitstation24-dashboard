@@ -2881,7 +2881,9 @@ function confirmTraining(empId) {
     <h3>ยืนยันบันทึกการเทรน</h3>
     <div class="tr-confirm">
       <div class="line"><span class="k">เทรนเนอร์</span><span class="v">${_h(e.name)} ${_h(e.surname)}<br><small class="muted">${_h(e.id)} · สาขา ${_h(e.branch)}</small></span></div>
-      <div class="line"><span class="k">เวลา</span><span class="v">${fmtTime(new Date().toISOString())}</span></div>
+      <div class="line" style="align-items: center;"><span class="k">วันที่/เวลา</span>
+        <span class="v"><input id="tr-ts" type="datetime-local" value="${isoToLocalDtInput(new Date().toISOString())}" min="${isoToLocalDtInput(new Date(Date.now() - TRAIN_BACKDATE_DAYS * 864e5).toISOString())}" max="${isoToLocalDtInput(new Date().toISOString())}" style="max-width: 210px;"><br><small class="muted">ลืมลง? เลือกวันย้อนหลังได้ไม่เกิน ${TRAIN_BACKDATE_DAYS} วัน</small></span>
+      </div>
       <div class="line" style="align-items: center;"><span class="k">จำนวนเทรน</span>
         <span class="qty">
           <button type="button" onclick="trQtyStep(-1)" aria-label="ลด">−</button>
@@ -2898,6 +2900,18 @@ function confirmTraining(empId) {
 }
 
 const TRAIN_MAX_QTY = 20;
+const TRAIN_BACKDATE_DAYS = 30;
+// อ่านวันที่/เวลาจากช่องในหน้ายืนยัน — คืน Date หรือ null ถ้าไม่ถูกต้อง/อยู่นอกช่วงที่อนุญาต
+function trTsRead() {
+  const el = document.getElementById('tr-ts');
+  if (!el || !el.value) return new Date();
+  const d = new Date(el.value);
+  if (isNaN(d.getTime())) return null;
+  const now = Date.now();
+  if (d.getTime() > now + 5 * 60e3) return null;                          // ห้ามลงล่วงหน้า
+  if (d.getTime() < now - TRAIN_BACKDATE_DAYS * 864e5 - 60e3) return null; // ย้อนหลังเกินกำหนด
+  return d;
+}
 function trQtyRead() {
   const el = document.getElementById('tr-qty');
   const n = Math.floor(Number(el ? el.value : 1));
@@ -2913,12 +2927,16 @@ function doTraining(empId) {
   if (btn && btn.disabled) return;
   const qty = trQtyRead();
   if (qty < 1 || qty > TRAIN_MAX_QTY) { toast('จำนวนเทรนต้องอยู่ระหว่าง 1–' + TRAIN_MAX_QTY + ' ครั้ง', 'bad'); return; }
+  const when = trTsRead();
+  if (!when) { toast('วันที่ต้องไม่เกินปัจจุบัน และย้อนหลังได้ไม่เกิน ' + TRAIN_BACKDATE_DAYS + ' วัน', 'bad'); return; }
+  const backdated = Date.now() - when.getTime() > 30 * 60e3;
   if (btn) btn.disabled = true;
   closeModal();
   const allowed = isTrainerSelf() ? empId === SESSION.empId : canRecordForOthers();
   if (!allowed) { toast('ไม่มีสิทธิ์บันทึกให้เทรนเนอร์คนนี้', 'bad'); return; }
   const trainer = DATA.employees.find(e => e.id === empId);
-  if (trainer && recordTraining({ branch: trainer.branch, member: null, trainer, count: qty, note: isTrainerSelf() ? 'บันทึกโดยเทรนเนอร์' : 'บันทึกโดยผู้จัดการ' })) {
+  if (trainer && recordTraining({ branch: trainer.branch, member: null, trainer, count: qty, ts: backdated ? when.toISOString() : null,
+      note: (isTrainerSelf() ? 'บันทึกโดยเทรนเนอร์' : 'บันทึกโดยผู้จัดการ') + (backdated ? ' · ลงย้อนหลัง (บันทึกจริง ' + fmtTime(new Date().toISOString()) + ')' : '') })) {
     navigate('trainings');
   }
 }
@@ -3076,14 +3094,15 @@ function renderRecentTrainingsContent(card) {
 }
 
 // บันทึกการเทรน (ไม่หักชั่วโมงสมาชิก) — ใช้ร่วมกันทั้งโหมดผู้จัดการและโหมดเทรนเนอร์
-function recordTraining({ branch, member, trainer, note, count = 1 }) {
+function recordTraining({ branch, member, trainer, note, count = 1, ts = null }) {
+  const at = ts || new Date().toISOString();
   const br = DATA.branches.find(b => b.code === branch);
   if (!trainer || !br) {
     toast('ข้อมูลไม่ครบ', 'bad'); return false;
   }
   for (let i = 0; i < count; i++) {
   DATA.trainings.unshift({
-    id: nid(), ts: new Date().toISOString(), branch,
+    id: nid(), ts: at, branch,
     memberId: member ? member.id : '',
     memberName: member ? member.name + ' ' + member.surname : '',
     trainerId: trainer.id, trainerName: trainer.name,
@@ -3091,7 +3110,7 @@ function recordTraining({ branch, member, trainer, note, count = 1 }) {
   });
   // Add as a "Train" sale row for tracking
   DATA.sales.unshift({
-    id: nid(), ts: new Date().toISOString(), branch, empId: trainer.id,
+    id: nid(), ts: at, branch, empId: trainer.id,
     type: 'Train', memberId: member ? member.id : '', memberName: member ? member.name + ' ' + member.surname : '',
     amount: 0, slip: '', note: 'บันทึกเทรน', notify: '—',
   });
