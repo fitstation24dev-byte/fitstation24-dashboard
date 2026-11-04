@@ -3261,7 +3261,12 @@ function renderMembersList() {
     list = list.filter(m => (m.name + ' ' + m.surname + ' ' + m.id).toLowerCase().includes(q));
   }
   if (MEMBER_STATUS) list = list.filter(m => m.status === MEMBER_STATUS);
-  list.sort((a, b) => daysBetween(a.endDate, ref) - daysBetween(b.endDate, ref));
+  // เรียง Active ก่อนเสมอ → Frozen → Expired → Cancelled
+  // Active/Frozen: ใกล้หมดอายุขึ้นก่อน · Expired/Cancelled: เพิ่งหมดล่าสุดขึ้นก่อน
+  const STATUS_ORDER = { Active: 0, Frozen: 1, Expired: 2, Cancelled: 3 };
+  const rank = m => (m.status in STATUS_ORDER) ? STATUS_ORDER[m.status] : 4;
+  const dl = m => { const n = daysBetween(m.endDate, ref); return Number.isFinite(n) ? n : 99999; };
+  list.sort((a, b) => rank(a) - rank(b) || (rank(a) >= 2 ? dl(b) - dl(a) : dl(a) - dl(b)));
 
   const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
   if (MEMBER_PAGE > totalPages) MEMBER_PAGE = totalPages;
