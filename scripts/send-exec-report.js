@@ -100,7 +100,7 @@ async function main() {
     rest('app_settings?select=value&key=eq.global'),
     rest('app_branches?select=code,name,line_token,line_group_id&order=code.asc'),
     rest(`app_settings?select=value&key=eq.${SENT_KEY}`),
-    rest('app_employees?select=id,name,surname'),
+    rest('app_employees?select=id,name,surname,position'),
     loadRange('app_sales', 'ts,branch,emp_id,type,amount,channel,splits', from, to),
     loadRange('app_trainings', 'ts,branch,trainer_id,verified', from, to),
   ]);

@@ -291,29 +291,56 @@
     trains.forEach(t => { if (t.trainerId) slot(t.trainerId).train += 1; });
     const ids = Object.keys(per).filter(id => per[id].mem > 0 || per[id].pt > 0 || per[id].train > 0);
     if (ids.length === 0) return null;
-    ids.sort((a, b) => (per[b].mem + per[b].pt) - (per[a].mem + per[a].pt) || per[b].train - per[a].train);
 
+    const emp = (id) => (o.employees || []).find(x => x.id === id);
     const name = (id) => {
-      const e = (o.employees || []).find(x => x.id === id);
+      const e = emp(id);
       return e ? `${e.name || ''} ${e.surname || ''}`.trim() || id : id;
     };
+    // แยกตำแหน่ง Sale / Trainer (ไม่พบพนักงาน → ดูจากข้อมูล: มีแต่เทรน ไม่มียอดขาย = Trainer)
+    const isTrainer = (id) => {
+      const e = emp(id);
+      if (e && e.position) return e.position === 'Trainer' || e.position === 'เทรนเนอร์';
+      return per[id].train > 0 && per[id].mem === 0 && per[id].pt === 0;
+    };
+    const saleIds = ids.filter(id => !isTrainer(id))
+      .sort((a, b) => (per[b].mem + per[b].pt) - (per[a].mem + per[a].pt) || per[b].train - per[a].train);
+    const trainerIds = ids.filter(isTrainer)
+      .sort((a, b) => per[b].train - per[a].train || (per[b].mem + per[b].pt) - (per[a].mem + per[a].pt));
+    const sum = (list, f) => list.reduce((a, id) => a + f(per[id]), 0);
+
     const parts = sales.map(saleParts);
     const totalMem = parts.reduce((a, x) => a + x.mem, 0);
     const totalPt = parts.reduce((a, x) => a + x.pt, 0);
     const totalAll = sales.reduce((a, s) => a + (Number(s.amount) || 0), 0);
     const dateStr = p.start.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
-    return [
+    const out = [
       `📊 สรุปผลรายวัน — ${o.branch.name || code}`,
       `วันที่ ${dateStr}`,
-      '',
-      ...ids.map((id, i) => `${i + 1}. ${name(id)} — MEM ${fmt(per[id].mem)} / PT ${fmt(per[id].pt)} / เทรน ${per[id].train}`),
+    ];
+    if (saleIds.length) {
+      out.push('', `💼 SALE (${saleIds.length} คน) · ยอด ${cur}${fmt(sum(saleIds, x => x.mem + x.pt))}`);
+      saleIds.forEach((id, i) => {
+        const x = per[id];
+        out.push(`${i + 1}. ${name(id)} — MEM ${fmt(x.mem)} / PT ${fmt(x.pt)}` + (x.train ? ` / เทรน ${x.train}` : ''));
+      });
+    }
+    if (trainerIds.length) {
+      out.push('', `🏋️ TRAINER (${trainerIds.length} คน) · เทรน ${sum(trainerIds, x => x.train)} ครั้ง`);
+      trainerIds.forEach((id, i) => {
+        const x = per[id];
+        out.push(`${i + 1}. ${name(id)} — เทรน ${x.train} ครั้ง` + (x.pt ? ` / PT ${fmt(x.pt)}` : '') + (x.mem ? ` / MEM ${fmt(x.mem)}` : ''));
+      });
+    }
+    out.push(
       '',
       '──────────',
       `ยอดรวม: ${cur}${fmt(totalAll)}`,
       `MEM: ${cur}${fmt(totalMem)} · PT: ${cur}${fmt(totalPt)}`,
       `เทรนทั้งหมด: ${trains.length} ครั้ง`,
-    ].join('\n');
+    );
+    return out.join('\n');
   }
 
   return {
