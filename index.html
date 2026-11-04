@@ -1347,6 +1347,12 @@ function visibleBranches() {
 function canSeeAllBranches() { return SESSION && SESSION.branch === '*'; }
 function isOwner() { return SESSION && SESSION.role === 'Owner'; }
 function isManagerOrAbove() { return SESSION && (SESSION.role === 'Owner' || SESSION.role === 'Manager'); }
+// แก้ไข/ลบรายการขายและเทรนที่ลงผิดได้: Owner ทุกสาขา · Manager เฉพาะสาขาตัวเอง (หรือทุกสาขาถ้าบัญชีดูได้ทุกสาขา)
+function canFixRecords(rec) {
+  if (isOwner()) return true;
+  if (!SESSION || SESSION.role !== 'Manager') return false;
+  return !rec || canSeeAllBranches() || rec.branch === SESSION.branch;
+}
 
 // Escape user-controlled strings for safe insertion into HTML (XSS defense)
 function escapeHtml(s) {
@@ -2837,7 +2843,7 @@ function trainScopeTrainers() {
     .filter(e => normalizePosition(e.position) === 'Trainer' && e.status === 'Active');
 }
 function trainSetView(v) { TRAIN_VIEW = v; navigate('trainings'); }
-function canRecordForOthers() { return isOwner() || TRAIN_GATE_VERIFIED; }
+function canRecordForOthers() { return isManagerOrAbove() || TRAIN_GATE_VERIFIED; }
 
 // ช่วงเวลาของการ์ด/กราฟ/ยอดขายในเมนูนี้: วันนี้ หรือ เดือนนี้
 function trainRange() {
@@ -3124,10 +3130,10 @@ function renderRecentTrainingsContent(card) {
   const pageStart = (TRAININGS_PAGE - 1) * PAGE_SIZE;
   const pageList = trainings.slice(pageStart, pageStart + PAGE_SIZE);
 
-  const ownerCanDelete = isOwner();
+  const ownerCanDelete = canFixRecords();
   let rows = '';
   pageList.forEach(t => {
-    const actions = ownerCanDelete ? `<td class="center"><button class="btn small secondary" onclick="editTrainingDate('${t.id}')" title="แก้ไขวันที่">✎ วันที่</button> <button class="btn small danger" onclick="deleteTraining('${t.id}')">ลบ</button></td>` : '';
+    const actions = ownerCanDelete && canFixRecords(t) ? `<td class="center"><button class="btn small secondary" onclick="editTrainingDate('${t.id}')" title="แก้ไขวันที่">✎ วันที่</button> <button class="btn small danger" onclick="deleteTraining('${t.id}')">ลบ</button></td>` : '';
     rows += `<tr>
       <td>${fmtTime(t.ts)}</td>
       <td>${_h(t.branch)}</td>
@@ -4134,7 +4140,7 @@ function renderSalesLog(root) {
 
   const card = document.createElement('div');
   card.className = 'card';
-  const ownerCanDelete = isOwner();
+  const ownerCanDelete = canFixRecords();
 
   const totalPages = Math.max(1, Math.ceil(list.length / PAGE_SIZE));
   if (SALES_LOG_PAGE > totalPages) SALES_LOG_PAGE = totalPages;
@@ -4146,7 +4152,7 @@ function renderSalesLog(root) {
   pageList.forEach(s => {
     const slipLink = s.slip ? `<a href="#" onclick="event.preventDefault(); viewSaleSlipById('${s.id}');" style="color: var(--accent); cursor:pointer;">ดูสลิป</a>` : '<span class="muted">—</span>';
     const channelBadge = s.channel ? `<span class="badge gray">${s.channel}</span>` : '<span class="muted">—</span>';
-    const actions = ownerCanDelete ? `<button class="btn small secondary" onclick="editSaleDate('${s.id}')" title="แก้ไขวันที่">✎ วันที่</button> <button class="btn small danger" onclick="deleteSale('${s.id}')">ลบ</button>` : '';
+    const actions = ownerCanDelete && canFixRecords(s) ? `<button class="btn small secondary" onclick="editSaleDate('${s.id}')" title="แก้ไขวันที่">✎ วันที่</button> <button class="btn small danger" onclick="deleteSale('${s.id}')">ลบ</button>` : '';
     let empLabel;
     if (Array.isArray(s.splits) && s.splits.length > 1) {
       empLabel = s.splits.map(sp => `${_h(sp.empName || sp.empId)}: ${thb(sp.amount)}`).join('<br>');
@@ -5786,7 +5792,7 @@ function deleteEmployee(id) {
 }
 
 function deleteSale(id) {
-  if (!isOwner()) { toast('เฉพาะ Owner เท่านั้นที่ลบยอดขายได้', 'bad'); return; }
+  if (!canFixRecords(DATA.sales.find(x => x.id === id))) { toast('เฉพาะ Owner / Manager ของสาขานี้เท่านั้นที่ลบยอดขายได้', 'bad'); return; }
   if (!confirm('ลบรายการขายนี้?\nการลบจะไม่คืนชั่วโมงเทรนที่หักไปแล้ว')) return;
   DATA.sales = DATA.sales.filter(s => s.id !== id);
   db.del('sales', id);
@@ -5794,7 +5800,7 @@ function deleteSale(id) {
 }
 
 function deleteTraining(id) {
-  if (!isOwner()) { toast('เฉพาะ Owner เท่านั้นที่ลบการเทรนได้', 'bad'); return; }
+  if (!canFixRecords(DATA.trainings.find(x => x.id === id))) { toast('เฉพาะ Owner / Manager ของสาขานี้เท่านั้นที่ลบการเทรนได้', 'bad'); return; }
   if (!confirm('ลบรายการเทรนนี้?\nหมายเหตุ: ชั่วโมงสมาชิกจะไม่ถูกคืนอัตโนมัติ')) return;
   const t = DATA.trainings.find(x => x.id === id);
   DATA.trainings = DATA.trainings.filter(x => x.id !== id);
@@ -5820,9 +5826,9 @@ function isoToLocalDtInput(iso) {
 }
 
 function editSaleDate(id) {
-  if (!isOwner()) { toast('เฉพาะ Owner เท่านั้นที่แก้ไขวันที่ได้', 'bad'); return; }
   const s = DATA.sales.find(x => x.id === id);
   if (!s) { toast('ไม่พบรายการ', 'bad'); return; }
+  if (!canFixRecords(s)) { toast('เฉพาะ Owner / Manager ของสาขานี้เท่านั้นที่แก้ไขวันที่ได้', 'bad'); return; }
   showModal(`
     <h3>แก้ไขวันที่ลงข้อมูล (ขาย)</h3>
     <div class="muted small" style="margin-bottom: 8px;">
@@ -5846,9 +5852,9 @@ function editSaleDate(id) {
 
 function saveSaleDate(e, id) {
   if (e) e.preventDefault();
-  if (!isOwner()) { toast('เฉพาะ Owner เท่านั้นที่แก้ไขวันที่ได้', 'bad'); return; }
   const s = DATA.sales.find(x => x.id === id);
   if (!s) { toast('ไม่พบรายการ', 'bad'); return; }
+  if (!canFixRecords(s)) { toast('เฉพาะ Owner / Manager ของสาขานี้เท่านั้นที่แก้ไขวันที่ได้', 'bad'); return; }
   const v = document.getElementById('esd-ts').value;
   if (!v) { toast('กรุณาเลือกวันที่/เวลา', 'bad'); return; }
   const d = new Date(v);
@@ -5858,9 +5864,9 @@ function saveSaleDate(e, id) {
 }
 
 function editTrainingDate(id) {
-  if (!isOwner()) { toast('เฉพาะ Owner เท่านั้นที่แก้ไขวันที่ได้', 'bad'); return; }
   const t = DATA.trainings.find(x => x.id === id);
   if (!t) { toast('ไม่พบรายการ', 'bad'); return; }
+  if (!canFixRecords(t)) { toast('เฉพาะ Owner / Manager ของสาขานี้เท่านั้นที่แก้ไขวันที่ได้', 'bad'); return; }
   showModal(`
     <h3>แก้ไขวันที่ลงข้อมูล (เทรน)</h3>
     <div class="muted small" style="margin-bottom: 8px;">
@@ -5884,9 +5890,9 @@ function editTrainingDate(id) {
 
 function saveTrainingDate(e, id) {
   if (e) e.preventDefault();
-  if (!isOwner()) { toast('เฉพาะ Owner เท่านั้นที่แก้ไขวันที่ได้', 'bad'); return; }
   const t = DATA.trainings.find(x => x.id === id);
   if (!t) { toast('ไม่พบรายการ', 'bad'); return; }
+  if (!canFixRecords(t)) { toast('เฉพาะ Owner / Manager ของสาขานี้เท่านั้นที่แก้ไขวันที่ได้', 'bad'); return; }
   const v = document.getElementById('etd-ts').value;
   if (!v) { toast('กรุณาเลือกวันที่/เวลา', 'bad'); return; }
   const d = new Date(v);
