@@ -6164,6 +6164,14 @@ function renderSettings(root) {
       • วันสิ้นเดือน 23:00 — สรุปรายเดือน (ยอดรวม · MB · PT · ช่องทางลูกค้า · จำนวนเทรนทั้งหมด)<br>
       • สาขาที่ไม่มียอดและไม่มีเทรนในช่วงนั้นจะไม่ถูกส่ง · ยอดขายแต่ละรายการไม่ส่งเข้า LINE แล้ว
     </div>
+    <div style="display: flex; gap: 18px; flex-wrap: wrap; align-items: center; margin-bottom: 12px;">
+      <span class="small" style="font-weight: 600;">ส่งอัตโนมัติ:</span>
+      ${[['daily', 'สรุปรายวัน', 'ทุกวัน 08:00'], ['monthly', 'สรุปรายเดือน', 'วันสิ้นเดือน 23:00']].map(([k, label, when]) => `
+        <label class="small" style="display: inline-flex; gap: 6px; align-items: center; cursor: pointer;">
+          <input type="checkbox" ${branchKindEnabled(k) ? 'checked' : ''} onchange="setBranchKind('${k}', this.checked)" style="width: 18px; height: 18px;">
+          <span><strong>${label}</strong> <span class="muted">(${when})</span></span>
+        </label>`).join('')}
+    </div>
     <div style="display: flex; gap: 8px; flex-wrap: wrap;">
       <button class="btn small secondary" onclick="previewBranchReport('daily')">👁 ตัวอย่าง: สรุปรายวัน (เมื่อวาน)</button>
       <button class="btn small secondary" onclick="previewBranchReport('monthly')">👁 ตัวอย่าง: สรุปรายเดือน</button>
@@ -6279,6 +6287,17 @@ async function testSendHoursLowAlerts() {
 function execKindEnabled(kind) {
   const k = DATA.settings.execKinds || {};
   return k[kind] !== false;
+}
+// settings.branchKinds = { daily, monthly } — สรุปเข้ากลุ่มสาขา · ไม่ได้ตั้ง = ส่ง (สคริปต์ตั้งเวลาอ่านค่าเดียวกัน)
+function branchKindEnabled(kind) {
+  const k = DATA.settings.branchKinds || {};
+  return k[kind] !== false;
+}
+function setBranchKind(kind, on) {
+  if (!isOwner()) return;
+  DATA.settings.branchKinds = { ...(DATA.settings.branchKinds || {}), [kind]: !!on };
+  saveData();
+  toast((on ? 'เปิด' : 'ปิด') + 'ส่งอัตโนมัติ: สรุป' + (kind === 'daily' ? 'รายวัน' : 'รายเดือน') + 'กลุ่มสาขา', 'ok');
 }
 function setExecKind(kind, on) {
   DATA.settings.execKinds = { ...(DATA.settings.execKinds || {}), [kind]: !!on };

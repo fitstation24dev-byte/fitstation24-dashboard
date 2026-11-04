@@ -127,6 +127,12 @@ async function main() {
         to: { branchCode: (branches[0] && branches[0].code) || 'EXEC', token: settings.execLineToken, group: settings.execLineGroupId, label: 'กลุ่มผู้บริหาร' },
       });
     } else {
+      const kind = id.replace('branch-', '');
+      // ปิดส่งอัตโนมัติไว้ (ตั้งค่าระบบ → สรุปยอดกลุ่มสาขา) — ยกเว้นสั่งส่งตรง ๆ ด้วย REPORT
+      if (!forced && settings.branchKinds && settings.branchKinds[kind] === false) {
+        console.log(`ข้าม ${id} (ปิดการส่งอัตโนมัติไว้)`);
+        continue;
+      }
       for (const b of branches) {
         const text = id === 'branch-daily'
           ? R.buildBranchDaily({ day: yesterday, branch: b, sales, trainings, employees, currency: cur })
