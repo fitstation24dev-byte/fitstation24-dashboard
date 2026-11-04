@@ -2116,9 +2116,9 @@ function renderSalesEntry(root) {
   // ส่งรายงานสรุปยอดเข้ากลุ่ม LINE สาขาเอง (ไม่ต้องรอรอบ 08:00)
   const rep = document.createElement('div');
   rep.className = 'card';
-  const repBranches = canSeeAllBranches()
-    ? DATA.branches.map(b => `<option value="${_h(b.code)}" ${b.code === SALE_REPORT.branch ? 'selected' : ''}>${_h(b.code)} · ${_h(b.name)}</option>`).join('')
-    : `<option value="${_h(SESSION.branch)}">${_h(SESSION.branch)}</option>`;
+  const repBranches = saleReportBranches()
+    .map(b => `<option value="${_h(b.code)}" ${b.code === SALE_REPORT.branch ? 'selected' : ''}>${_h(b.code)} · ${_h(b.name)}</option>`).join('')
+    || '<option value="">— เลือกสาขาที่มุมขวาบนก่อน —</option>';
   rep.innerHTML = `
     <h2>ส่งรายงานยอดเข้ากลุ่ม LINE <small>ลงยอดเสร็จแล้วกดส่งสรุปได้เลย ไม่ต้องรอรอบ 08:00</small></h2>
     <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
@@ -2595,11 +2595,19 @@ async function uploadSlipToStorage(dataUrl, saleId) {
 
 // ---------- ส่งรายงานสรุปยอดเองจากหน้าบันทึกยอดขาย ----------
 const SALE_REPORT = { branch: '', day: '' };
+// สาขาที่ส่งรายงานได้: Owner เลือกได้ทุกสาขา · ตำแหน่งอื่น (รวม Manager) เฉพาะสาขาตัวเอง
+// บัญชีที่ผูกไว้ "ทุกสาขา" แต่ไม่ใช่ Owner → ใช้สาขาที่เลือกไว้มุมขวาบน
+function saleReportBranches() {
+  if (isOwner()) return DATA.branches;
+  const own = SESSION.branch !== '*' ? SESSION.branch : (CURRENT_BRANCH !== '*' ? CURRENT_BRANCH : '');
+  return DATA.branches.filter(b => b.code === own);
+}
 function saleReportBuild() {
   if (typeof ExecReport === 'undefined') throw new Error('โหลด exec-report.js ไม่สำเร็จ — ลองรีเฟรชหน้า');
-  const code = (document.getElementById('sr-branch') || {}).value || SESSION.branch;
+  const code = (document.getElementById('sr-branch') || {}).value || '';
   const dayStr = (document.getElementById('sr-day') || {}).value || todayISO();
-  if (!canSeeAllBranches() && code !== SESSION.branch) throw new Error('ส่งได้เฉพาะสาขาของตัวเอง');
+  if (!code) throw new Error('เลือกสาขาที่มุมขวาบนก่อน');
+  if (!saleReportBranches().some(b => b.code === code)) throw new Error('ส่งได้เฉพาะสาขาของตัวเอง');
   if (dayStr > todayISO()) throw new Error('เลือกวันในอนาคตไม่ได้');
   const b = DATA.branches.find(x => x.code === code);
   if (!b) throw new Error('ไม่พบสาขา: ' + code);
