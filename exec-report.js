@@ -78,9 +78,13 @@
     else other = total;
     const ratio = total > 0 ? 1 / total : 0;
     const contributions = (Array.isArray(s.splits) && s.splits.length > 0)
-      ? s.splits.map(sp => ({ empId: sp.empId, amount: Number(sp.amount) || 0, splitType: sp.type }))
+      ? s.splits.map(sp => ({ empId: sp.empId, amount: Number(sp.amount) || 0, splitType: sp.type, mem: sp.mem, pt: sp.pt }))
       : (s.empId ? [{ empId: s.empId, amount: total }] : []);
     return contributions.filter(c => c.empId).map(c => {
+      // MEM+PT "ตามแพ็กเกจ": ส่วน MEM / PT ของคนนี้คำนวณไว้ตอนบันทึก (เก็บใน splits → ซิงค์ขึ้นคลาวด์ได้)
+      if (s.type === 'MEM+PT' && (c.mem != null || c.pt != null)) {
+        return { empId: c.empId, mem: Number(c.mem) || 0, pt: Number(c.pt) || 0, plan: 0, other: 0 };
+      }
       if (s.type === 'MEM+PT' && (c.splitType === 'MEM' || c.splitType === 'PT')) {
         return { empId: c.empId, mem: c.splitType === 'MEM' ? c.amount : 0, pt: c.splitType === 'PT' ? c.amount : 0, plan: 0, other: 0 };
       }
@@ -344,7 +348,7 @@
   }
 
   return {
-    KINDS, periodFor, dueKinds, isLastDayOfMonth, summarize, saleEmpShares,
+    KINDS, periodFor, dueKinds, isLastDayOfMonth, summarize, saleEmpShares, saleParts,
     build, buildRange, buildBranchMonthly, buildBranchDaily, isoDay, addDays,
   };
 });

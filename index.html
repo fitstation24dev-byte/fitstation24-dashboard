@@ -1727,14 +1727,15 @@ function renderDashboard(root) {
   const trainings = filterByBranch(DATA.trainings);
 
   const todaySales = sales.filter(s => inRange(s.ts, range));
+  // MEM+PT: ใช้สูตรเดียวกับรายงาน LINE (ExecReport.saleParts) — ตัวเลขหน้าแดชบอร์ดกับสรุป LINE ต้องตรงกัน
   const memPart = (s) => {
     if (s.type === 'MEM') return Number(s.amount || 0);
-    if (s.type === 'MEM+PT') return s.memAmount != null ? Number(s.memAmount) : Number(s.amount || 0) / 2;
+    if (s.type === 'MEM+PT') return ExecReport.saleParts(s).mem;
     return 0;
   };
   const ptPart = (s) => {
     if (s.type === 'PT') return Number(s.amount || 0);
-    if (s.type === 'MEM+PT') return s.ptAmount != null ? Number(s.ptAmount) : Number(s.amount || 0) / 2;
+    if (s.type === 'MEM+PT') return ExecReport.saleParts(s).pt;
     return 0;
   };
   const todayMem  = todaySales.reduce((a,b) => a + memPart(b), 0);
@@ -2173,9 +2174,10 @@ function addSplitRow(empId, amount, splitType) {
       <option value="">เลือกพนักงาน...</option>
       ${buildEmployeeOptionsHTML()}
     </select>
-    <select class="split-type" title="ระบุประเภทยอดของพนักงานคนนี้" style="flex:0 0 88px;display:${showType ? '' : 'none'};" onchange="updateSplitSummary();updateLinePreview()">
-      <option value="MEM">MEM</option>
-      <option value="PT">PT</option>
+    <select class="split-type" title="ยอดของพนักงานคนนี้: ตามแพ็กเกจ = แบ่ง MEM/PT ตามราคาแพ็กเกจที่เลือก · MEM/PT = นับเป็นประเภทนั้นทั้งก้อน" style="flex:0 0 110px;display:${showType ? '' : 'none'};" onchange="updateSplitSummary();updateLinePreview()">
+      <option value="">ตามแพ็กเกจ</option>
+      <option value="MEM">MEM ล้วน</option>
+      <option value="PT">PT ล้วน</option>
     </select>
     <input type="number" class="split-amount" min="0" step="1" placeholder="ยอด" required style="flex:1;min-width:90px;" oninput="updateSplitSummary();updateLinePreview()">
     <button type="button" class="btn small danger" onclick="removeSplitRow(this)" title="ลบ" style="flex:0 0 auto;">✕</button>
@@ -2750,6 +2752,15 @@ ${lines}
   }
 }
 
+// สัดส่วน MEM ของบิล MEM+PT จากราคาแพ็กเกจ (มีลดราคา → แบ่งตามสัดส่วนราคา) · ไม่ได้เลือกแพ็กเกจเลย = ครึ่ง ๆ
+function memPtRatio(memPrice, ptPrice, total) {
+  memPrice = Number(memPrice) || 0; ptPrice = Number(ptPrice) || 0; total = Number(total) || 0;
+  if (memPrice > 0 && ptPrice > 0) return memPrice / (memPrice + ptPrice);
+  if (memPrice > 0) return total > 0 ? Math.min(1, memPrice / total) : 1;
+  if (ptPrice > 0) return total > 0 ? 1 - Math.min(1, ptPrice / total) : 0;
+  return 0.5;
+}
+
 async function onSubmitSale(e) {
   e.preventDefault();
   const branch = document.getElementById('se-branch').value;
@@ -2789,17 +2800,22 @@ async function onSubmitSale(e) {
   if (isNaN(tsDate.getTime())) { toast('วันที่/เวลาไม่ถูกต้อง', 'bad'); return; }
   let memAmount = null, ptAmount = null;
   if (type === 'MEM+PT') {
-    const hasSplitTypes = splits.some(s => s.type === 'MEM' || s.type === 'PT');
-    if (hasSplitTypes) {
-      memAmount = splits.filter(s => s.type === 'MEM').reduce((a, s) => a + s.amount, 0);
-      ptAmount  = splits.filter(s => s.type === 'PT').reduce((a, s) => a + s.amount, 0);
-    } else {
-      const memPkg = (DATA.packages || []).find(p => p.id === pkgId);
-      const ptPkgId = (document.getElementById('se-package-pt') || {}).value || '';
-      const ptPkg = (DATA.packages || []).find(p => p.id === ptPkgId);
-      memAmount = memPkg ? Number(memPkg.price || 0) : Math.round(amount / 2);
-      ptAmount = ptPkg ? Number(ptPkg.price || 0) : (amount - memAmount);
-    }
+    // ผู้ขายที่เลือก "MEM ล้วน" / "PT ล้วน" นับตรง ๆ · ที่เหลือ ("ตามแพ็กเกจ") แบ่ง MEM/PT ตามสัดส่วนราคาแพ็กเกจ
+    // แล้วเก็บส่วน mem/pt ไว้ในแต่ละ split (ซิงค์ขึ้นคลาวด์ไปกับ splits — รายงาน 08:00/23:00 และเครื่องอื่นเห็นตรงกัน)
+    const memPkg = (DATA.packages || []).find(p => p.id === pkgId);
+    const ptPkgId = (document.getElementById('se-package-pt') || {}).value || '';
+    const ptPkg = (DATA.packages || []).find(p => p.id === ptPkgId);
+    const memRatio = memPtRatio(memPkg && Number(memPkg.price || 0), ptPkg && Number(ptPkg.price || 0), amount || splitSum);
+    memAmount = 0; ptAmount = 0;
+    splits.forEach(sp => {
+      if (sp.type === 'MEM') memAmount += sp.amount;
+      else if (sp.type === 'PT') ptAmount += sp.amount;
+      else {
+        sp.mem = Math.round(sp.amount * memRatio);
+        sp.pt = sp.amount - sp.mem;
+        memAmount += sp.mem; ptAmount += sp.pt;
+      }
+    });
   }
   const sale = {
     id: nid(), ts: tsDate.toISOString(),
