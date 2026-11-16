@@ -873,12 +873,27 @@ const db = {
     return item;
   },
 
+  // Supabase ส่งกลับได้สูงสุด 1000 แถวต่อคำขอ — ต้องดึงทีละหน้าจนครบ
+  // (เคยดึงครั้งเดียว → ยอดขายเกิน 1000 รายการแล้ว "หาย" จากหน้าจอ ทั้งที่ยังอยู่บนคลาวด์)
+  async selectAll(table, pk) {
+    const PAGE = 1000;
+    const all = [];
+    for (let from = 0; ; from += PAGE) {
+      const r = await this.client.from(table).select('*').order(pk, { ascending: true }).range(from, from + PAGE - 1);
+      if (r.error) return { data: null, error: r.error };
+      const rows = r.data || [];
+      all.push(...rows);
+      if (rows.length < PAGE) break;
+    }
+    return { data: all, error: null };
+  },
+
   async loadAll() {
     if (!this.enabled) return null;
     try {
       const tableEntries = Object.entries(TABLE_SPEC);
       const tablePromises = tableEntries.map(([name, spec]) =>
-        this.client.from(spec.table).select('*').then(r => ({ name, ...r }))
+        this.selectAll(spec.table, spec.pk).then(r => ({ name, ...r }))
       );
       const settingsPromise = this.client.from('app_settings').select('*').not('key', 'like', 'backup_%');
       const logPromise = this.client.from('app_login_log').select('*').order('id', { ascending: false }).limit(200);
