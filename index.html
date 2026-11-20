@@ -802,6 +802,7 @@
 
 const LS_KEY = 'fitstation24_data_v1';
 const SESSION_KEY = 'fitstation24_session';
+const UNSYNCED_KEY = 'fitstation24_unsynced';
 
 // ============================================================
 // SUPABASE ADAPTER (cross-device sync)
@@ -828,7 +829,46 @@ const db = {
   client: null,
   enabled: false,
   saveTimer: null,
-  status: 'offline',  // 'offline' | 'online' | 'error' | 'syncing'
+  status: 'offline',
+  // สำเนาแถวที่ตรงกับบนคลาวด์แล้ว (name → Map(pk → JSON)) — ใช้ส่งขึ้นเฉพาะแถวที่เปลี่ยนจริง
+  // (เดิม pushAll upsert ทุกแถวทุกตารางทุกครั้งที่กดบันทึก → realtime กระจายหลายพันข้อความไปทุกเครื่อง
+  //  แล้วทุกเครื่องโหลดข้อมูลทั้งหมดใหม่ → โควตา Supabase (egress / realtime) เต็ม ระบบถูกระงับ)
+  synced: {},
+  syncedSettings: { global: null, lastDailyRun: null },
+  rowKey(name, row) { return String(row[TABLE_SPEC[name].pk]); },
+  // รายการที่บันทึกในเครื่องแต่ยังส่งขึ้นคลาวด์ไม่สำเร็จ { name: [ids] } — เก็บใน localStorage ให้รอดการปิด/เปิดแอป
+  getUnsynced() { try { return JSON.parse(localStorage.getItem(UNSYNCED_KEY) || '{}') || {}; } catch { return {}; } },
+  markUnsynced(name, ids, add) {
+    const u = this.getUnsynced();
+    const set = new Set(u[name] || []);
+    for (const id of ids) add ? set.add(id) : set.delete(id);
+    if (set.size) u[name] = [...set]; else delete u[name];
+    try { localStorage.setItem(UNSYNCED_KEY, JSON.stringify(u)); } catch {}
+  },
+  // หลังโหลดจากคลาวด์: เอารายการที่ยังไม่ขึ้นคลาวด์จากเครื่องนี้กลับมาใส่ แล้วคืนจำนวนที่ต้องส่งซ้ำ
+  restoreUnsynced(data, localData) {
+    if (!localData) return 0;
+    const u = this.getUnsynced();
+    let n = 0;
+    for (const [name, ids] of Object.entries(u)) {
+      if (!TABLE_SPEC[name] || !Array.isArray(localData[name])) continue;
+      const pk = TABLE_SPEC[name].pk;
+      const want = new Set(ids);
+      const list = Array.isArray(data[name]) ? data[name] : (data[name] = []);
+      for (const li of localData[name]) {
+        if (!li || !want.has(String(li[pk]))) continue;
+        const idx = list.findIndex(x => String(x[pk]) === String(li[pk]));
+        if (idx >= 0) list[idx] = { ...list[idx], ...li }; else list.push(li);
+        n++;
+      }
+    }
+    if (n) console.warn('[db] พบข้อมูลที่ยังไม่ขึ้นคลาวด์ ' + n + ' รายการ — จะซิงค์ใหม่');
+    return n;
+  },
+  markSynced(name, item) {
+    const row = this.toRow(name, item);
+    (this.synced[name] = this.synced[name] || new Map()).set(this.rowKey(name, row), JSON.stringify(row));
+  },  // 'offline' | 'online' | 'error' | 'syncing'
 
   init() {
     if (!window.supabase || !SUPABASE_URL || !SUPABASE_KEY) {
@@ -914,12 +954,15 @@ const db = {
           throw r.error;
         }
         out[r.name] = (r.data || []).map(row => this.toItem(r.name, row));
+        this.synced[r.name] = new Map();
+        for (const item of out[r.name]) this.markSynced(r.name, item);
       }
       if (settingsResult.error) throw settingsResult.error;
       const sm = {};
       for (const r of (settingsResult.data || [])) sm[r.key] = r.value;
       out.settings = sm.global || null;
       out.lastDailyRun = sm.lastDailyRun || '';
+      this.syncedSettings = { global: JSON.stringify(out.settings || {}), lastDailyRun: JSON.stringify(out.lastDailyRun) };
       if (logResult.error) throw logResult.error;
       out.loginLog = (logResult.data || []).map(r => ({ ts: r.ts, email: r.email, role: r.role, branch: r.branch, action: r.action }));
       this.setStatus('online');
@@ -935,22 +978,43 @@ const db = {
     if (!this.enabled) return;
     const tableNames = [];
     const ops = [];
+    const onOk = [];   // สิ่งที่ต้องจดว่า "ซิงค์แล้ว" เมื่อ upsert สำเร็จ
+    const pendingIds = [];   // [name, ids] — ถ้าส่งไม่สำเร็จ จดไว้ว่ายังไม่ขึ้นคลาวด์ (กันโดนข้อมูลคลาวด์ทับหายตอนเปิดใหม่)
     for (const [name, spec] of Object.entries(TABLE_SPEC)) {
       const items = data[name] || [];
       if (items.length === 0) continue;
-      const rows = items.map(i => this.toRow(name, i));
+      const known = this.synced[name] || new Map();
+      const changed = [];
+      for (const i of items) {
+        const row = this.toRow(name, i);
+        const json = JSON.stringify(row);
+        if (known.get(this.rowKey(name, row)) !== json) changed.push([row, json]);
+      }
+      if (changed.length === 0) continue;
       tableNames.push(name);
-      ops.push(this.client.from(spec.table).upsert(rows, { onConflict: spec.pk }));
+      pendingIds.push([name, changed.map(c => this.rowKey(name, c[0]))]);
+      ops.push(this.client.from(spec.table).upsert(changed.map(c => c[0]), { onConflict: spec.pk }));
+      onOk.push(() => { const m = (this.synced[name] = this.synced[name] || new Map()); for (const [row, json] of changed) m.set(this.rowKey(name, row), json); });
     }
-    tableNames.push('settings:global');
-    ops.push(this.client.from('app_settings').upsert({ key: 'global', value: data.settings || {} }, { onConflict: 'key' }));
-    tableNames.push('settings:lastDailyRun');
-    ops.push(this.client.from('app_settings').upsert({ key: 'lastDailyRun', value: data.lastDailyRun || '' }, { onConflict: 'key' }));
+    const gJson = JSON.stringify(data.settings || {});
+    if (gJson !== this.syncedSettings.global) {
+      tableNames.push('settings:global');
+      ops.push(this.client.from('app_settings').upsert({ key: 'global', value: data.settings || {} }, { onConflict: 'key' }));
+      onOk.push(() => { this.syncedSettings.global = gJson; });
+    }
+    const dJson = JSON.stringify(data.lastDailyRun || '');
+    if (dJson !== this.syncedSettings.lastDailyRun) {
+      tableNames.push('settings:lastDailyRun');
+      ops.push(this.client.from('app_settings').upsert({ key: 'lastDailyRun', value: data.lastDailyRun || '' }, { onConflict: 'key' }));
+      onOk.push(() => { this.syncedSettings.lastDailyRun = dJson; });
+    }
+    if (ops.length === 0) { this.setStatus('online'); return; }
     let results;
     try {
       results = await Promise.all(ops);
     } catch (e) {
       console.error('[db] pushAll network/runtime error', e);
+      for (const [name, ids] of pendingIds) this.markUnsynced(name, ids, true);
       this.setStatus('error');
       if (typeof toast === 'function') toast('ซิงค์ฐานข้อมูลไม่สำเร็จ: ' + (e.message || 'unknown'), 'bad');
       return;
@@ -960,7 +1024,12 @@ const db = {
       return (err && (err.code === 'PGRST205' || err.code === '42P01')) || /Could not find the table|does not exist/i.test(m);
     };
     const allFailures = [];
-    results.forEach((r, i) => { if (r && r.error) allFailures.push({ name: tableNames[i], error: r.error }); });
+    results.forEach((r, i) => {
+      const failed = !!(r && r.error);
+      if (failed) allFailures.push({ name: tableNames[i], error: r.error }); else onOk[i]();
+      const pi = pendingIds.find(x => x[0] === tableNames[i]);
+      if (pi) this.markUnsynced(pi[0], pi[1], failed);
+    });
     // ข้าม error ประเภท "ยังไม่มีตารางใน Supabase" (เช่น app_classes ก่อนรัน migration) — ไม่ถือว่าซิงค์ล้ม
     allFailures.filter(f => isMissingTable(f.error)).forEach(f => console.warn('[db] ตาราง ' + f.name + ' ยังไม่มีใน Supabase — ข้ามการซิงค์ชั่วคราว'));
     const failures = allFailures.filter(f => !isMissingTable(f.error));
@@ -993,6 +1062,7 @@ const db = {
     try {
       const { error } = await this.client.from(spec.table).delete().eq(spec.pk, id);
       if (error) throw error;
+      if (this.synced[name]) this.synced[name].delete(String(id));
     } catch (e) { console.error('[db] delete failed', name, id, e); }
   },
 
@@ -1014,13 +1084,18 @@ const db = {
     if (!this.enabled) return;
     const tables = Object.values(TABLE_SPEC).map(s => s.table).concat(['app_settings', 'app_login_log']);
     let pendingTimer = null;
-    const trigger = (t) => {
+    let queue = [];
+    const trigger = (t, payload) => {
+      queue.push([t, payload]);
       clearTimeout(pendingTimer);
-      pendingTimer = setTimeout(() => onChange(t), 300);
+      pendingTimer = setTimeout(() => { const q = queue; queue = []; onChange(q); }, 300);
     };
     for (const t of tables) {
+      const opts = { event: '*', schema: 'public', table: t };
+      // backup_YYYY-MM-DD เป็นข้อมูลทั้งก้อน — ไม่ต้องกระจายไปทุกเครื่อง
+      if (t === 'app_settings') opts.filter = 'key=in.(global,lastDailyRun)';
       this.client.channel('rt:' + t)
-        .on('postgres_changes', { event: '*', schema: 'public', table: t }, () => trigger(t))
+        .on('postgres_changes', opts, (payload) => trigger(t, payload))
         .subscribe();
     }
   },
@@ -1256,8 +1331,9 @@ async function loadData() {
           // invoices: ฟิลด์เฉพาะเครื่อง (ยังไม่ได้ sync ผ่าน Supabase) — preserve จาก localStorage
           invoices:      (localData && Array.isArray(localData.invoices)) ? localData.invoices : [],
         };
+        const unsynced = db.restoreUnsynced(DATA, localData);
         // ถ้า Supabase ยังว่างเรื่อง packages หรือ classes — push ข้อมูลปัจจุบันขึ้นไปครั้งแรก
-        if ((!remote.packages || remote.packages.length === 0) || (!remote.classes || remote.classes.length === 0) || tr.pending) {
+        if ((!remote.packages || remote.packages.length === 0) || (!remote.classes || remote.classes.length === 0) || tr.pending || unsynced) {
           db.pushAllDebounced(DATA);
         }
       }
@@ -6978,13 +7054,19 @@ function closeModal() {
   SESSION = loadSession();
   if (SESSION) bootApp();
 
-  // Real-time sync: when other devices change data, reload + re-render
+  // Real-time sync: นำการเปลี่ยนแปลงที่ได้จาก realtime มาใส่ DATA ตรง ๆ (ไม่โหลดทั้งฐานใหม่ทุกครั้ง)
+  // โหลดทั้งหมดใหม่เฉพาะตอนกลับมาเปิดแอปหลังพักไว้นาน (กันพลาดการเปลี่ยนแปลงตอนเน็ต/realtime หลุด)
   let isReloading = false;
-  db.subscribe(async () => {
+  let lastFullReload = Date.now();
+  const rerender = () => {
+    if (!SESSION || !CURRENT_VIEW) return;
+    if (document.getElementById('modal-host').innerHTML.trim()) return; // ไม่ re-render ทับฟอร์มที่เปิดอยู่
+    navigate(CURRENT_VIEW);
+  };
+  async function fullReload() {
     if (isReloading) return;
-    if (document.getElementById('modal-host').innerHTML.trim()) return; // skip if modal open
-    if (!SESSION) return;
     isReloading = true;
+    lastFullReload = Date.now();
     try {
       const remote = await db.loadAll();
       if (remote) {
@@ -6993,6 +7075,7 @@ function closeModal() {
         const preservedPackages = Array.isArray(DATA.packages) && DATA.packages.length ? DATA.packages : seed.packages;
         const preservedClasses = Array.isArray(DATA.classes) ? DATA.classes : [];
         const tr = mergeTrainings(remote.trainings, DATA.trainings, remote.settings);
+        const before = DATA;
         DATA = {
           settings:     remote.settings  || seed.settings,
           branches:     remote.branches.length ? remote.branches : DATA.branches,
@@ -7008,15 +7091,64 @@ function closeModal() {
           packages:     (remote.packages && remote.packages.length) ? remote.packages : preservedPackages,
           classes:      (remote.classes && remote.classes.length) ? remote.classes : preservedClasses,
         };
+        const unsynced = db.restoreUnsynced(DATA, before);
         localStorage.setItem(LS_KEY, JSON.stringify(DATA));
         // มีการเทรนค้างในเครื่อง → ซิงค์ซ้ำ (เว้นอย่างน้อย 1 นาที กันวนถ้าตารางบนคลาวด์ยังเขียนไม่ได้)
-        if (tr.pending && Date.now() - LAST_PENDING_TRAIN_PUSH > 60000) {
+        if ((tr.pending || unsynced) && Date.now() - LAST_PENDING_TRAIN_PUSH > 60000) {
           LAST_PENDING_TRAIN_PUSH = Date.now();
           db.pushAllDebounced(DATA);
         }
-        if (CURRENT_VIEW) navigate(CURRENT_VIEW);
+        rerender();
       }
     } finally { isReloading = false; }
+  }
+  const specByTable = {};
+  for (const [name, spec] of Object.entries(TABLE_SPEC)) specByTable[spec.table] = name;
+  function applyRemote(table, p) {
+    if (!DATA || !p) return;
+    const name = specByTable[table];
+    if (name) {
+      const pk = TABLE_SPEC[name].pk;
+      const list = Array.isArray(DATA[name]) ? DATA[name] : (DATA[name] = []);
+      if (p.eventType === 'DELETE') {
+        const id = p.old && p.old[pk];
+        if (id === undefined || id === null) return;
+        DATA[name] = list.filter(x => String(x[pk]) !== String(id));
+        if (db.synced[name]) db.synced[name].delete(String(id));
+        return;
+      }
+      if (!p.new) return;
+      const item = db.toItem(name, p.new);
+      const idx = list.findIndex(x => String(x[pk]) === String(item[pk]));
+      const merged = idx >= 0 ? { ...list[idx], ...item } : item;   // คงฟิลด์เฉพาะเครื่อง (เช่นข้อมูลเสริมสมาชิก)
+      if (idx >= 0) list[idx] = merged; else list.push(merged);
+      if (name === 'trainings') list.sort((a, b) => new Date(b.ts) - new Date(a.ts));
+      db.markSynced(name, merged);
+      return;
+    }
+    if (table === 'app_settings' && p.new) {
+      if (p.new.key === 'global' && p.new.value) { DATA.settings = p.new.value; db.syncedSettings.global = JSON.stringify(p.new.value); }
+      else if (p.new.key === 'lastDailyRun') { DATA.lastDailyRun = p.new.value || ''; db.syncedSettings.lastDailyRun = JSON.stringify(p.new.value || ''); }
+      return;
+    }
+    if (table === 'app_login_log' && p.eventType === 'INSERT' && p.new) {
+      const r = p.new;
+      DATA.loginLog = [{ ts: r.ts, email: r.email, role: r.role, branch: r.branch, action: r.action }].concat(DATA.loginLog || []).slice(0, 200);
+    }
+  }
+  db.subscribe((changes) => {
+    if (isReloading) return;   // โหลดเต็มอยู่แล้ว ได้ข้อมูลล่าสุดอยู่ดี
+    try {
+      for (const [t, p] of changes) applyRemote(t, p);
+      localStorage.setItem(LS_KEY, JSON.stringify(DATA));
+      rerender();
+    } catch (e) {
+      console.error('[db] apply realtime change failed — โหลดทั้งหมดใหม่', e);
+      fullReload();
+    }
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && SESSION && Date.now() - lastFullReload > 5 * 60 * 1000) fullReload();
   });
 })();
 
