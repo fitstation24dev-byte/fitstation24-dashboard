@@ -976,12 +976,33 @@ const db = {
 
   // โหลดตารางแบบประหยัด: มีแคชในเครื่อง → ดึงเฉพาะแถวที่ updated_at ใหม่กว่ารอบก่อน + รายการ id (ไว้รู้ว่าแถวไหนถูกลบ)
   // ไม่มีแคช / ตารางยังไม่มีคอลัมน์ updated_at → โหลดเต็มเหมือนเดิม
+  // ดึงแถวที่เปลี่ยน 2 ขั้น: (1) ดึงแค่ id + updated_at ในช่วงเวลา (เล็กมาก) (2) ดึงเต็มเฉพาะแถวที่ในเครื่องยังไม่มีเวอร์ชันนี้
+  // กันกรณีหลายแถวมีเวลาเดียวกัน (เช่นมีเครื่องส่งข้อมูลทั้งฐานทีเดียว) แล้วต้องโหลดทั้งตารางซ้ำทุกครั้ง
+  async fetchChanged(spec, cache) {
+    // แถวล่าสุดเก่ากว่า 10 นาที → ไม่ต้องเผื่อเวลา (ไม่มีรายการที่ commit ค้างนานขนาดนั้น) ดึงเฉพาะที่ใหม่กว่าจริง
+    const settled = cache.max && Date.now() - new Date(cache.max).getTime() > 10 * 60 * 1000;
+    const heads = await this.pages((a, b) => {
+      const q = this.client.from(spec.table).select(spec.pk + ',updated_at');
+      return (settled ? q.gt('updated_at', cache.max) : q.gte('updated_at', cache.since)).order('updated_at', { ascending: true }).order(spec.pk, { ascending: true }).range(a, b);
+    });
+    if (heads.error) return heads;
+    const known = new Map(cache.rows.map(r => [String(r[spec.pk]), r.updated_at]));
+    const need = [...new Set(heads.data.filter(h => known.get(String(h[spec.pk])) !== h.updated_at).map(h => h[spec.pk]))];
+    const rows = [];
+    for (let i = 0; i < need.length; i += 100) {
+      const r = await this.client.from(spec.table).select('*').in(spec.pk, need.slice(i, i + 100));
+      if (r.error) return { data: null, error: r.error };
+      rows.push(...(r.data || []));
+    }
+    return { data: rows, error: null };
+  },
+
   // light = โหลดเบา (ตอนกลับมาเปิดแอป): ดึงแค่แถวที่เปลี่ยน ไม่ดึงรายการ id ทั้งตาราง
   //   (แถวที่ถูกลบ realtime แจ้งอยู่แล้ว — ที่พลาดไปจะถูกเก็บตอนโหลดเต็ม ซึ่งทำอย่างมากชั่วโมงละครั้ง)
   async loadTable(spec, light) {
     const cache = await cloudCache.get(spec.table);
     if (light && cache && cache.since && Array.isArray(cache.rows)) {
-      const chg = await this.pages((a, b) => this.client.from(spec.table).select('*').gte('updated_at', cache.since).order('updated_at', { ascending: true }).order(spec.pk, { ascending: true }).range(a, b));
+      const chg = await this.fetchChanged(spec, cache);
       if (chg.error) return { data: null, error: chg.error };
       const byId = new Map(cache.rows.map(r => [String(r[spec.pk]), r]));
       for (const r of chg.data) byId.set(String(r[spec.pk]), r);
@@ -991,7 +1012,7 @@ const db = {
     }
     if (cache && cache.since && Array.isArray(cache.rows)) {
       const [chg, ids] = await Promise.all([
-        this.pages((a, b) => this.client.from(spec.table).select('*').gte('updated_at', cache.since).order('updated_at', { ascending: true }).order(spec.pk, { ascending: true }).range(a, b)),
+        this.fetchChanged(spec, cache),
         this.pages((a, b) => this.client.from(spec.table).select(spec.pk).order(spec.pk, { ascending: true }).range(a, b)),
       ]);
       if (!chg.error && !ids.error) {
@@ -1031,7 +1052,7 @@ const db = {
     if (!max) { await cloudCache.set(table, { since: null, rows }); return; }
     // ถอยเวลาเผื่อ 60 วินาที (กันแถวที่ commit ช้ากว่าเวลาที่ประทับ) — ดึงซ้ำนิดหน่อยไม่เป็นไร
     const since = new Date(new Date(max).getTime() - 60 * 1000).toISOString();
-    await cloudCache.set(table, { since, rows });
+    await cloudCache.set(table, { since, max, rows });
   },
 
   lastHeavyLoad: 0,
