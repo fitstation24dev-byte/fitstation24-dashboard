@@ -976,8 +976,19 @@ const db = {
 
   // โหลดตารางแบบประหยัด: มีแคชในเครื่อง → ดึงเฉพาะแถวที่ updated_at ใหม่กว่ารอบก่อน + รายการ id (ไว้รู้ว่าแถวไหนถูกลบ)
   // ไม่มีแคช / ตารางยังไม่มีคอลัมน์ updated_at → โหลดเต็มเหมือนเดิม
-  async loadTable(spec) {
+  // light = โหลดเบา (ตอนกลับมาเปิดแอป): ดึงแค่แถวที่เปลี่ยน ไม่ดึงรายการ id ทั้งตาราง
+  //   (แถวที่ถูกลบ realtime แจ้งอยู่แล้ว — ที่พลาดไปจะถูกเก็บตอนโหลดเต็ม ซึ่งทำอย่างมากชั่วโมงละครั้ง)
+  async loadTable(spec, light) {
     const cache = await cloudCache.get(spec.table);
+    if (light && cache && cache.since && Array.isArray(cache.rows)) {
+      const chg = await this.pages((a, b) => this.client.from(spec.table).select('*').gte('updated_at', cache.since).order('updated_at', { ascending: true }).order(spec.pk, { ascending: true }).range(a, b));
+      if (chg.error) return { data: null, error: chg.error };
+      const byId = new Map(cache.rows.map(r => [String(r[spec.pk]), r]));
+      for (const r of chg.data) byId.set(String(r[spec.pk]), r);
+      const rows = [...byId.values()];
+      await this.saveCache(spec.table, rows);
+      return { data: rows, error: null };
+    }
     if (cache && cache.since && Array.isArray(cache.rows)) {
       const [chg, ids] = await Promise.all([
         this.pages((a, b) => this.client.from(spec.table).select('*').gte('updated_at', cache.since).order('updated_at', { ascending: true }).order(spec.pk, { ascending: true }).range(a, b)),
@@ -1023,15 +1034,20 @@ const db = {
     await cloudCache.set(table, { since, rows });
   },
 
-  async loadAll() {
+  lastHeavyLoad: 0,
+  async loadAll(opts) {
     if (!this.enabled) return null;
+    // โหลดเบาได้เฉพาะเมื่อเคยโหลดเต็มสำเร็จไม่เกิน 1 ชั่วโมงก่อน
+    const light = !!(opts && opts.light) && this.loadedOk && Date.now() - this.lastHeavyLoad < 60 * 60 * 1000;
     try {
       const tableEntries = Object.entries(TABLE_SPEC);
       const tablePromises = tableEntries.map(([name, spec]) =>
-        this.loadTable(spec).then(r => ({ name, ...r }))
+        this.loadTable(spec, light).then(r => ({ name, ...r }))
       );
-      const settingsPromise = this.client.from('app_settings').select('*').not('key', 'like', 'backup_%');
-      const logPromise = this.client.from('app_login_log').select('*').order('id', { ascending: false }).limit(200);
+      const settingsPromise = this.client.from('app_settings').select('*').in('key', ['global', 'lastDailyRun']);
+      // ประวัติล็อกอิน 200 รายการ: โหลดเฉพาะรอบเต็ม (รอบเบาใช้ของเดิม + realtime)
+      const logPromise = light ? Promise.resolve({ data: null, error: null })
+        : this.client.from('app_login_log').select('*').order('id', { ascending: false }).limit(200);
 
       const [tableResults, settingsResult, logResult] = await Promise.all([
         Promise.all(tablePromises),
@@ -1062,7 +1078,8 @@ const db = {
       this.blockPush = false;
       try { localStorage.removeItem(DEMO_FLAG_KEY); } catch {}
       if (logResult.error) throw logResult.error;
-      out.loginLog = (logResult.data || []).map(r => ({ ts: r.ts, email: r.email, role: r.role, branch: r.branch, action: r.action }));
+      if (!light) this.lastHeavyLoad = Date.now();
+      out.loginLog = light ? null : (logResult.data || []).map(r => ({ ts: r.ts, email: r.email, role: r.role, branch: r.branch, action: r.action }));
       this.setStatus('online');
       return out;
     } catch (e) {
@@ -7250,13 +7267,13 @@ function closeModal() {
     if (document.getElementById('modal-host').innerHTML.trim()) return; // ไม่ re-render ทับฟอร์มที่เปิดอยู่
     navigate(CURRENT_VIEW);
   };
-  async function fullReload() {
+  async function fullReload(light) {
     if (isReloading) return;
     isReloading = true;
     lastFullReload = Date.now();
     try {
       const wasDemo = db.blockPush;   // ข้อมูลในเครื่องเป็นข้อมูลตัวอย่าง → ห้ามเอามาปนกับข้อมูลจริง
-      const remote = await db.loadAll();
+      const remote = await db.loadAll({ light: !!light && !wasDemo });
       if (remote) {
         const seed = defaultData();
         const base = wasDemo ? { settings: {} } : DATA;
@@ -7274,7 +7291,7 @@ function closeModal() {
           sales:        keepLocalImages('sales', remote.sales, base.sales),
           trainings:    tr.list,
           alerts:       remote.alerts,
-          loginLog:     remote.loginLog,
+          loginLog:     remote.loginLog || base.loginLog || [],
           lastDailyRun: remote.lastDailyRun,
           invoices:     preservedInvoices,
           packages:     (remote.packages && remote.packages.length) ? remote.packages : preservedPackages,
@@ -7347,7 +7364,7 @@ function closeModal() {
     }
   }, () => {
     // realtime ต่อใหม่หลังหลุด → โหลดตามทัน (เว้นอย่างน้อย 30 วิ)
-    if (Date.now() - lastFullReload > 30000) fullReload();
+    if (Date.now() - lastFullReload > 30000) fullReload(true);
   });
   // ลองใหม่อัตโนมัติ: โหลดคลาวด์ไม่สำเร็จตอนเปิดแอป / มีรายการค้างส่ง / ค้างลบ
   const retrySync = async () => {
@@ -7361,7 +7378,7 @@ function closeModal() {
   setInterval(retrySync, 60000);
   window.addEventListener('online', () => setTimeout(retrySync, 2000));
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && SESSION && Date.now() - lastFullReload > 5 * 60 * 1000) fullReload();
+    if (document.visibilityState === 'visible' && SESSION && Date.now() - lastFullReload > 5 * 60 * 1000) fullReload(true);
   });
 })();
 
