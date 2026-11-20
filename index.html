@@ -803,6 +803,8 @@
 const LS_KEY = 'fitstation24_data_v1';
 const SESSION_KEY = 'fitstation24_session';
 const UNSYNCED_KEY = 'fitstation24_unsynced';
+const PENDING_DEL_KEY = 'fitstation24_pending_del';
+const DEMO_FLAG_KEY = 'fitstation24_demo_data';   // ข้อมูลใน localStorage เป็นข้อมูลตัวอย่าง (ไม่ใช่ของจริง)
 
 // ============================================================
 // SUPABASE ADAPTER (cross-device sync)
@@ -869,6 +871,9 @@ const db = {
   //  แล้วทุกเครื่องโหลดข้อมูลทั้งหมดใหม่ → โควตา Supabase (egress / realtime) เต็ม ระบบถูกระงับ)
   synced: {},
   syncedSettings: { global: null, lastDailyRun: null },
+  loadedOk: false,     // เคยโหลดจากคลาวด์สำเร็จในรอบนี้หรือยัง
+  blockPush: false,    // true = ข้อมูลในเครื่องเป็นข้อมูลตัวอย่าง (โหลดคลาวด์ไม่ได้ + เครื่องว่าง) → ห้ามส่งขึ้นคลาวด์เด็ดขาด
+  _pushing: null, _pushAgain: false,
   rowKey(name, row) { return String(row[TABLE_SPEC[name].pk]); },
   // รายการที่บันทึกในเครื่องแต่ยังส่งขึ้นคลาวด์ไม่สำเร็จ { name: [ids] } — เก็บใน localStorage ให้รอดการปิด/เปิดแอป
   getUnsynced() { try { return JSON.parse(localStorage.getItem(UNSYNCED_KEY) || '{}') || {}; } catch { return {}; } },
@@ -994,12 +999,25 @@ const db = {
     if (!full.error) await this.saveCache(spec.table, full.data);
     return full;
   },
+  // เปิดแอปตอนคลาวด์ล่ม: ตั้ง "ฐานเทียบ" จากแคชคลาวด์ล่าสุด (หรือข้อมูลในเครื่อง) เพื่อให้ส่งขึ้นเฉพาะสิ่งที่แก้จริง
+  // ไม่งั้นทุกแถวจะถูกมองว่า "เปลี่ยน" → ส่งทั้งฐาน + ทุกแถวถูกจดว่ายังไม่ซิงค์ → พอคลาวด์กลับมา ของที่ถูกลบไปแล้วฟื้นคืน
+  async primeBaseline(localData) {
+    for (const [name, spec] of Object.entries(TABLE_SPEC)) {
+      const c = await cloudCache.get(spec.table);
+      this.synced[name] = new Map();
+      const items = (c && Array.isArray(c.rows)) ? c.rows.map(r => this.toItem(name, r))
+        : ((localData && Array.isArray(localData[name])) ? localData[name] : []);
+      for (const it of items) if (it) this.markSynced(name, it);
+    }
+    if (localData) this.syncedSettings = { global: JSON.stringify(localData.settings || {}), lastDailyRun: JSON.stringify(localData.lastDailyRun || '') };
+  },
+
   isMissingColumn(err) { return !!err && (err.code === '42703' || /updated_at/.test(err.message || '')); },
   async saveCache(table, rows) {
-    if (!rows.length || !('updated_at' in rows[0])) return;   // ยังไม่ได้รัน SQL เพิ่ม updated_at → ไม่แคช
+    // แคชเสมอ (ใช้เป็นฐานเทียบตอนเปิดแอปแล้วคลาวด์ล่ม) — แต่ใส่ since เฉพาะเมื่อมี updated_at (รัน SQL แล้ว)
     let max = '';
     for (const r of rows) if (r.updated_at && r.updated_at > max) max = r.updated_at;
-    if (!max) return;
+    if (!max) { await cloudCache.set(table, { since: null, rows }); return; }
     // ถอยเวลาเผื่อ 60 วินาที (กันแถวที่ commit ช้ากว่าเวลาที่ประทับ) — ดึงซ้ำนิดหน่อยไม่เป็นไร
     const since = new Date(new Date(max).getTime() - 60 * 1000).toISOString();
     await cloudCache.set(table, { since, rows });
@@ -1040,6 +1058,9 @@ const db = {
       out.settings = sm.global || null;
       out.lastDailyRun = sm.lastDailyRun || '';
       this.syncedSettings = { global: JSON.stringify(out.settings || {}), lastDailyRun: JSON.stringify(out.lastDailyRun) };
+      this.loadedOk = true;
+      this.blockPush = false;
+      try { localStorage.removeItem(DEMO_FLAG_KEY); } catch {}
       if (logResult.error) throw logResult.error;
       out.loginLog = (logResult.data || []).map(r => ({ ts: r.ts, email: r.email, role: r.role, branch: r.branch, action: r.action }));
       this.setStatus('online');
@@ -1051,8 +1072,18 @@ const db = {
     }
   },
 
-  async pushAll(data) {
-    if (!this.enabled) return;
+  // ส่งทีละรอบ (กันสองรอบวิ่งพร้อมกันแล้วค่าเก่าไปทับค่าใหม่บนคลาวด์)
+  pushAll(data) {
+    if (!this.enabled || this.blockPush) return Promise.resolve();
+    if (this._pushing) { this._pushAgain = true; return this._pushing; }
+    this._pushing = this._pushAllOnce(data).finally(() => {
+      this._pushing = null;
+      if (this._pushAgain) { this._pushAgain = false; this.pushAll(DATA); }
+    });
+    return this._pushing;
+  },
+
+  async _pushAllOnce(data) {
     const tableNames = [];
     const ops = [];
     const onOk = [];   // สิ่งที่ต้องจดว่า "ซิงค์แล้ว" เมื่อ upsert สำเร็จ
@@ -1126,21 +1157,54 @@ const db = {
   },
 
   pushAllDebounced(data) {
-    if (!this.enabled) return;
+    if (!this.enabled || this.blockPush) return;
     clearTimeout(this.saveTimer);
     this.setStatus('syncing');
     this.saveTimer = setTimeout(() => this.pushAll(data), 700);
   },
 
-  async del(name, id) {
-    if (!this.enabled) return;
+  // ลบบนคลาวด์ — ถ้าไม่สำเร็จ (เน็ตหลุด/คลาวด์ล่ม) จดไว้แล้วลองใหม่ และไม่ให้รายการที่ลบแล้วฟื้นกลับตอนโหลด
+  getPendingDeletes() { try { return JSON.parse(localStorage.getItem(PENDING_DEL_KEY) || '{}') || {}; } catch { return {}; } },
+  setPendingDeletes(name, ids, add) {
+    const u = this.getPendingDeletes();
+    const set = new Set(u[name] || []);
+    for (const id of ids) add ? set.add(String(id)) : set.delete(String(id));
+    if (set.size) u[name] = [...set]; else delete u[name];
+    try { localStorage.setItem(PENDING_DEL_KEY, JSON.stringify(u)); } catch {}
+  },
+  del(name, id) { return this.delMany(name, [id]); },
+  async delMany(name, ids) {
     const spec = TABLE_SPEC[name];
-    if (!spec) return;
-    try {
-      const { error } = await this.client.from(spec.table).delete().eq(spec.pk, id);
-      if (error) throw error;
-      if (this.synced[name]) this.synced[name].delete(String(id));
-    } catch (e) { console.error('[db] delete failed', name, id, e); }
+    if (!this.enabled || this.blockPush || !spec || !ids.length) return;   // ข้อมูลตัวอย่าง → ห้ามลบของจริงบนคลาวด์
+    ids = ids.map(String);
+    this.markUnsynced(name, ids, false);
+    for (let i = 0; i < ids.length; i += 100) {
+      const part = ids.slice(i, i + 100);
+      try {
+        const { error } = await this.client.from(spec.table).delete().in(spec.pk, part);
+        if (error) throw error;
+        if (this.synced[name]) for (const id of part) this.synced[name].delete(id);
+        this.setPendingDeletes(name, part, false);
+      } catch (e) {
+        console.error('[db] delete failed — จะลองใหม่', name, part.length, e);
+        this.setPendingDeletes(name, part, true);
+      }
+    }
+  },
+  async retryDeletes() {
+    for (const [name, ids] of Object.entries(this.getPendingDeletes())) if (TABLE_SPEC[name]) await this.delMany(name, ids);
+  },
+  // ตัดรายการที่ลบในเครื่องแล้ว (แต่ยังลบบนคลาวด์ไม่สำเร็จ) ออกจากข้อมูลที่เพิ่งโหลด
+  dropPendingDeletes(data) {
+    for (const [name, ids] of Object.entries(this.getPendingDeletes())) {
+      const spec = TABLE_SPEC[name];
+      if (!spec || !Array.isArray(data[name])) continue;
+      const dead = new Set(ids);
+      data[name] = data[name].filter(x => !dead.has(String(x[spec.pk])));
+    }
+  },
+  hasPendingWork() {
+    return Object.keys(this.getUnsynced()).length > 0 || Object.keys(this.getPendingDeletes()).length > 0;
   },
 
   async appendLogin(entry) {
@@ -1157,8 +1221,9 @@ const db = {
     } catch (e) { return false; }
   },
 
-  subscribe(onChange) {
+  subscribe(onChange, onReconnect) {
     if (!this.enabled) return;
+    const seen = {};
     const tables = Object.values(TABLE_SPEC).map(s => s.table).concat(['app_settings', 'app_login_log']);
     let pendingTimer = null;
     let queue = [];
@@ -1173,7 +1238,10 @@ const db = {
       if (t === 'app_settings') opts.filter = 'key=in.(global,lastDailyRun)';
       this.client.channel('rt:' + t)
         .on('postgres_changes', opts, (payload) => trigger(t, payload))
-        .subscribe();
+        .subscribe((status) => {
+          // ต่อ realtime ใหม่หลังหลุด → อาจพลาดการเปลี่ยนแปลงช่วงนั้น → ให้โหลดตามทัน
+          if (status === 'SUBSCRIBED') { if (seen[t] && onReconnect) onReconnect(); seen[t] = true; }
+        });
     }
   },
 };
@@ -1375,9 +1443,13 @@ async function loadData() {
     if (raw) localData = JSON.parse(raw);
   } catch {}
 
+  let localIsDemo = false;
+  try { localIsDemo = localStorage.getItem(DEMO_FLAG_KEY) === '1'; } catch {}
+
   // 1. Try Supabase first
   if (db.enabled) {
     const remote = await db.loadAll();
+    if (remote && localIsDemo) localData = null;   // ข้อมูลตัวอย่างค้างในเครื่อง → ไม่เอามาปนของจริง
     if (remote) {
       const empty = (remote.branches || []).length === 0;
       if (empty) {
@@ -1409,6 +1481,7 @@ async function loadData() {
           invoices:      (localData && Array.isArray(localData.invoices)) ? localData.invoices : [],
         };
         const unsynced = db.restoreUnsynced(DATA, localData);
+        db.dropPendingDeletes(DATA);
         // ถ้า Supabase ยังว่างเรื่อง packages หรือ classes — push ข้อมูลปัจจุบันขึ้นไปครั้งแรก
         if ((!remote.packages || remote.packages.length === 0) || (!remote.classes || remote.classes.length === 0) || tr.pending || unsynced) {
           db.pushAllDebounced(DATA);
@@ -1418,18 +1491,24 @@ async function loadData() {
       return;
     }
   }
-  // 2. Fallback to localStorage
+  // 2. Fallback to localStorage (โหลดคลาวด์ไม่ได้ — จะลองโหลดใหม่เป็นระยะ ดู INIT)
+  // เครื่องว่างเปล่า → ใช้ข้อมูลตัวอย่างชั่วคราว แต่ห้ามส่งขึ้นคลาวด์ (กันข้อมูลตัวอย่างไปปนข้อมูลจริง)
+  const markDemo = () => { if (db.enabled) { db.blockPush = true; try { localStorage.setItem(DEMO_FLAG_KEY, '1'); } catch {} } };
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) {
       DATA = defaultData();
+      markDemo();
       saveData();
     } else {
       DATA = JSON.parse(raw);
+      if (localIsDemo) markDemo();
+      else if (db.enabled) await db.primeBaseline(DATA);
     }
   } catch (e) {
     console.error('loadData error', e);
     DATA = defaultData();
+    markDemo();
     saveData();
   }
 }
@@ -1753,7 +1832,12 @@ function runDailyMaintenance() {
     }
   });
   // Replace today's alerts with new ones (avoid daily duplicates)
-  DATA.alerts = newAlerts.concat(DATA.alerts.filter(a => !isSameDay(a.ts, ref))).slice(0, 200);
+  const oldAlerts = DATA.alerts || [];
+  DATA.alerts = newAlerts.concat(oldAlerts.filter(a => !isSameDay(a.ts, ref))).slice(0, 200);
+  // ลบแจ้งเตือนที่ถูกแทน/เกิน 200 รายการบนคลาวด์ด้วย (เดิมลบแค่ในเครื่อง → ตาราง app_alerts โตไม่หยุด ทุกเครื่องต้องโหลดทั้งหมด)
+  const keep = new Set(DATA.alerts.map(a => a.id));
+  const gone = oldAlerts.filter(a => a && !keep.has(a.id)).map(a => a.id);
+  if (gone.length) db.delMany('alerts', gone);
   saveData();
 
   // Fire-and-forget: notify branch LINE group about expiring members
@@ -7159,6 +7243,7 @@ function closeModal() {
   // Real-time sync: นำการเปลี่ยนแปลงที่ได้จาก realtime มาใส่ DATA ตรง ๆ (ไม่โหลดทั้งฐานใหม่ทุกครั้ง)
   // โหลดทั้งหมดใหม่เฉพาะตอนกลับมาเปิดแอปหลังพักไว้นาน (กันพลาดการเปลี่ยนแปลงตอนเน็ต/realtime หลุด)
   let isReloading = false;
+  let deferred = [];
   let lastFullReload = Date.now();
   const rerender = () => {
     if (!SESSION || !CURRENT_VIEW) return;
@@ -7170,21 +7255,23 @@ function closeModal() {
     isReloading = true;
     lastFullReload = Date.now();
     try {
+      const wasDemo = db.blockPush;   // ข้อมูลในเครื่องเป็นข้อมูลตัวอย่าง → ห้ามเอามาปนกับข้อมูลจริง
       const remote = await db.loadAll();
       if (remote) {
         const seed = defaultData();
-        const preservedInvoices = Array.isArray(DATA.invoices) ? DATA.invoices : [];
-        const preservedPackages = Array.isArray(DATA.packages) && DATA.packages.length ? DATA.packages : seed.packages;
-        const preservedClasses = Array.isArray(DATA.classes) ? DATA.classes : [];
-        const tr = mergeTrainings(remote.trainings, DATA.trainings, remote.settings);
-        const before = DATA;
+        const base = wasDemo ? { settings: {} } : DATA;
+        const preservedInvoices = Array.isArray(base.invoices) ? base.invoices : [];
+        const preservedPackages = Array.isArray(base.packages) && base.packages.length ? base.packages : seed.packages;
+        const preservedClasses = Array.isArray(base.classes) ? base.classes : [];
+        const tr = mergeTrainings(remote.trainings, base.trainings, remote.settings);
+        const before = base;
         DATA = {
           settings:     remote.settings  || seed.settings,
-          branches:     remote.branches.length ? remote.branches : DATA.branches,
-          users:        remote.users.length    ? remote.users    : DATA.users,
-          employees:    keepLocalImages('employees', remote.employees, DATA.employees),
-          members:      mergeMemberExtras(remote.members, DATA.members),
-          sales:        keepLocalImages('sales', remote.sales, DATA.sales),
+          branches:     remote.branches.length ? remote.branches : (base.branches || []),
+          users:        remote.users.length    ? remote.users    : (base.users || []),
+          employees:    keepLocalImages('employees', remote.employees, base.employees),
+          members:      mergeMemberExtras(remote.members, base.members),
+          sales:        keepLocalImages('sales', remote.sales, base.sales),
           trainings:    tr.list,
           alerts:       remote.alerts,
           loginLog:     remote.loginLog,
@@ -7194,6 +7281,7 @@ function closeModal() {
           classes:      (remote.classes && remote.classes.length) ? remote.classes : preservedClasses,
         };
         const unsynced = db.restoreUnsynced(DATA, before);
+        db.dropPendingDeletes(DATA);
         localStorage.setItem(LS_KEY, JSON.stringify(DATA));
         // มีการเทรนค้างในเครื่อง → ซิงค์ซ้ำ (เว้นอย่างน้อย 1 นาที กันวนถ้าตารางบนคลาวด์ยังเขียนไม่ได้)
         if ((tr.pending || unsynced) && Date.now() - LAST_PENDING_TRAIN_PUSH > 60000) {
@@ -7202,7 +7290,14 @@ function closeModal() {
         }
         rerender();
       }
-    } finally { isReloading = false; }
+    } finally {
+      isReloading = false;
+      if (deferred.length) {
+        const q = deferred; deferred = [];
+        try { for (const [t, p] of q) applyRemote(t, p); localStorage.setItem(LS_KEY, JSON.stringify(DATA)); rerender(); }
+        catch (e) { console.error('[db] apply deferred realtime failed', e); }
+      }
+    }
   }
   const specByTable = {};
   for (const [name, spec] of Object.entries(TABLE_SPEC)) specByTable[spec.table] = name;
@@ -7241,7 +7336,7 @@ function closeModal() {
     }
   }
   db.subscribe((changes) => {
-    if (isReloading) return;   // โหลดเต็มอยู่แล้ว ได้ข้อมูลล่าสุดอยู่ดี
+    if (isReloading) { deferred.push(...changes); return; }   // กำลังโหลดเต็ม → เก็บไว้ใส่ทีหลัง (ไม่ทิ้ง)
     try {
       for (const [t, p] of changes) applyRemote(t, p);
       localStorage.setItem(LS_KEY, JSON.stringify(DATA));
@@ -7250,7 +7345,21 @@ function closeModal() {
       console.error('[db] apply realtime change failed — โหลดทั้งหมดใหม่', e);
       fullReload();
     }
+  }, () => {
+    // realtime ต่อใหม่หลังหลุด → โหลดตามทัน (เว้นอย่างน้อย 30 วิ)
+    if (Date.now() - lastFullReload > 30000) fullReload();
   });
+  // ลองใหม่อัตโนมัติ: โหลดคลาวด์ไม่สำเร็จตอนเปิดแอป / มีรายการค้างส่ง / ค้างลบ
+  const retrySync = async () => {
+    if (!db.enabled || isReloading) return;
+    if (!db.loadedOk) { await fullReload(); return; }
+    if (db.hasPendingWork() || db.status === 'error') {
+      await db.retryDeletes();
+      await db.pushAll(DATA);
+    }
+  };
+  setInterval(retrySync, 60000);
+  window.addEventListener('online', () => setTimeout(retrySync, 2000));
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && SESSION && Date.now() - lastFullReload > 5 * 60 * 1000) fullReload();
   });
