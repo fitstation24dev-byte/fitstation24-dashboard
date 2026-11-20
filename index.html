@@ -825,6 +825,40 @@ const TABLE_SPEC = {
   classes:   { table: 'app_classes',   pk: 'id',    fields: [['id','id'],['name','name'],['day','day'],['start','start_time'],['end','end_time'],['trainer','trainer'],['room','room'],['capacity','capacity'],['level','level'],['color','color'],['icon','icon'],['note','note'],['branch','branch']] },
 };
 
+// รูปที่ห้ามเก็บเป็น base64 ในตาราง (ทุกเครื่องต้องโหลดทุกครั้ง → เปลืองโควตา) — ย้ายไป Storage แล้วเก็บแค่ URL
+const INLINE_IMG_FIELDS = { sales: 'slip', employees: 'photo' };
+const isInlineImg = v => typeof v === 'string' && v.startsWith('data:');
+
+// แคชแถวจากคลาวด์ไว้ในเครื่อง (IndexedDB) — เปิดแอปครั้งต่อไปโหลดเฉพาะแถวที่เปลี่ยน (ต้องมีคอลัมน์ updated_at)
+const cloudCache = {
+  _db: null,
+  open() {
+    if (this._db) return this._db;
+    this._db = new Promise((res, rej) => {
+      if (!window.indexedDB) return rej(new Error('no indexedDB'));
+      const req = indexedDB.open('fitstation24_cloud', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('tables');
+      req.onsuccess = () => res(req.result);
+      req.onerror = () => rej(req.error);
+    }).catch(e => { console.warn('[cache] ใช้ IndexedDB ไม่ได้ — โหลดเต็มทุกครั้ง', e); return null; });
+    return this._db;
+  },
+  async get(key) {
+    const d = await this.open(); if (!d) return null;
+    return new Promise(res => {
+      try { const r = d.transaction('tables').objectStore('tables').get(key); r.onsuccess = () => res(r.result || null); r.onerror = () => res(null); }
+      catch { res(null); }
+    });
+  },
+  async set(key, val) {
+    const d = await this.open(); if (!d) return;
+    return new Promise(res => {
+      try { const t = d.transaction('tables', 'readwrite'); t.objectStore('tables').put(val, key); t.oncomplete = () => res(); t.onerror = () => res(); }
+      catch { res(); }
+    });
+  },
+};
+
 const db = {
   client: null,
   enabled: false,
@@ -905,6 +939,9 @@ const db = {
   toRow(name, item) {
     const row = {};
     for (const [js, sql] of TABLE_SPEC[name].fields) row[sql] = item[js] !== undefined ? item[js] : null;
+    // รูป base64 ไม่ส่งขึ้นตาราง — รออัปโหลดขึ้น Storage แล้วค่อยส่ง URL (ดู moveInlineImagesToStorage)
+    const imgCol = INLINE_IMG_FIELDS[name];
+    if (imgCol && isInlineImg(row[imgCol])) row[imgCol] = '';
     return row;
   },
   toItem(name, row) {
@@ -915,11 +952,15 @@ const db = {
 
   // Supabase ส่งกลับได้สูงสุด 1000 แถวต่อคำขอ — ต้องดึงทีละหน้าจนครบ
   // (เคยดึงครั้งเดียว → ยอดขายเกิน 1000 รายการแล้ว "หาย" จากหน้าจอ ทั้งที่ยังอยู่บนคลาวด์)
-  async selectAll(table, pk) {
-    const PAGE = 1000;
-    const all = [];
+  selectAll(table, pk) {
+    return this.pages((a, b) => this.client.from(table).select('*').order(pk, { ascending: true }).range(a, b));
+  },
+
+  // ดึงทีละหน้าด้วย query ที่กำหนด (build(from, to) → promise)
+  async pages(build) {
+    const PAGE = 1000, all = [];
     for (let from = 0; ; from += PAGE) {
-      const r = await this.client.from(table).select('*').order(pk, { ascending: true }).range(from, from + PAGE - 1);
+      const r = await build(from, from + PAGE - 1);
       if (r.error) return { data: null, error: r.error };
       const rows = r.data || [];
       all.push(...rows);
@@ -928,12 +969,48 @@ const db = {
     return { data: all, error: null };
   },
 
+  // โหลดตารางแบบประหยัด: มีแคชในเครื่อง → ดึงเฉพาะแถวที่ updated_at ใหม่กว่ารอบก่อน + รายการ id (ไว้รู้ว่าแถวไหนถูกลบ)
+  // ไม่มีแคช / ตารางยังไม่มีคอลัมน์ updated_at → โหลดเต็มเหมือนเดิม
+  async loadTable(spec) {
+    const cache = await cloudCache.get(spec.table);
+    if (cache && cache.since && Array.isArray(cache.rows)) {
+      const [chg, ids] = await Promise.all([
+        this.pages((a, b) => this.client.from(spec.table).select('*').gte('updated_at', cache.since).order('updated_at', { ascending: true }).order(spec.pk, { ascending: true }).range(a, b)),
+        this.pages((a, b) => this.client.from(spec.table).select(spec.pk).order(spec.pk, { ascending: true }).range(a, b)),
+      ]);
+      if (!chg.error && !ids.error) {
+        const byId = new Map(cache.rows.map(r => [String(r[spec.pk]), r]));
+        for (const r of chg.data) byId.set(String(r[spec.pk]), r);
+        const rows = ids.data.map(x => byId.get(String(x[spec.pk]))).filter(Boolean);
+        if (rows.length === ids.data.length) {   // ครบทุกแถว → ใช้ได้ (ไม่ครบ = แคชเพี้ยน → โหลดเต็ม)
+          await this.saveCache(spec.table, rows);
+          return { data: rows, error: null };
+        }
+      } else if (!this.isMissingColumn(chg.error) && !this.isMissingColumn(ids.error)) {
+        return { data: null, error: chg.error || ids.error };
+      }
+    }
+    const full = await this.selectAll(spec.table, spec.pk);
+    if (!full.error) await this.saveCache(spec.table, full.data);
+    return full;
+  },
+  isMissingColumn(err) { return !!err && (err.code === '42703' || /updated_at/.test(err.message || '')); },
+  async saveCache(table, rows) {
+    if (!rows.length || !('updated_at' in rows[0])) return;   // ยังไม่ได้รัน SQL เพิ่ม updated_at → ไม่แคช
+    let max = '';
+    for (const r of rows) if (r.updated_at && r.updated_at > max) max = r.updated_at;
+    if (!max) return;
+    // ถอยเวลาเผื่อ 60 วินาที (กันแถวที่ commit ช้ากว่าเวลาที่ประทับ) — ดึงซ้ำนิดหน่อยไม่เป็นไร
+    const since = new Date(new Date(max).getTime() - 60 * 1000).toISOString();
+    await cloudCache.set(table, { since, rows });
+  },
+
   async loadAll() {
     if (!this.enabled) return null;
     try {
       const tableEntries = Object.entries(TABLE_SPEC);
       const tablePromises = tableEntries.map(([name, spec]) =>
-        this.selectAll(spec.table, spec.pk).then(r => ({ name, ...r }))
+        this.loadTable(spec).then(r => ({ name, ...r }))
       );
       const settingsPromise = this.client.from('app_settings').select('*').not('key', 'like', 'backup_%');
       const logPromise = this.client.from('app_login_log').select('*').order('id', { ascending: false }).limit(200);
@@ -1314,9 +1391,9 @@ async function loadData() {
           settings:      remote.settings  || seed.settings,
           branches:      remote.branches.length  ? remote.branches  : seed.branches,
           users:         remote.users.length     ? remote.users     : seed.users,
-          employees:     remote.employees,
+          employees:     keepLocalImages('employees', remote.employees, localData && localData.employees),
           members:       mergeMemberExtras(remote.members, localData && localData.members),
-          sales:         remote.sales,
+          sales:         keepLocalImages('sales', remote.sales, localData && localData.sales),
           trainings:     tr.list,
           alerts:        remote.alerts,
           loginLog:      remote.loginLog,
@@ -1688,6 +1765,7 @@ function runDailyMaintenance() {
 
 // ---------- BOOT ----------
 function bootApp() {
+  setTimeout(() => moveInlineImagesToStorage(), 5000);   // ย้ายรูป base64 ค้างเก่าขึ้น Storage
   // เทรนเนอร์ถูกปิดใช้งาน/เปลี่ยนตำแหน่ง/ลบรหัส ระหว่างที่ยังล็อกอินค้างอยู่ → ออกจากระบบ
   if (isTrainerSelf()) {
     const emp = DATA.employees.find(e => e.id === SESSION.empId);
@@ -2670,20 +2748,49 @@ function viewSaleSlipById(id) {
   viewSlipImage(s.slip);
 }
 
-async function uploadSlipToStorage(dataUrl, saleId) {
-  if (!dataUrl) return '';
-  if (!dataUrl.startsWith('data:')) return dataUrl; // already a URL — pass through
-  if (!db.client) throw new Error('Supabase ยังไม่เชื่อมต่อ');
+async function uploadImageToStorage(dataUrl, path) {
   const blob = await (await fetch(dataUrl)).blob();
-  const ext = (blob.type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
-  const yyyymmdd = new Date().toISOString().slice(0, 10);
-  const path = `${yyyymmdd}/${saleId}.${ext}`;
-  const { error } = await db.client.storage
-    .from(SLIP_BUCKET)
-    .upload(path, blob, { contentType: blob.type, upsert: true });
+  const { error } = await db.client.storage.from(SLIP_BUCKET).upload(path, blob, { contentType: blob.type, upsert: true });
   if (error) throw error;
-  const { data } = db.client.storage.from(SLIP_BUCKET).getPublicUrl(path);
-  return data.publicUrl;
+  return db.client.storage.from(SLIP_BUCKET).getPublicUrl(path).data.publicUrl;
+}
+
+// ย้ายรูป base64 (สลิปยอดขาย / รูปพนักงาน) ขึ้น Storage แล้วเก็บเป็น URL — ตารางเล็กลง ทุกเครื่องโหลดน้อยลง
+// ทำซ้ำได้ปลอดภัย: ถ้าอัปโหลดไม่สำเร็จ รูปยังอยู่ในเครื่อง แล้วลองใหม่รอบหน้า
+let MOVING_IMAGES = null;
+function moveInlineImagesToStorage() {
+  if (MOVING_IMAGES) return MOVING_IMAGES;
+  MOVING_IMAGES = (async () => {
+    let moved = 0, failed = 0;
+    if (!db.enabled || !db.client || !DATA) return { moved, failed };
+    for (const [name, field] of Object.entries(INLINE_IMG_FIELDS)) {
+      for (const item of (DATA[name] || [])) {
+        const dataUrl = item && item[field];
+        if (!isInlineImg(dataUrl)) continue;
+        const ext = ((dataUrl.match(/^data:image\/(\w+)/) || [])[1] || 'jpg').replace('jpeg', 'jpg');
+        const path = name === 'sales'
+          ? `${String(item.ts || new Date().toISOString()).slice(0, 10)}/${item.id}.${ext}`
+          : `emp/${item.id}-${Date.now()}.${ext}`;
+        try {
+          const url = await uploadImageToStorage(dataUrl, path);
+          const cur = (DATA[name] || []).find(x => x.id === item.id);
+          if (cur && cur[field] === dataUrl) { cur[field] = url; moved++; }
+        } catch (e) { failed++; console.warn('[img] อัปโหลดรูปไม่สำเร็จ', name, item.id, e); }
+      }
+    }
+    if (moved) saveData();
+    return { moved, failed };
+  })().finally(() => { MOVING_IMAGES = null; });
+  return MOVING_IMAGES;
+}
+
+// ข้อมูลจากคลาวด์ไม่มีรูป (ยังรออัปโหลด) แต่ในเครื่องมี base64 → เก็บของในเครื่องไว้ ไม่ให้หาย
+function keepLocalImages(name, remoteList, localList) {
+  const field = INLINE_IMG_FIELDS[name];
+  if (!field || !Array.isArray(remoteList) || !Array.isArray(localList)) return remoteList;
+  const local = new Map(localList.filter(x => x && isInlineImg(x[field])).map(x => [x.id, x[field]]));
+  if (!local.size) return remoteList;
+  return remoteList.map(r => (!r[field] && local.has(r.id)) ? { ...r, [field]: local.get(r.id) } : r);
 }
 
 // ---------- ส่งรายงานสรุปยอดเองจากหน้าบันทึกยอดขาย ----------
@@ -2933,15 +3040,9 @@ async function onSubmitSale(e) {
   if (!slip) return;
 
   // อัปโหลดสลิปขึ้น Storage แล้วเก็บเป็น URL (ไม่เก็บรูปทั้งก้อนในตารางยอดขาย)
-  try {
-    const slipUrl = await uploadSlipToStorage(slip, sale.id);
-    const idx = DATA.sales.findIndex(s => s.id === sale.id);
-    if (idx >= 0) DATA.sales[idx].slip = slipUrl;
-    saveData();
-  } catch (err) {
-    console.error('slip upload failed', err);
-    toast('บันทึกแล้ว แต่อัปโหลดสลิปไม่สำเร็จ: ' + (err.message || err), 'bad');
-  }
+  // ไม่สำเร็จ → สลิปยังอยู่ในเครื่องนี้ จะลองอัปโหลดใหม่ตอนเปิดแอปครั้งถัดไป
+  const r = await moveInlineImagesToStorage();
+  if (r.failed) toast('บันทึกแล้ว แต่อัปโหลดสลิปยังไม่สำเร็จ — จะลองใหม่อัตโนมัติ (อย่าล้างข้อมูลเบราว์เซอร์)', 'bad');
 }
 
 // ============ TRAININGS ENTRY ============
@@ -5918,6 +6019,7 @@ function saveEmployee(ev, idOrNull) {
   }
   setTrainerPin(obj.id, pin);
   saveData(); closeModal(); toast('บันทึกเรียบร้อย', 'ok'); navigate('employees');
+  moveInlineImagesToStorage();
 }
 function deleteEmployee(id) {
   if (!isManagerOrAbove()) { toast('เฉพาะ Admin/Manager เท่านั้นที่ลบพนักงานได้', 'bad'); return; }
@@ -7080,9 +7182,9 @@ function closeModal() {
           settings:     remote.settings  || seed.settings,
           branches:     remote.branches.length ? remote.branches : DATA.branches,
           users:        remote.users.length    ? remote.users    : DATA.users,
-          employees:    remote.employees,
+          employees:    keepLocalImages('employees', remote.employees, DATA.employees),
           members:      mergeMemberExtras(remote.members, DATA.members),
-          sales:        remote.sales,
+          sales:        keepLocalImages('sales', remote.sales, DATA.sales),
           trainings:    tr.list,
           alerts:       remote.alerts,
           loginLog:     remote.loginLog,
@@ -7121,6 +7223,8 @@ function closeModal() {
       const item = db.toItem(name, p.new);
       const idx = list.findIndex(x => String(x[pk]) === String(item[pk]));
       const merged = idx >= 0 ? { ...list[idx], ...item } : item;   // คงฟิลด์เฉพาะเครื่อง (เช่นข้อมูลเสริมสมาชิก)
+      const imgF = INLINE_IMG_FIELDS[name];
+      if (imgF && idx >= 0 && !merged[imgF] && isInlineImg(list[idx][imgF])) merged[imgF] = list[idx][imgF];
       if (idx >= 0) list[idx] = merged; else list.push(merged);
       if (name === 'trainings') list.sort((a, b) => new Date(b.ts) - new Date(a.ts));
       db.markSynced(name, merged);
